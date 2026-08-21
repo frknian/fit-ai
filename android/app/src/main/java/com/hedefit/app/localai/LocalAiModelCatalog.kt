@@ -27,9 +27,23 @@ object LocalAiModelCatalog {
      *   RAM'i. Ölçüt keyfi değil: dosya boyutunun yaklaşık iki katı + işletim
      *   sistemi ve WebView payı. Altındaki cihazda yükleme denemesi süreci
      *   öldürür, bu yüzden hiç denenmez.
-     * @param turkishProseReady Çıktısı KULLANICIYA OLDUĞU GİBİ gösterilebilecek
-     *   Türkçe üretiyor mu. Koç sohbeti bu bayrağı taşıyan modellere
-     *   yönlendirilir; taşımayanlar yalnız deneysel/ölçüm amaçlıdır.
+     * @param chatApproved Bu modelin çıktısı KULLANICIYA OLDUĞU GİBİ
+     *   gösterilebilir mi. Koç sohbeti yalnız bu bayrağı taşıyan modellere
+     *   yönlendirilir; taşımayanlar deneysel/ölçüm amaçlıdır.
+     *
+     *   Bayrak ÜÇ ayrı eşiği birden temsil eder ve üçü de GERÇEK CİHAZDA
+     *   ölçülmeden açılamaz — üçünden biri düşerse model kullanılamaz:
+     *
+     *     1. Dil biçimi  — Türkçe biçimbirimler bozulmuyor mu
+     *        (lib/ai/turkish.ts denetimi)
+     *     2. İçerik      — yanıt soruyu gerçekten cevaplıyor, sayı uydurmuyor,
+     *        kendisiyle çelişmiyor mu (48 senaryoluk küme)
+     *     3. Bütçe       — bellek ve gecikme mobilde kabul edilebilir mi
+     *
+     *   Bu ayrım pahalıya öğrenildi: qwen2.5-1.5b-q8 birinci eşiği geçiyor
+     *   (Türkçesi düzgün biçimli) ama ikinci ve üçüncüde kalıyor. Yalnız
+     *   "int4 bozuyor, q8 bozmuyor" akıl yürütmesiyle onaylanmıştı; ölçüm
+     *   bunu çürüttü.
      *
      *   Bayrak boyuta göre verilmiş bir tahmin DEĞİL, gözlenen bir ayrım:
      *   ≤0,6B modeller int4'e nicemlendiğinde Türkçe biçimbirimleri bozup
@@ -48,7 +62,7 @@ object LocalAiModelCatalog {
         val maxNumTokens: Int,
         val minTotalRamMb: Int,
         val supportsThinking: Boolean,
-        val turkishProseReady: Boolean,
+        val chatApproved: Boolean,
     )
 
     private fun hf(repo: String, file: String) = "https://huggingface.co/$repo/resolve/main/$file?download=true"
@@ -69,7 +83,7 @@ object LocalAiModelCatalog {
             supportsThinking = true,
             // 0,6B int4: hedefit-mini ile aynı sınıfta, Türkçesi sohbete
             // yetmiyor. Ölçüm/karşılaştırma için katalogda kalıyor.
-            turkishProseReady = false,
+            chatApproved = false,
         ),
         Entry(
             id = "qwen2.5-1.5b-q8",
@@ -81,9 +95,24 @@ object LocalAiModelCatalog {
             maxNumTokens = 2048,
             minTotalRamMb = 4_096,
             supportsThinking = false,
-            // 1,5B q8 — nicemleme int4 değil q8 olduğu için biçimbirim
-            // bozulması görülmüyor; sohbet için VARSAYILAN sınıf bu.
-            turkishProseReady = true,
+            // ÖLÇÜLDÜ (SM-A525F, 2026-08-21) — ONAYSIZ.
+            //
+            // Türkçesi biçim olarak DÜZGÜN: "yüzme" doğru yazılıyor, ses
+            // dizimi denetiminden geçiyor. Yani int4 bozulması yok. Ama
+            // diğer iki eşikte kalıyor:
+            //
+            //   İçerik: "Bugün 30 dakikalık 5 kilometre yürüyüş yapmalısınız.
+            //   Bu yürüyüş, 10 dakikalık 2 kilometre yürüyüşüne eşit
+            //   olmalıdır." — kendisiyle çelişiyor, <facts> dışı sayı
+            //   uyduruyor, soruyu cevaplamıyor.
+            //
+            //   Bütçe: PSS 2255 MB (Gemma'nın 1321 MB'ının neredeyse iki
+            //   katı — q8 ağırlıklar bellekte sıkıştırılmadan duruyor),
+            //   decode 4,0 tok/s, model yüklüyken yanıt 29,6 sn, ilk
+            //   yüklemede 98,9 sn.
+            //
+            // Katalogda ölçüm/karşılaştırma için kalıyor.
+            chatApproved = false,
         ),
         Entry(
             id = "gemma-4-e2b",
@@ -101,7 +130,7 @@ object LocalAiModelCatalog {
             minTotalRamMb = 8_192,
             supportsThinking = false,
             // Karşılaştırmada en yüksek kalite (45/48).
-            turkishProseReady = true,
+            chatApproved = true,
         ),
         Entry(
             id = "hedefit-mini",
@@ -120,7 +149,7 @@ object LocalAiModelCatalog {
             supportsThinking = false,
             // 0,5B int4. Hızlı ve küçük ama Türkçesi kullanıcıya
             // gösterilebilir değil — sahada "yüzme" yerine "yümç" üretti.
-            turkishProseReady = false,
+            chatApproved = false,
         ),
     )
 
@@ -136,7 +165,7 @@ object LocalAiModelCatalog {
      * tersi ise sürecin öldürülmesi demek.
      */
     fun bestChatModelFor(totalRamMb: Long): Entry? = entries
-        .filter { it.turkishProseReady && totalRamMb >= it.minTotalRamMb }
+        .filter { it.chatApproved && totalRamMb >= it.minTotalRamMb }
         .maxByOrNull { it.sizeBytes }
 
     /**
@@ -162,7 +191,7 @@ object LocalAiModelCatalog {
      * 2,59 GB'lık modeli baştan yüklüyordu: medyan 26,4 sn ve sık sık süreç
      * ölümü.
      *
-     * AMA hedefit-mini'nin Türkçesi sohbete yetmiyor (`turkishProseReady =
+     * AMA hedefit-mini'nin Türkçesi sohbete yetmiyor (`chatApproved =
      * false`). Bu yüzden burası bir "varsayılan sohbet modeli" değil, yalnız
      * kataloğun boş dönmemesi için bir taban.
      */

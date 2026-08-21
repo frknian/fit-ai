@@ -255,22 +255,73 @@ Sabit `DEFAULT_MODEL_ID` yerine `LocalAiModelCatalog.recommendedFor(totalRamMb)`
 cihazın belleğine sığan **en büyük** sohbet-onaylı model seçilir. Bu katalogda
 boyut ile Türkçe kalitesi aynı yönde gidiyor.
 
-| Model | Boyut | Min. RAM | Sohbete uygun |
+`chatApproved` bayrağı **üç eşiği birden** temsil eder; üçü de gerçek cihazda
+ölçülmeden açılamaz:
+
+1. **Dil biçimi** — Türkçe biçimbirimler bozulmuyor mu (`lib/ai/turkish.ts`)
+2. **İçerik** — yanıt soruyu cevaplıyor, sayı uydurmuyor, kendisiyle
+   çelişmiyor mu
+3. **Bütçe** — bellek ve gecikme mobilde kabul edilebilir mi
+
+| Model | Boyut | Min. RAM | Onaylı | Neden |
+|---|---|---|---|---|
+| hedefit-mini (0,5B int4) | 251 MB | 2 GB | ✗ | 1. eşik: biçimbirimleri bozuyor |
+| Qwen3 0.6B int4 | 0,50 GB | 3 GB | ✗ | aynı sınıf, ölçülmedi |
+| Qwen2.5 1.5B q8 | 1,60 GB | 4 GB | ✗ | 2. ve 3. eşik (aşağıda) |
+| **Gemma 4 E2B** | **2,59 GB** | **8 GB** | ✓ | 45/48; 8 GB üstü cihazlarda |
+
+Gemma'nın eşiği 6 GB'dan **8 GB'a çıkarıldı**: 7,5 GB'lık SM-A525F eşiği
+geçiyordu ama PSS 1321 MB'a çıkıp WebView'la birlikte belleği tüketiyordu.
+
+Sohbete uygun model sığmazsa `bestChatModelFor` **null** döner ve
+`recommendedFor` tabana (`hedefit-mini`) düşer; sohbet o modele
+**yönlendirilmez** (kapı 2 kapalı), sunucuya gider.
+
+---
+
+## Qwen2.5 1.5B q8 — gerçek cihaz ölçümü (SM-A525F, 2026-08-21)
+
+Bu model önce `chatApproved = true` işaretlendi. Gerekçe **ölçüm değil akıl
+yürütmeydi**: *"bozulma int4 nicemlemeden geliyor, bu model q8, o hâlde
+sorun olmaz."* Cihazda ölçülünce gerekçe çürüdü.
+
+| Ölçüt | hedefit-mini | Gemma 4 E2B | **Qwen2.5 1.5B q8** |
 |---|---|---|---|
-| hedefit-mini (0,5B int4) | 251 MB | 2 GB | ✗ biçimbirimleri bozuyor |
-| Qwen3 0.6B int4 | 0,50 GB | 3 GB | ✗ aynı sınıf |
-| **Qwen2.5 1.5B q8** | **1,60 GB** | **4 GB** | ✓ q8 nicemleme, bozulma yok |
-| **Gemma 4 E2B** | **2,59 GB** | **8 GB** | ✓ karşılaştırmada 45/48 |
+| PSS (yüklüyken) | 563 MB | 1321 MB | **2255 MB** |
+| Decode | 24,0 tok/s | 8,2 tok/s | **4,0 tok/s** |
+| Yanıt (model yüklü) | 9,7 sn | 26,4 sn | **29,6 sn** |
+| İlk yükleme dahil | — | — | **98,9 sn** (yükleme 50,5 sn) |
 
-Gemma'nın eşiği 6 GB'dan **8 GB'a çıkarıldı**: 7,6 GB'lık SM-A525F eşiği
-geçiyordu ama ölçümde PSS 1321 MB'a çıkıp WebView'la birlikte belleği
-tüketiyordu. Eşik, ölçümün gerçekte gösterdiği yere çekildi. Böylece o cihazda
-Qwen2.5 1.5B seçilir — 0,5B'ye göre **6 kat büyük**, Gemma'ya göre yarı
-bellek.
+**1. eşiği GEÇİYOR.** Türkçesi biçim olarak düzgün: "yüzme" doğru yazılıyor,
+ses dizimi denetiminden geçiyor. int4 bozulması yok.
 
-Sohbete uygun model sığmazsa `FALLBACK_MODEL_ID` (hedefit-mini) döner; sohbet
-o modele **yönlendirilmez** (kapı 2 kapalı) ama model ölçüm/deney için
-kullanılabilir.
+**2. eşikte kalıyor.** Gerçek çıktı:
+
+> "Bugün 30 dakikalık 5 kilometre yürüyüşü yapmalısınız. Bu yürüyüş, 10
+> dakikalık 2 kilometre yürüyüşüne eşit olmalıdır. Bu yürüyüş, 30 dakikalık
+> 3 kilometre yürüyüşüne eşit olmalıdır."
+
+Kendisiyle çelişiyor, `<facts>` dışı sayı uyduruyor, soruyu cevaplamıyor.
+Kullanıcının ilk şikâyeti olan "saçma sapan cevaplar" tam olarak bu.
+
+**3. eşikte kalıyor.** PSS 2255 MB, Gemma'nın neredeyse **iki katı** — q8
+ağırlıklar bellekte sıkıştırılmadan duruyor, dosya küçük olsa da RAM'de değil.
+Üretim sırasında cihazda yalnız ~2 GB boş bellek vardı.
+
+**Sonuç:** bayrak `false`'a çevrildi. **Bu cihazda sohbete uygun hiçbir model
+yok** — Gemma 8 GB eşiğinin altında kalıyor, diğerleri onaysız. Doğru davranış
+budur ve sistem bunu kendiliğinden yapıyor: koç sohbeti sunucuya gidiyor.
+
+**Alan adı `turkishProseReady` → `chatApproved` olarak değişti**: başarısızlık
+yalnız Türkçe biçimi değildi, eski ad yanıltıcıydı.
+
+### Bundan sonrası
+
+Cihaz üstü sohbetin açılabilmesi için gereken, daha büyük bir model değil —
+**mobil bütçeye sığan, int4 nicemlenmiş, talimat takibi güçlü** bir model.
+Qwen2.5 1.5B'nin int4 sürümü (q8 yerine) hem PSS'i hem decode hızını
+düzeltebilir ve 1. eşiği koruyup koruyamadığı ölçülmelidir. Sıradaki
+adaylar bu eksende aranmalı; boyutu büyütmek tek başına çözüm değil.
 
 ### D. Bellek geri çağrısı gerçekten kaydedildi
 

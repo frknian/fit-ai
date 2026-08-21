@@ -28,7 +28,7 @@ class ModelSelectionInstrumentedTest {
         val totalRamMb = LocalAiCapability.totalRamMb(context)
         val selected = LocalAiModelCatalog.recommendedFor(totalRamMb)
 
-        println("HEDEFIT_SELECTION totalRamMb=$totalRamMb selected=${selected.id} chatReady=${selected.turkishProseReady}")
+        println("HEDEFIT_SELECTION totalRamMb=$totalRamMb selected=${selected.id} chatReady=${selected.chatApproved}")
 
         assertTrue("cihazın RAM'i okunamadı", totalRamMb > 0)
         // Seçilen model her koşulda cihaza sığmalı.
@@ -39,25 +39,24 @@ class ModelSelectionInstrumentedTest {
     }
 
     @Test
-    fun sohbeteUygunModelVarsaEnBuyugunuSecer() {
+    fun sohbetModeliSecimiKatalogSirasinaUyar() {
         val totalRamMb = LocalAiCapability.totalRamMb(context)
         val best = LocalAiModelCatalog.bestChatModelFor(totalRamMb)
-        assertNotNull("bu cihazda sohbete uygun bir model olmalıydı", best)
 
-        // Sığan sohbet modelleri arasında en büyüğü seçilmeli: bu katalogda
-        // boyut ile Türkçe kalitesi aynı yönde gidiyor.
-        val fitting = LocalAiModelCatalog.entries.filter { it.turkishProseReady && totalRamMb >= it.minTotalRamMb }
-        assertEquals(fitting.maxByOrNull { it.sizeBytes }?.id, best!!.id)
-        assertTrue("seçilen model sohbet için onaylı olmalı", best.turkishProseReady)
+        // Bu cihazda onaylı model bulunmayabilir; doğru davranış "null dön"
+        // ve sohbeti sunucuya bırak. Bulunuyorsa sığanların en büyüğü olmalı.
+        val fitting = LocalAiModelCatalog.entries.filter { it.chatApproved && totalRamMb >= it.minTotalRamMb }
+        assertEquals(fitting.maxByOrNull { it.sizeBytes }?.id, best?.id)
+        if (best != null) assertTrue("seçilen model sohbet için onaylı olmalı", best.chatApproved)
     }
 
     @Test
     fun kucukInt4ModellerSohbeteYonlendirilmez() {
         // Sahadaki hata bu sınıftan geldi: 0,5B int4 model "yüzme" yerine
         // "yümç" üretiyordu. Bayrak yanlışlıkla açılırsa burası kırılır.
-        for (id in listOf("hedefit-mini", "qwen3-0.6b-int4")) {
+        for (id in listOf("hedefit-mini", "qwen3-0.6b-int4", "qwen2.5-1.5b-q8")) {
             val entry = requireNotNull(LocalAiModelCatalog.byId(id))
-            assertFalse("$id sohbete uygun sayılmamalı", entry.turkishProseReady)
+            assertFalse("$id sohbete uygun sayılmamalı", entry.chatApproved)
         }
     }
 

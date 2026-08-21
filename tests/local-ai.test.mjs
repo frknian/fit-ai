@@ -422,25 +422,25 @@ test("bellek baskısı geri çağrısı GERÇEKTEN kaydedilir", async () => {
   assert.match(plugin, /releaseWhenIdle\.compareAndSet\(true, false\)\)\s*engine\.release\(\)/, "ertelenmiş bırakma üretim sonunda yapılmalı");
 });
 
-test("katalog: sohbet modeli cihaz belleğine göre seçilir, küçük modeller onaysız", async () => {
+test("katalog: sohbet modeli cihaz belleğine göre seçilir, ölçülmemiş modeller onaysız", async () => {
   const catalog = await readFile(new URL("../android/app/src/main/java/com/hedefit/app/localai/LocalAiModelCatalog.kt", import.meta.url), "utf8");
 
   // 0,5B/0,6B int4 modeller Türkçe düz yazıda ONAYSIZ olmalı: sahadaki
   // "yüzme" → "yümç" hatası bu sınıftan geldi.
-  for (const id of ["hedefit-mini", "qwen3-0.6b-int4"]) {
+  for (const id of ["hedefit-mini", "qwen3-0.6b-int4", "qwen2.5-1.5b-q8"]) {
     const entry = catalog.slice(catalog.indexOf(`id = "${id}"`));
-    const flag = entry.slice(0, entry.indexOf("\n        ),")).match(/turkishProseReady = (true|false)/);
+    const flag = entry.slice(0, entry.indexOf("\n        ),")).match(/chatApproved = (true|false)/);
     assert.equal(flag?.[1], "false", `${id} sohbet için onaylı olmamalı`);
   }
-  for (const id of ["qwen2.5-1.5b-q8", "gemma-4-e2b"]) {
+  for (const id of ["gemma-4-e2b"]) {
     const entry = catalog.slice(catalog.indexOf(`id = "${id}"`));
-    const flag = entry.slice(0, entry.indexOf("\n        ),")).match(/turkishProseReady = (true|false)/);
+    const flag = entry.slice(0, entry.indexOf("\n        ),")).match(/chatApproved = (true|false)/);
     assert.equal(flag?.[1], "true", `${id} sohbet için onaylı olmalı`);
   }
 
   // Seçim sabit değil, cihazın RAM'ine göre yapılıyor.
   assert.match(catalog, /fun bestChatModelFor\(totalRamMb: Long\)/);
-  assert.match(catalog, /it\.turkishProseReady && totalRamMb >= it\.minTotalRamMb/);
+  assert.match(catalog, /it\.chatApproved && totalRamMb >= it\.minTotalRamMb/);
 
   // Gemma eşiği 8 GB: 7,6 GB'lık SM-A525F'te ölçülen PSS 1321 MB, WebView
   // üstüne eklendiğinde süreci öldürüyordu.
@@ -452,7 +452,7 @@ test("eklenti sabit varsayılan yerine cihaza göre model seçer", async () => {
   const plugin = await readFile(new URL("../android/app/src/main/java/com/hedefit/app/localai/HedefitLocalAiPlugin.kt", import.meta.url), "utf8");
   assert.match(plugin, /LocalAiModelCatalog\.recommendedFor\(LocalAiCapability\.totalRamMb\(context\)\)/);
   // JS'in kapı 2'yi uygulayabilmesi için native'in bu bayrağı bildirmesi şart.
-  assert.match(plugin, /put\("chatReady", model\.turkishProseReady/);
+  assert.match(plugin, /put\("chatReady", model\.chatApproved/);
   assert.match(plugin, /put\("selectedModelId", model\.id\)/);
 });
 

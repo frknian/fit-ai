@@ -45,7 +45,7 @@ export type NativeModelInfo = {
   sizeBytes: number;
   installed: boolean;
   minTotalRamMb: number;
-  turkishProseReady?: boolean;
+  chatApproved?: boolean;
 };
 
 export type NativeGenerateResult = {

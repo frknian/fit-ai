@@ -139,7 +139,7 @@ class HedefitLocalAiPlugin : Plugin() {
                     // sohbetinde KULLANICIYA GÖSTERİLEBİLİR olup olmadığı.
                     // JS bu bayrağa bakar; kapalıysa sohbeti sunucuya yollar.
                     put("selectedModelId", model.id)
-                    put("chatReady", model.turkishProseReady && report.state == LocalAiCapability.State.MODEL_READY)
+                    put("chatReady", model.chatApproved && report.state == LocalAiCapability.State.MODEL_READY)
                     put("supported", report.supported)
                     put("state", report.state.name)
                     put("reason", report.reason)
@@ -168,7 +168,7 @@ class HedefitLocalAiPlugin : Plugin() {
                     put("sizeBytes", entry.sizeBytes)
                     put("installed", LocalAiModelStore.isInstalled(context, entry))
                     put("minTotalRamMb", entry.minTotalRamMb)
-                    put("turkishProseReady", entry.turkishProseReady)
+                    put("chatApproved", entry.chatApproved)
                 })
             }
             call.resolve(JSObject().apply {

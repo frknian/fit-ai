@@ -51,7 +51,10 @@ export function classifyError(error: unknown): string {
   if (/insufficient_storage/.test(nativeMessage)) return "insufficient_storage";
   if (/load_failed|generation_failed/.test(nativeMessage)) return "local_runtime_error";
   const message = error instanceof Error ? error.message : String(error);
-  if (/\b429\b|rate.?limit/i.test(message)) return "rate_limited";
+  // "max RPM: 3" gibi ifadeler 429 veya "rate limit" geçmiyor; sınıflandırma
+  // dışında kalınca hız sınırı telemetride "unknown" görünüyordu ve gerçek
+  // darboğaz aylarca fark edilmeyebilirdi.
+  if (/\b429\b|rate.?limit|max\s*rpm|too many requests|requests per (?:minute|second)/i.test(message)) return "rate_limited";
   if (/\b401\b|\b403\b|unauthor|forbidden|api key/i.test(message)) return "auth";
   if (/\b5\d{2}\b|internal server/i.test(message)) return "provider_error";
   if (/timeout|timed out|aborted/i.test(message)) return "timeout";
