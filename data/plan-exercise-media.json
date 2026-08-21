@@ -887,14 +887,6 @@
       "/exercise-images/Seated_Dumbbell_Curl/1.jpg"
     ]
   },
-  "hammer curl": {
-    "sourceId": "Hammer_Curls",
-    "sourceName": "Hammer Curls",
-    "images": [
-      "/exercise-images/Hammer_Curls/0.jpg",
-      "/exercise-images/Hammer_Curls/1.jpg"
-    ]
-  },
   "egimli dambil curl": {
     "sourceId": "Incline_Dumbbell_Curl",
     "sourceName": "Incline Dumbbell Curl",
@@ -957,14 +949,6 @@
     "images": [
       "/exercise-images/Reverse_Barbell_Curl/0.jpg",
       "/exercise-images/Reverse_Barbell_Curl/1.jpg"
-    ]
-  },
-  "triceps pushdown": {
-    "sourceId": "Triceps_Pushdown",
-    "sourceName": "Triceps Pushdown",
-    "images": [
-      "/exercise-images/Triceps_Pushdown/0.jpg",
-      "/exercise-images/Triceps_Pushdown/1.jpg"
     ]
   },
   "ip triceps pushdown": {
@@ -1413,14 +1397,6 @@
     "images": [
       "/exercise-images/Jackknife_Sit-Up/0.jpg",
       "/exercise-images/Jackknife_Sit-Up/1.jpg"
-    ]
-  },
-  "leg raise": {
-    "sourceId": "Flat_Bench_Lying_Leg_Raise",
-    "sourceName": "Flat Bench Lying Leg Raise",
-    "images": [
-      "/exercise-images/Flat_Bench_Lying_Leg_Raise/0.jpg",
-      "/exercise-images/Flat_Bench_Lying_Leg_Raise/1.jpg"
     ]
   },
   "hanging knee raise": {
@@ -1933,30 +1909,6 @@
     "images": [
       "/exercise-images/Triceps_Pushdown_-_V-Bar_Attachment/0.jpg",
       "/exercise-images/Triceps_Pushdown_-_V-Bar_Attachment/1.jpg"
-    ]
-  },
-  "overhead dumbbell triceps extension": {
-    "sourceId": "Cable_Rope_Overhead_Triceps_Extension",
-    "sourceName": "Cable Rope Overhead Triceps Extension",
-    "images": [
-      "/exercise-images/Cable_Rope_Overhead_Triceps_Extension/0.jpg",
-      "/exercise-images/Cable_Rope_Overhead_Triceps_Extension/1.jpg"
-    ]
-  },
-  "ters curl": {
-    "sourceId": "Reverse_Barbell_Curl",
-    "sourceName": "Reverse Barbell Curl",
-    "images": [
-      "/exercise-images/Reverse_Barbell_Curl/0.jpg",
-      "/exercise-images/Reverse_Barbell_Curl/1.jpg"
-    ]
-  },
-  "bench dips": {
-    "sourceId": "Bench_Dips",
-    "sourceName": "Bench Dips",
-    "images": [
-      "/exercise-images/Bench_Dips/0.jpg",
-      "/exercise-images/Bench_Dips/1.jpg"
     ]
   },
   "bilek curl": {

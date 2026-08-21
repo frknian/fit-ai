@@ -46,14 +46,35 @@ class StepCounterService : Service(), SensorEventListener {
         const val KEY_DATE = "local_date"
         const val KEY_STEPS = "steps"
         const val KEY_BASELINE = "baseline"
+        /** Kullanıcının günlük adım hedefi; bildirimde "kalan adım" bundan çıkar. */
+        const val KEY_GOAL = "goal"
+        const val DEFAULT_GOAL = 8000
         const val ACTION_START = "com.hedefit.app.stepcounter.START"
         const val ACTION_STOP = "com.hedefit.app.stepcounter.STOP"
+        /** Hedef değişince bildirimi hemen tazelemek için (bkz. plugin setGoal). */
+        const val ACTION_REFRESH = "com.hedefit.app.stepcounter.REFRESH"
 
         /** İstanbul/kullanıcı yerel saatine göre bugünün anahtarı (YYYY-MM-DD). */
         fun todayKey(): String {
             val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
             formatter.timeZone = TimeZone.getDefault()
             return formatter.format(Date())
+        }
+
+        /**
+         * Servis şu anda ayakta mı? Plugin ile servis AYNI süreçte çalışır,
+         * bu yüzden bu bayrak güvenilir: hedef değişince bildirimi yalnız
+         * zaten çalışan servise tazeletmek için okunur (durmuş bir servisi
+         * arka plandan başlatmak Android 12+'ta yasak).
+         */
+        @Volatile
+        var isRunning = false
+            private set
+
+        /** Kayıtlı günlük hedef; JS tarafı setGoal ile yazar. */
+        fun readGoal(context: Context): Int {
+            val goal = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getInt(KEY_GOAL, DEFAULT_GOAL)
+            return if (goal > 0) goal else DEFAULT_GOAL
         }
 
         /** Gün dönümünü hesaba katarak bugünün adımını döner; servis çalışmıyorsa da okunabilir. */
@@ -80,6 +101,7 @@ class StepCounterService : Service(), SensorEventListener {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as? SensorManager
         stepCounterSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
@@ -90,6 +112,9 @@ class StepCounterService : Service(), SensorEventListener {
             stopSelf()
             return START_NOT_STICKY
         }
+        // ACTION_REFRESH için ayrıca bir şey yapmak gerekmez: startForeground
+        // aynı bildirim kimliğiyle çağrıldığında bildirimi yeni hedefe göre
+        // yeniden çizer.
         startForegroundWithNotification()
         val sensor = stepCounterSensor
         if (sensor == null) {
@@ -107,6 +132,7 @@ class StepCounterService : Service(), SensorEventListener {
     override fun onDestroy() {
         sensorManager?.unregisterListener(this)
         isListening = false
+        isRunning = false
         super.onDestroy()
     }
 
@@ -153,7 +179,12 @@ class StepCounterService : Service(), SensorEventListener {
         manager.notify(NOTIFICATION_ID, buildNotification(steps))
     }
 
+    /** Binlik ayraçlı okunur sayı: "4.320". */
+    private fun formatCount(value: Int): String = String.format(Locale("tr", "TR"), "%,d", value)
+
     private fun buildNotification(steps: Int): Notification {
+        val goal = readGoal(this)
+        val remaining = (goal - steps).coerceAtLeast(0)
         val openApp = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -161,8 +192,10 @@ class StepCounterService : Service(), SensorEventListener {
         )
         val iconRes = resources.getIdentifier("ic_stat_fit_ai", "drawable", packageName)
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Hedefit — Bugün $steps adım")
-            .setContentText("Adım sayar arka planda çalışıyor")
+            // Bildirim çubuğunda tek bakışta iki sayı: atılan adım ve hedefe
+            // kalan. "Arka planda çalışıyor" satırı hiçbir bilgi taşımıyordu.
+            .setContentTitle("${formatCount(steps)} adım")
+            .setContentText(if (remaining > 0) "Hedefe ${formatCount(remaining)} adım kaldı" else "Günlük hedef tamamlandı")
             .setSmallIcon(if (iconRes != 0) iconRes else android.R.drawable.ic_menu_myplaces)
             .setContentIntent(openApp)
             .setOngoing(true)

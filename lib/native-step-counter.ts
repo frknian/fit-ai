@@ -14,6 +14,7 @@ interface HedefitStepCounterPlugin {
   isAvailable(): Promise<{ available: boolean }>;
   start(): Promise<void>;
   stop(): Promise<void>;
+  setGoal(options: { goal: number }): Promise<void>;
   getTodaySteps(): Promise<{ steps: number }>;
   checkPermissions(): Promise<Record<string, "granted" | "denied" | "prompt">>;
   requestPermissions(): Promise<Record<string, "granted" | "denied" | "prompt">>;
@@ -23,6 +24,33 @@ const HedefitStepCounter = registerPlugin<HedefitStepCounterPlugin>("HedefitStep
 
 function isAndroid(): boolean {
   return isNativeApp() && typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
+}
+
+/**
+ * "Bildirim çubuğunda adım göster" tercihi.
+ *
+ * Android'de kalıcı bildirim İSTEĞE BAĞLI DEĞİL: foreground service çalıştığı
+ * sürece sistem bildirimi zorunlu gösterir. Bu yüzden tercih kapatıldığında
+ * bildirimi gizlemenin tek yolu servisi tamamen durdurmaktır — o zaman adımlar
+ * yalnız uygulama açıkken (pedometre eklentisiyle) sayılır. Ayar metni bunu
+ * açıkça söyler.
+ */
+const NOTIFICATION_PREF_KEY = "hedefit:step-notification";
+
+export function isStepNotificationEnabled(): boolean {
+  try {
+    return window.localStorage.getItem(NOTIFICATION_PREF_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+/** Tercih değişince adım kartının kaynağını yeniden kurmasını sağlayan olay. */
+export const STEP_NOTIFICATION_EVENT = "hedefit:step-notification-changed";
+
+export function setStepNotificationEnabled(enabled: boolean) {
+  try { window.localStorage.setItem(NOTIFICATION_PREF_KEY, enabled ? "1" : "0"); } catch { /* depolama kapalı */ }
+  window.dispatchEvent(new Event(STEP_NOTIFICATION_EVENT));
 }
 
 /** Yalnızca Android'de anlamlı; iOS'ta CMPedometer zaten arka planı kapsar. */
@@ -59,6 +87,12 @@ export async function startBackgroundStepService(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Bildirimdeki "hedefe kalan adım" satırının dayandığı günlük hedef. */
+export async function setBackgroundStepGoal(goal: number): Promise<void> {
+  if (!isAndroid() || !Number.isFinite(goal) || goal <= 0) return;
+  await HedefitStepCounter.setGoal({ goal: Math.round(goal) }).catch(() => undefined);
 }
 
 export async function stopBackgroundStepService(): Promise<void> {

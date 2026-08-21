@@ -93,6 +93,41 @@ export function applyPreviousPerformance(drafts: WorkoutSetDraft[], previous: Pr
   });
 }
 
+/** Sette kaydedilmeye değer bir veri var mı? */
+export function setDraftHasData(draft: WorkoutSetDraft): boolean {
+  return Boolean(draft.weightKg.trim() || draft.reps.trim() || draft.durationSeconds.trim() || draft.rpe.trim() || draft.note.trim());
+}
+
+/**
+ * Set satırına yapılan bir düzenlemeyi uygular ve kaydı KENDİLİĞİNDEN işaretler.
+ *
+ * Eskiden her satırın sonunda bir "Kaydet" düğmesi vardı; kullanıcı ağırlığı ve
+ * tekrarı yazıp düğmeye basmayı unutuyor, set hiç kaydedilmemiş sayılıyordu.
+ * Artık bir değer yazmak setin kendisini kaydeder, alanları temizlemek de
+ * kaydı geri alır. Yalnız `completed` doğrudan verildiğinde (ör. süre sayacı
+ * seti bitirdiğinde) bu türetme atlanır.
+ */
+export function applySetDraftPatch(draft: WorkoutSetDraft, patch: Partial<Omit<WorkoutSetDraft, "setNumber">>): WorkoutSetDraft {
+  const next = { ...draft, ...patch };
+  if ("completed" in patch) return next;
+  return { ...next, completed: setDraftHasData(next) };
+}
+
+/** Set sayısını değiştirir: eklenen setler boş başlar, silinenler sondan gider. */
+export function resizeWorkoutSetDrafts(drafts: WorkoutSetDraft[], totalSets: number, target: string): WorkoutSetDraft[] {
+  const size = Math.max(1, Math.min(20, Math.round(totalSets)));
+  if (size === drafts.length) return drafts;
+  if (size < drafts.length) return drafts.slice(0, size);
+  const additions = createWorkoutSetDrafts(size - drafts.length, target).map((draft, index) => ({
+    ...draft,
+    setNumber: drafts.length + index + 1,
+    // Yeni set kullanıcının yazacağı değeri bekler; hedeften gelen tekrar
+    // sayısı öneri olarak kalır ama set otomatik kaydedilmiş sayılmaz.
+    completed: false,
+  }));
+  return [...drafts, ...additions];
+}
+
 export function normalizeWorkoutSet(draft: WorkoutSetDraft): LoggedWorkoutSet | null {
   const weightKg = nonNegativeNumber(draft.weightKg);
   const reps = positiveInteger(draft.reps);

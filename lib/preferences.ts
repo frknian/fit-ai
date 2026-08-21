@@ -194,3 +194,48 @@ export function useTargetWeightKg(): number | null {
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
+
+/**
+ * Antrenman oynatıcısının iki isteğe bağlı özelliği.
+ *
+ * Set kaydı ve süre sayacı herkesin istediği şeyler değil: kimi kullanıcı
+ * yalnız hareket listesini takip etmek, ağırlık/tekrar yazmadan ve geri sayım
+ * olmadan çalışmak istiyor. İkisi de VARSAYILAN OLARAK AÇIK kalır; kapatma
+ * tercihi cihazda saklanır ve antrenman ekranından değiştirilir.
+ */
+const SET_LOGGING_KEY = "hedefit:set-logging";
+const WORKOUT_TIMER_KEY = "hedefit:workout-timer";
+
+function readFlag(key: string): boolean {
+  try {
+    return typeof localStorage === "undefined" || localStorage.getItem(key) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function writeFlag(key: string, enabled: boolean) {
+  try {
+    localStorage.setItem(key, enabled ? "1" : "0");
+  } catch {
+    // yerel depolama kapalıysa sessizce geç
+  }
+  listeners.forEach((listener) => listener());
+  notifyPreferenceChange();
+}
+
+export function setStoredSetLoggingEnabled(enabled: boolean) {
+  writeFlag(SET_LOGGING_KEY, enabled);
+}
+
+export function useSetLoggingEnabled(): boolean {
+  return useSyncExternalStore(subscribe, () => readFlag(SET_LOGGING_KEY), () => true);
+}
+
+export function setStoredWorkoutTimerEnabled(enabled: boolean) {
+  writeFlag(WORKOUT_TIMER_KEY, enabled);
+}
+
+export function useWorkoutTimerEnabled(): boolean {
+  return useSyncExternalStore(subscribe, () => readFlag(WORKOUT_TIMER_KEY), () => true);
+}

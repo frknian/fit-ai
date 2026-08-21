@@ -6,7 +6,7 @@ import { createStepRepository } from "@/lib/step-service";
 import { localDateKey } from "@/lib/streak";
 import { fetchTodaySteps, isNativeApp, isPedometerAvailable, isStepCounterAvailable, requestPedometerPermission, requestStepPermission, startPedometer } from "@/lib/mobile";
 import { combineStepSources, mergeSessionSteps, stepsForToday, type StoredStepState } from "@/lib/step-counter";
-import { getBackgroundStepsToday, isBackgroundStepServiceAvailable, isBackgroundStepServiceSupported, requestBackgroundStepPermissions, startBackgroundStepService } from "@/lib/native-step-counter";
+import { getBackgroundStepsToday, isBackgroundStepServiceAvailable, isBackgroundStepServiceSupported, isStepNotificationEnabled, requestBackgroundStepPermissions, setBackgroundStepGoal, startBackgroundStepService, STEP_NOTIFICATION_EVENT } from "@/lib/native-step-counter";
 import { useTranslations } from "@/lib/i18n/translate";
 
 const DEFAULT_GOAL = 8000;
@@ -113,6 +113,8 @@ export function StepCounterCard({ userId, goal = DEFAULT_GOAL }: { userId?: stri
       if (!granted) { setStatus("unavailable"); return true; }
 
       await startBackgroundStepService();
+      // Bildirimdeki "hedefe kalan adım" satırı bu hedefe göre yazılır.
+      await setBackgroundStepGoal(readStoredGoal(goal));
       async function poll() {
         const nativeSteps = await getBackgroundStepsToday();
         if (cancelled || nativeSteps === null) return;
@@ -136,7 +138,11 @@ export function StepCounterCard({ userId, goal = DEFAULT_GOAL }: { userId?: stri
       // Android dalı yalnız ilk seferde kurulur: servis zaten sürekli
       // arka planda sayıyor, odaklanma her seferinde onu yeniden başlatıp
       // eski interval'ı sızdırmasın diye burada tekrar çağrılmaz.
-      if (isBackgroundStepServiceSupported()) {
+      //
+      // Kullanıcı bildirim çubuğunu kapattıysa servis hiç çalışmaz (kalıcı
+      // bildirim onun ayrılmaz parçası); o durumda aşağıdaki pedometre dalı
+      // devreye girer ve adımlar yalnız uygulama açıkken sayılır.
+      if (isBackgroundStepServiceSupported() && isStepNotificationEnabled()) {
         if (!androidHandled) { androidHandled = true; await initAndroidBackgroundService(); }
         return;
       }
@@ -174,14 +180,26 @@ export function StepCounterCard({ userId, goal = DEFAULT_GOAL }: { userId?: stri
 
     void init();
     function onFocus() { void init(); }
+    // Bildirim tercihi değişince kaynak da değişir (servis ↔ pedometre);
+    // kurulum baştan yapılmalı, yoksa eski kaynağın yoklaması sürüp gider.
+    function onNotificationPrefChange() {
+      if (pollInterval !== undefined) { window.clearInterval(pollInterval); pollInterval = undefined; }
+      androidHandled = false;
+      void init();
+    }
     window.addEventListener("focus", onFocus);
+    window.addEventListener(STEP_NOTIFICATION_EVENT, onNotificationPrefChange);
     return () => {
       cancelled = true;
       stopPedometer?.();
       if (pollInterval !== undefined) window.clearInterval(pollInterval);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener(STEP_NOTIFICATION_EVENT, onNotificationPrefChange);
     };
-  }, [userId]);
+  }, [userId, goal]);
+
+  // Hedef değişince bildirim satırı da değişmeli.
+  useEffect(() => { void setBackgroundStepGoal(customGoal); }, [customGoal]);
 
   /** Sağlık uygulaması bağlantısı isteğe bağlı: cihaz sayacı zaten çalışıyor. */
   async function connectHealth() {

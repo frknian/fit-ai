@@ -55,6 +55,17 @@ const RASTER_STYLE: maplibregl.StyleSpecification = {
   layers: [{ id: "osm", type: "raster", source: "osm" }],
 };
 
+/**
+ * Döşemesiz stil: bitiş özetinde YALNIZ rota çizilir, harita hiç yüklenmez.
+ * Arka plan katmanı saydam bırakılır; böylece kabın CSS zemini (`--surface-soft`)
+ * görünür ve görünüm açık/koyu temayla birlikte değişir.
+ */
+const BLANK_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  sources: {},
+  layers: [{ id: "blank", type: "background", paint: { "background-color": "rgba(0,0,0,0)" } }],
+};
+
 const ROUTE_SOURCE_ID = "hedefit-rota-route";
 const ROUTE_LAYER_ID = "hedefit-rota-route-line";
 const ROUTE_HALO_LAYER_ID = "hedefit-rota-route-line-halo";
@@ -147,6 +158,13 @@ function revealGradient(color: string, clear: string, progress: number): maplibr
   return ["interpolate", ["linear"], ["line-progress"], 0, color, head, color, tail, clear, 1, clear];
 }
 
+/** Ortaya çıkarma gradyanını rota ve (varsa) dış hat katmanına yazar. */
+function setRevealGradients(map: maplibregl.Map, progress: number) {
+  map.setPaintProperty(ROUTE_LAYER_ID, "line-gradient", revealGradient(ROUTE_COLOR, ROUTE_COLOR_CLEAR, progress));
+  // Dış hat katmanı harita döşemesiz kipte hiç eklenmez.
+  if (map.getLayer(ROUTE_HALO_LAYER_ID)) map.setPaintProperty(ROUTE_HALO_LAYER_ID, "line-gradient", revealGradient(HALO_COLOR, HALO_COLOR_CLEAR, progress));
+}
+
 /**
  * Haritanın o anki karesini PNG data URL'ine çevirir. Paylaşım görseli bunun
  * üstüne kurulur, bu yüzden döşemeler yüklenene kadar (`idle`) beklenir.
@@ -167,10 +185,12 @@ export type GpsMapViewProps = {
   live?: boolean;
   /** Bitişte rotayı baştan sona çizerek ortaya çıkarır (Strava'daki gibi). */
   reveal?: boolean;
+  /** Kapatılırsa harita döşemeleri hiç yüklenmez; ekranda sadece rota kalır. */
+  basemap?: boolean;
 };
 
 /** Canlı takip, rota detayı ve önizlemede paylaşılan MapLibre yaşam döngüsü sarmalayıcısı. */
-export function GpsMapView({ route, currentPosition = null, interactive = true, className, captureRef, live = false, reveal = false }: GpsMapViewProps) {
+export function GpsMapView({ route, currentPosition = null, interactive = true, className, captureRef, live = false, reveal = false, basemap = true }: GpsMapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   /** Yüklenen modül: `LngLatBounds` gibi sınıflara erişmek için saklanır. */
@@ -209,11 +229,12 @@ export function GpsMapView({ route, currentPosition = null, interactive = true, 
       maplibreRef.current = maplibregl;
       map = new maplibregl.Map({
         container: containerRef.current,
-        style: RASTER_STYLE,
+        style: basemap ? RASTER_STYLE : BLANK_STYLE,
         center: initialCenter,
         zoom: known ? 15 : 1,
         interactive,
-        attributionControl: interactive ? {} : false,
+        // Atıf yalnız OSM döşemeleri gerçekten çizildiğinde gerekir.
+        attributionControl: interactive && basemap ? {} : false,
         // WebGL varsayılanı her kareden sonra tamponu boşaltır; bu açık
         // olmadan getCanvas().toDataURL() bomboş bir görsel döner.
         canvasContextAttributes: { preserveDrawingBuffer: exportable },
@@ -229,7 +250,9 @@ export function GpsMapView({ route, currentPosition = null, interactive = true, 
         current.addSource(ROUTE_SOURCE_ID, { type: "geojson", lineMetrics: true, data: toRouteData([]) });
         // Beyaz bir dış hat, rotanın açık renkli döşemeler üzerinde de
         // seçilmesini sağlar (paylaşım görselinde bu belirgin fark yaratıyor).
-        current.addLayer({ id: ROUTE_HALO_LAYER_ID, type: "line", source: ROUTE_SOURCE_ID, paint: { "line-color": HALO_COLOR, "line-width": 9, "line-opacity": 0.9 }, layout: { "line-cap": "round", "line-join": "round" } });
+        // Beyaz dış hat yalnız döşemelerin üstünde işe yarar; harita yokken
+        // sade zeminde görünmez bir kalınlık katmaktan başka bir şey yapmaz.
+        if (basemap) current.addLayer({ id: ROUTE_HALO_LAYER_ID, type: "line", source: ROUTE_SOURCE_ID, paint: { "line-color": HALO_COLOR, "line-width": 9, "line-opacity": 0.9 }, layout: { "line-cap": "round", "line-join": "round" } });
         current.addLayer({ id: ROUTE_LAYER_ID, type: "line", source: ROUTE_SOURCE_ID, paint: { "line-color": ROUTE_COLOR, "line-width": 5 }, layout: { "line-cap": "round", "line-join": "round" } });
 
         current.addSource(MARKER_SOURCE_ID, { type: "geojson", data: toMarkerData([], true) });
@@ -253,8 +276,7 @@ export function GpsMapView({ route, currentPosition = null, interactive = true, 
 
         if (latestRef.current.reveal) {
           // Ortaya çıkarma başlayana kadar çizgi gizli kalsın.
-          current.setPaintProperty(ROUTE_LAYER_ID, "line-gradient", revealGradient(ROUTE_COLOR, ROUTE_COLOR_CLEAR, 0));
-          current.setPaintProperty(ROUTE_HALO_LAYER_ID, "line-gradient", revealGradient(HALO_COLOR, HALO_COLOR_CLEAR, 0));
+          setRevealGradients(current, 0);
         }
 
         readyRef.current = true;
@@ -360,11 +382,10 @@ export function GpsMapView({ route, currentPosition = null, interactive = true, 
       const progress = 1 - Math.pow(1 - linear, 3);
       if (progress >= 1) {
         current.setPaintProperty(ROUTE_LAYER_ID, "line-gradient", solidGradient(ROUTE_COLOR));
-        current.setPaintProperty(ROUTE_HALO_LAYER_ID, "line-gradient", solidGradient(HALO_COLOR));
+        if (current.getLayer(ROUTE_HALO_LAYER_ID)) current.setPaintProperty(ROUTE_HALO_LAYER_ID, "line-gradient", solidGradient(HALO_COLOR));
         return;
       }
-      current.setPaintProperty(ROUTE_LAYER_ID, "line-gradient", revealGradient(ROUTE_COLOR, ROUTE_COLOR_CLEAR, progress));
-      current.setPaintProperty(ROUTE_HALO_LAYER_ID, "line-gradient", revealGradient(HALO_COLOR, HALO_COLOR_CLEAR, progress));
+      setRevealGradients(current, progress);
       animationFrameRef.current = requestAnimationFrame(step);
     };
     step();

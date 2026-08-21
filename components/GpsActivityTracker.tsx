@@ -16,7 +16,7 @@ import { formatDuration, formatPace } from "@/lib/activity-format";
 import { renderShareCard } from "@/lib/share-card";
 import { shareActivityImage } from "@/lib/share-activity";
 import { useTranslations, translateIntensity } from "@/lib/i18n/translate";
-import { GpsMapView, type MapCapture } from "@/components/GpsMapView";
+import { GpsMapView } from "@/components/GpsMapView";
 
 type Phase = "idle" | "unavailable" | "tracking" | "paused" | "summary";
 
@@ -55,8 +55,6 @@ export function GpsActivityTracker({ userId, weightKg = 70, onClose }: { userId:
   const [displaySpeedMps, setDisplaySpeedMps] = useState(0);
   const watcherIdRef = useRef("");
   const hrMonitorRef = useRef<HeartRateMonitor | null>(null);
-  /** Özet haritasının karesini paylaşım görseline aktarmak için. */
-  const mapCaptureRef = useRef<MapCapture | null>(null);
 
   useEffect(() => {
     if (phase !== "tracking") return undefined;
@@ -173,12 +171,12 @@ export function GpsActivityTracker({ userId, weightKg = 70, onClose }: { userId:
     setSharing(true);
     setMessage("");
     try {
-      const mapDataUrl = await mapCaptureRef.current?.capture().catch(() => null);
+      // Özet ekranı artık harita çizmiyor; paylaşım kartı da rotayı kendi
+      // sade zemininin üstüne çizer (bkz. renderShareCard içindeki yedek yol).
       const blob = await renderShareCard({
         title: selectedActivity.name,
         distanceKm,
         durationMs: elapsedMs,
-        mapDataUrl,
         route,
         labels: { pace: t.gpsActivity.sharePace, time: t.gpsActivity.shareTime, distance: t.gpsActivity.shareDistance },
       });
@@ -254,7 +252,11 @@ export function GpsActivityTracker({ userId, weightKg = 70, onClose }: { userId:
     }
   }
 
-  return <section className="gps-tracker" aria-labelledby="gps-tracker-title">
+  // Canlı takipte ekran tam açılır: kaplama/modal çerçevesi kaybolur, harita
+  // ve istatistikler bütün ekranı kaplar (aşağıdaki `:has()` kuralları).
+  const live = phase === "tracking" || phase === "paused";
+
+  return <section className={live ? "gps-tracker gps-tracker-fullscreen" : "gps-tracker"} aria-labelledby="gps-tracker-title">
     <div className="gps-tracker-head">
       <div><div className="eyebrow">{t.gpsActivity.eyebrow}</div><h2 id="gps-tracker-title">{t.gpsActivity.title}</h2></div>
       <button type="button" className="activity-close" onClick={onClose} aria-label={t.gpsActivity.closeLabel}>×</button>
@@ -295,7 +297,8 @@ export function GpsActivityTracker({ userId, weightKg = 70, onClose }: { userId:
     </div>}
 
     {phase === "summary" && <div className="gps-tracker-summary">
-      <GpsMapView reveal route={route} currentPosition={route[route.length - 1] || initialPosition} interactive className="gps-map-view summary" captureRef={mapCaptureRef} />
+      {/* Bitişte harita gösterilmez: yalnız yürünen rotanın çizgisi kalır. */}
+      <GpsMapView reveal basemap={false} interactive={false} route={route} currentPosition={route[route.length - 1] || initialPosition} className="gps-map-view summary" />
       {route.length < 2 && <p className="gps-tracker-route-warning">{t.gpsActivity.routeTooShortHint}</p>}
       <div className="gps-tracker-stats">
         <div><span>{t.gpsActivity.statDuration}</span><strong>{formatDuration(elapsedMs)}</strong></div>

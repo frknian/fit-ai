@@ -83,7 +83,8 @@ test("uygulama kataloğundaki tüm hareketler iki yerel animasyon karesine sahip
   for (const match of core.matchAll(/\{\s*name:\s*"([^"]+)",\s*english:\s*"([^"]+)"/g)) exercises.push([match[1], match[2]]);
   for (const match of additional.matchAll(/^\s*\["([^"]+)",\s*"([^"]+)"/gm)) exercises.push([match[1], match[2]]);
 
-  assert.equal(exercises.length, 181);
+  // 181 idi: aynı hareketin iki kez geçtiği sekiz kayıt tek kayda indirildi.
+  assert.equal(exercises.length, 173);
   for (const [name, english] of exercises) {
     const images = trustedExerciseMedia(name);
     assert.equal(images.length, 2, `${name} için iki hareket karesi bulunmalı`);

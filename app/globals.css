@@ -227,7 +227,7 @@ button,input { font:inherit; } button { cursor:pointer; }
 .workout-session-progress span.active { background:#9dbb39; }.workout-session-progress span.complete { background:#22221f; }.workout-session-progress span.skipped { background:repeating-linear-gradient(90deg,#c9c9c2 0 4px,transparent 4px 7px); }
 .workout-player .timer-card { max-width:none; grid-template-columns:1fr auto; margin:0; }
 .timer-card.phase-rest { background:#24455a; }.timer-card.phase-done { background:#56651c; }
-.set-tracker { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:18px; margin:12px 0 18px; padding:14px 16px; border:1px solid var(--line); border-radius:9px; background:#fbfbf7; }
+.set-tracker { display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:14px; margin:12px 0 18px; padding:14px 16px; border:1px solid var(--line); border-radius:9px; background:#fbfbf7; }
 .set-tracker strong { font-size:17px; }.set-tracker small { color:#8e8e87; font-size:10px; }
 .set-dots { display:flex; gap:7px; }
 .set-dots i { width:11px; height:11px; border:1px solid #c9c9c2; border-radius:50%; background:#fff; }
@@ -261,7 +261,7 @@ button,input { font:inherit; } button { cursor:pointer; }
 .set-log-row input,.set-log-row select { width:100%; height:36px; min-width:0; padding:0 9px; border:1px solid var(--line); border-radius:6px; outline:0; background:var(--surface-elevated); color:var(--ink); font-size:10px; }
 .set-log-row input:focus,.set-log-row select:focus { border-color:#93aa37; box-shadow:0 0 0 2px rgba(147,170,55,.13); }
 .set-input-unit { position:relative; }.set-input-unit input { padding-right:29px; }.set-input-unit i { position:absolute; right:8px; top:50%; color:#999; font-size:8px; font-style:normal; transform:translateY(-50%); }
-.set-status { min-height:36px; padding:0 8px; border:1px solid var(--line); border-radius:6px; background:transparent; color:var(--muted-text); font-size:9px; font-weight:700; }
+.set-status { display:grid; place-items:center; min-height:36px; padding:0 8px; border:1px solid var(--line); border-radius:6px; background:transparent; color:var(--muted-text); font-size:9px; font-weight:700; text-align:center; }
 .set-status.complete { border-color:#bfd667; background:#edf6d2; color:#53651b; }
 .rpe-help { margin:10px 0 0; color:var(--muted-text); font-size:9px; line-height:1.5; }
 .rpe-help strong { color:var(--ink); }
@@ -1241,6 +1241,23 @@ input,select,textarea { color-scheme:inherit; }
 /* Yetersiz GPS noktası: harita boş kalınca sebebi belirsiz olmasın. */
 .gps-tracker-route-warning { margin-top:10px; padding:10px; border:1px dashed var(--line); border-radius:8px; color:var(--muted-text); font-size:10px; text-align:center; }
 .gps-tracker-message { margin-top:10px; font-size:11px; color:var(--muted-text); }
+
+/* Canlı takip tam ekran: koşarken ekrana bakan kişi haritayı ve sayıları
+   uzaktan görebilmeli, modalın 20px'lik çerçevesi ve altındaki bulanık
+   kaplama bu boyutta yalnızca yer yiyordu. Kaplama ve modal yalnız içeride
+   canlı takip varken sıfırlanır; özet/başlangıç adımları modal olarak kalır. */
+.activity-overlay:has(.gps-tracker-fullscreen) { padding:0; place-items:stretch; background:var(--surface); backdrop-filter:none; -webkit-backdrop-filter:none; overflow:hidden; }
+.activity-overlay:has(.gps-tracker-fullscreen) .activity-modal { width:100%; height:100%; max-height:none; border-radius:0; box-shadow:none; overflow:hidden; }
+.gps-tracker-fullscreen {
+  display:flex; flex-direction:column; height:100%; min-height:0;
+  padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+}
+/* Harita artan bütün yeri alır; kontroller ve nabız düğmesi kendi doğal
+   yüksekliğinde altta kalır (`min-height:0` olmadan flex kutusu içeriğinden
+   küçülemez ve harita ekranı taşırır). */
+.gps-tracker-fullscreen .gps-tracker-live { flex:1; min-height:0; display:flex; flex-direction:column; }
+.gps-tracker-fullscreen .gps-tracker-map-wrap { flex:1; min-height:0; margin-top:10px; }
+.gps-tracker-fullscreen .gps-map-view.live { height:100%; margin-top:0; }
 
 /* Hedefit Rota: rota önizleme küçük resmi (liste satırları) */
 .route-preview-thumb-bg { fill:var(--surface-soft); }
@@ -2732,3 +2749,40 @@ h1, h2, h3, .brand, .dashboard h1, .step-content h1, .workout-player h1,
 .activity-intensity-field { display:flex; flex-direction:column; color:var(--muted-text); font-size:8px; font-weight:850; letter-spacing:.8px; }
 .activity-intensity-field .segmented { margin-top:6px; }
 .activity-intensity-field .segmented button { min-height:38px; }
+
+/* --- 23. Kaydırma çubuğu: mobilde gizli --------------------------------- */
+/* Sağda duran gri çubuk ekranı bir web sayfasına benzetiyordu; mobil
+   uygulamalarda kaydırma çubuğu ya hiç yoktur ya da parmak kalkınca kaybolan
+   ince bir katmandır. Çubuk yalnız GÖRSEL olarak kaldırılır — kaydırmanın
+   kendisi, klavye ve erişilebilirlik davranışı değişmez.
+   Kapsam bilerek dar: native uygulama ve dar ekranlar. Masaüstü tarayıcıda
+   çubuk, sayfanın neresinde olduğunu gösteren gerçek bir işarettir. */
+.native-app, .native-app body, .native-app * { scrollbar-width:none; -ms-overflow-style:none; }
+.native-app::-webkit-scrollbar, .native-app *::-webkit-scrollbar { width:0; height:0; display:none; }
+@media (max-width:700px) {
+  html, body, * { scrollbar-width:none; -ms-overflow-style:none; }
+  ::-webkit-scrollbar { width:0; height:0; display:none; }
+}
+
+/* --- 24. Antrenman oynatıcısı: isteğe bağlı set kaydı ve süre sayacı ------ */
+/* Set sayısı antrenman sırasında değişebilir; artı/eksi set şeridinin içinde
+   durur, çünkü değiştirilen şey oradaki sayaçtır. */
+.set-count-control { display:flex; align-items:center; gap:6px; }
+.set-count-control span { margin:0; color:var(--muted-text); font-size:8px; font-weight:800; letter-spacing:1px; text-transform:uppercase; }
+.set-count-control button { display:grid; place-items:center; width:32px; height:32px; padding:0; border:1px solid var(--line); border-radius:50%; background:var(--surface-elevated); color:var(--ink); font-size:15px; font-weight:800; line-height:1; }
+.set-count-control button:disabled { opacity:.35; cursor:not-allowed; }
+.set-count-control button:hover:not(:disabled) { border-color:#9dbb39; }
+/* İki anahtar: "veri girmek istemiyorum" ve "geri sayım istemiyorum". */
+.player-options { display:grid; gap:10px; margin:12px 0; }
+.player-options > div { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border:1px solid var(--line); border-radius:9px; background:var(--surface-soft); }
+.player-options strong { display:block; font-size:11px; }
+.player-options small { display:block; margin-top:3px; max-width:38ch; color:var(--muted-text); font-size:9px; line-height:1.45; }
+.player-options .segmented { flex:0 0 auto; width:140px; margin-top:0; }
+.player-options .segmented button { padding:9px 6px; font-size:10px; }
+.set-autosave-hint { margin:6px 0 0; color:var(--muted-text); font-size:9px; line-height:1.5; }
+@media (max-width:700px) {
+  .set-tracker { grid-template-columns:auto 1fr; row-gap:10px; }
+  .set-tracker .set-count-control,.set-tracker small { grid-column:1/-1; }
+  .player-options > div { flex-direction:column; align-items:stretch; }
+  .player-options .segmented { width:100%; }
+}

@@ -18,7 +18,8 @@ import { ExerciseAnimation as ExerciseFrameAnimation } from "@/components/exerci
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { useTranslations, translateDifficulty, translatePainArea } from "@/lib/i18n/translate";
-import { useLocale } from "@/lib/i18n/locale";
+import { useLocale, type Locale } from "@/lib/i18n/locale";
+import { movementArea, movementName, movementPrescription } from "@/lib/workout-localization";
 import { tr } from "@/lib/i18n/dictionaries/tr";
 import { CalorieTracker } from "@/components/CalorieTracker";
 import { BodyMeasurements } from "@/components/BodyMeasurements";
@@ -55,7 +56,7 @@ import { alternativeExercises } from "@/lib/exercise-alternatives";
 import { canPerformExercise, hasEquipment, hasEquipmentNamed, usableEquipmentText } from "@/lib/equipment-match";
 import { EQUIPMENT_PROFILES, buildReadyProgram, isReplacementCompatible } from "@/lib/ready-programs";
 import { CURRENT_PROFILE_TEST_VERSION, FREE_TEXT_QUESTIONS, QUESTION, QUESTION_COUNT, SINGLE_SELECT_QUESTIONS, emptyHistory, isHistoryComplete, normalizeHistory } from "@/lib/onboarding-questions";
-import { applyPreviousPerformance, buildCompletedExerciseLog, createWorkoutSetDrafts, exerciseLogKey, type CompletedExerciseLog, type PreviousExercisePerformance, type WorkoutSetDraft } from "@/lib/workout-log";
+import { applyPreviousPerformance, applySetDraftPatch, buildCompletedExerciseLog, createWorkoutSetDrafts, exerciseLogKey, resizeWorkoutSetDrafts, type CompletedExerciseLog, type PreviousExercisePerformance, type WorkoutSetDraft } from "@/lib/workout-log";
 import { localTimeKey } from "@/lib/workout-calendar";
 import { localDateKey } from "@/lib/streak";
 import { inferNutritionGoal, inferWorkoutDays } from "@/lib/nutrition-goals";
@@ -65,7 +66,7 @@ import { isVerifiedAuthUser } from "@/lib/auth";
 import { saveProfileWithHistory, signedAvatarUrl } from "@/lib/profile-service";
 import { detectNewPersonalRecords, summarizePersonalRecords, type NewPersonalRecord, type PersonalRecord, type SetLogInput } from "@/lib/personal-records";
 import { formatWeight, unitToKg, type WeightUnit } from "@/lib/units";
-import { appendProgramLog, setStoredCustomPrograms, setStoredGoalPlan, useStoredCustomPrograms, useStoredGoalPlan, useStoredProgramLog, useWeightUnit } from "@/lib/preferences";
+import { appendProgramLog, setStoredCustomPrograms, setStoredGoalPlan, setStoredSetLoggingEnabled, setStoredWorkoutTimerEnabled, useSetLoggingEnabled, useStoredCustomPrograms, useStoredGoalPlan, useStoredProgramLog, useWeightUnit, useWorkoutTimerEnabled } from "@/lib/preferences";
 import { authorizedFetch } from "@/lib/api-client";
 
 // lib/exercise-service.ts, data/exercises.json'ı (873 hareket, ~1 MB ham JSON)
@@ -179,13 +180,10 @@ const additionalExerciseDefinitions: ExerciseDefinition[] = [
   ["Duvar Amudu Bekleme", "Handstand Hold", "Omuz", "purple", ["duvar"], false, ["güç", "kondisyon"], "Duvara kontrollü çık, karnını sık ve omuzlarını aktif tutarak kısa süre bekle."],
   ["Barbell Curl", "Barbell Curl", "Kol", "blue", ["barbell", "bar", "salon"], false, ["güç", "kas"], "Dirsekleri gövdeye sabitle, barı omuzlara doğru kıvırıp yavaşça indir."],
   ["Dambıl Curl", "Dumbbell Curl", "Kol", "blue", ["dambıl"], false, ["güç", "kas"], "Dirsekleri sabit tut, dambılları sırayla omuzlara yaklaştır ve kontrollü bırak."],
-  ["Hammer Curl", "Hammer Curl", "Kol", "blue", ["dambıl"], false, ["güç", "kas"], "Avuç içlerini birbirine bakacak şekilde tut, dirsekleri oynatmadan kaldır."],
   ["Eğimli Dambıl Curl", "Incline Dumbbell Curl", "Kol", "blue", ["dambıl", "bench", "sehpa"], false, ["kas"], "Eğimli sehpada kolları aşağı sarkıt, bicepsleri gererek dambılları kıvır."],
-  ["Concentration Curl", "Concentration Curl", "Kol", "blue", ["dambıl"], false, ["kas"], "Dirseği iç bacağa destekle, dambılı omuza doğru kıvırıp yavaşça aç."],
   ["Kablo Curl", "Cable Curl", "Kol", "blue", ["kablo", "makine", "salon"], false, ["güç", "kas"], "Kabloyu tut, dirsekleri gövdede sabit tutarak elleri omuzlara çek."],
   ["Preacher Curl", "Preacher Curl", "Kol", "blue", ["makine", "bench", "sehpa", "salon"], false, ["kas"], "Kolları pedde sabitle, dirsekleri kilitlemeden ağırlığı yukarı ve aşağı taşı."],
   ["Ters Tutuş Curl", "Reverse Curl", "Kol", "blue", ["barbell", "bar", "dambıl"], false, ["güç", "kas"], "Avuç içlerini yere çevir, bilekleri sabit tutarak ağırlığı kıvır."],
-  ["Triceps Pushdown", "Triceps Pushdown", "Kol", "blue", ["kablo", "makine", "salon"], false, ["güç", "kas"], "Dirsekleri gövdeye sabitle, ön kolları aşağı uzatıp kontrollü yukarı getir."],
   ["İp Triceps Pushdown", "Rope Triceps Pushdown", "Kol", "blue", ["kablo", "makine", "salon"], false, ["güç", "kas"], "İpi aşağı iterken uçları dışa aç, dirsekleri sabit tut."],
   ["Baş Üstü Triceps Extension", "Overhead Triceps Extension", "Kol", "blue", ["dambıl", "kablo"], false, ["güç", "kas"], "Ağırlığı baş üstünde tut, dirsekleri yakın koruyarak arkaya indirip uzat."],
   ["Dambıl Skull Crusher", "Dumbbell Skull Crusher", "Kol", "blue", ["dambıl", "bench", "sehpa"], false, ["kas"], "Dambılları alnın iki yanına kontrollü indir, dirsekleri sabit tutarak uzat."],
@@ -228,10 +226,8 @@ const additionalExerciseDefinitions: ExerciseDefinition[] = [
   ["Reverse Crunch", "Reverse Crunch", "Core", "blue", [], true, ["güç", "kilo"], "Dizleri göğse çek, kalçayı hafif kaldır ve belini yere kontrollü bırak."],
   ["Bicycle Crunch", "Bicycle Crunch", "Core", "blue", [], true, ["güç", "kilo", "kondisyon"], "Karşı dirseği karşı dize yaklaştır, beli yere yakın tutarak taraf değiştir."],
   ["Russian Twist", "Russian Twist", "Core", "blue", ["dambıl", "kettlebell"], false, ["güç", "kilo"], "Gövdeyi hafif geriye al, ağırlığı sağa sola döndürürken kalçayı sabit tut."],
-  ["Side Plank", "Side Plank", "Core", "blue", [], true, ["güç", "kilo"], "Dirseği omuz altına koy, kalçayı kaldır ve vücudu düz çizgide tut."],
   ["Hollow Body Hold", "Hollow Body Hold", "Core", "blue", [], true, ["güç", "kilo"], "Belini zemine bastır, omuz ve bacakları hafif kaldırarak pozisyonu koru."],
   ["V-Up", "V-Up", "Core", "blue", [], true, ["güç", "kilo"], "Kolları ve bacakları aynı anda merkeze getir, kontrollü uzayarak geri dön."],
-  ["Leg Raise", "Leg Raise", "Core", "blue", [], true, ["güç", "kilo"], "Bacakları düz kaldır, belin yerden ayrılmadan yavaşça aşağı indir."],
   ["Hanging Knee Raise", "Hanging Knee Raise", "Core", "blue", ["barfiks", "bar", "salon"], false, ["güç", "kilo"], "Barfiks barında asılı kal, dizleri göğse çekip salınım yapmadan indir."],
   ["Hanging Leg Raise", "Hanging Leg Raise", "Core", "blue", ["barfiks", "bar", "salon"], false, ["güç", "kilo"], "Asılı pozisyonda düz bacakları kaldır, kalçayı kontrollü kullan ve indir."],
   ["Pallof Press", "Pallof Press", "Core", "blue", ["kablo", "band", "lastik", "salon"], false, ["güç"], "Kabloyu göğüs önünde tut, kolları uzatırken gövdenin dönmesine diren."],
@@ -279,12 +275,9 @@ const additionalExerciseDefinitions: ExerciseDefinition[] = [
   ["Dambıl Çekiç Curl", "Dumbbell Hammer Curl", "Kol", "purple", ["dambıl"], false, ["güç", "kas"], "Avuç içlerin birbirine baksın, dirseklerini gövdene sabitle ve ağırlıkları sallanmadan yukarı çek."],
   ["Konsantrasyon Curl", "Concentration Curl", "Kol", "purple", ["dambıl"], false, ["kas"], "Otururken dirseğini iç uyluğuna daya, ağırlığı yalnız ön kolunu bükerek kaldır ve yavaşça indir."],
   ["Kablo Triceps Push-down", "Cable Triceps Pushdown", "Kol", "blue", ["kablo", "makine", "salon"], false, ["güç", "kas"], "Dirseklerini gövdene sabitle, yalnız ön kolunu aşağı doğru uzat ve üst noktaya kontrollü dön."],
-  ["Overhead Triceps Extension", "Overhead Dumbbell Triceps Extension", "Kol", "purple", ["dambıl"], false, ["kas"], "Ağırlığı baş üstünde tut, dirseklerini içeride sabitleyerek arkaya indir ve kaburgalarını açmadan yukarı uzat."],
-  ["Ters Curl", "Reverse Curl", "Kol", "blue", ["dambıl", "barbell", "bar"], false, ["kas"], "Avuç içlerin aşağı baksın, bileklerini düz tutarak ağırlığı kaldır ve kontrollü indir."],
-  ["Bench Dips", "Bench Dips", "Kol", "purple", ["bench", "sehpa"], false, ["güç", "kas"], "Ellerini sehpanın kenarına koy, dirseklerini geriye bükerek kalçanı indir ve omuzlarını kulaklarından uzak tut."],
   ["Bilek Curl", "Wrist Curl", "Kol", "purple", ["dambıl"], false, ["kas"], "Ön kolunu bacağına daya, yalnız bileğini yukarı kıvır ve tam açıklıkta kontrollü indir."],
   ["Yan Plank", "Side Plank", "Core", "blue", [], true, ["güç", "kilo"], "Dirseğini omzunun altına yerleştir, kalçanı yukarıda ve gövdeni tek çizgide tut; boynunu bükme."],
-  ["Bacak Kaldırma", "Lying Leg Raise", "Core", "orange", [], true, ["güç", "kas"], "Sırt üstü yat, ellerini kalçanın altına al ve bacaklarını düz tutarak indir kaldır; belin yerden kalkmasın."],
+  ["Bacak Kaldırma", "Lying Leg Raise", "Core", "orange", [], true, ["güç", "kas", "kilo"], "Sırt üstü yat, ellerini kalçanın altına al ve bacaklarını düz tutarak indir kaldır; belin yerden kalkmasın."],
   ["Barbell Glute Bridge", "Barbell Glute Bridge", "Kalça", "orange", ["barbell","bar","salon"], false, ["güç","kas"], "Barı kalçanın üzerine yerleştir, sırtını yerde tut ve topuklardan iterek kalçanı kaldır; tepede kalçanı sık, beli aşırı kavislendirme."],
   ["Band Kalça Kaldırma", "Hip Lift with Band", "Kalça", "blue", ["band","lastik"], false, ["güç","kilo"], "Bandı kalçanın üzerinden geçir, dizlerini bük ve direnci karşılayarak kalçanı yukarı kaldır; inişte kontrolü bırakma."],
   ["Physioball Kalça Köprüsü", "Physioball Hip Bridge", "Kalça", "orange", ["top","pilates topu"], false, ["güç","kilo"], "Ayaklarını topun üzerine koy, kalçanı kaldırıp omuz-diz hattını kur; top kaymasın diye karnını sıkı tut."],
@@ -395,6 +388,34 @@ const motionGuides: Record<MotionPattern, { action: string; focus: string; start
   "leg-machine": { action: "DİZİ AÇ / BÜK", focus: "Ön veya arka bacak", start: "Kalçanı ve belini mindere sabitle, makine eksenini dizinle hizala.", move: "Dizi kontrollü aç veya bük; hareketi bacak kasıyla yönet.", finish: "Ağırlıkları birbirine çarptırmadan yavaşça başlangıca dön.", breathe: "Zor bölümde nefes ver.", mistake: "Kalçayı minderden kaldırma ve ağırlığı hızla bırakma." },
 };
 
+/**
+ * Aynı kılavuzların İngilizcesi. Uygulama dili İngilizce seçildiğinde
+ * antrenman oynatıcısındaki adımlar, nefes ve hata satırları da İngilizce
+ * olmalı; eskiden bu metinler dilden bağımsız olarak Türkçe çiziliyordu.
+ */
+const motionGuidesEn: Record<MotionPattern, { action: string; focus: string; start: string; move: string; finish: string; breathe: string; mistake: string }> = {
+  "floor-press": { action: "PRESS UP", focus: "Chest · triceps", start: "Lie on your back, bend your knees and hold the dumbbells above your elbows.", move: "Press the dumbbells up over your chest, bringing them slightly together.", finish: "Lower under control without banging your elbows into the floor.", breathe: "Exhale as you press, inhale as you lower.", mistake: "Don't shrug your shoulders or let your wrists bend back." },
+  pushup: { action: "PUSH YOUR BODY", focus: "Chest · shoulders · core", start: "Hands slightly wider than your shoulders, body in a straight line from head to heels.", move: "Bend your elbows to about 45 degrees and lower your chest under control.", finish: "Push the floor away and rise as one piece.", breathe: "Inhale on the way down, exhale on the way up.", mistake: "Don't let your hips sag or your head poke forward." },
+  press: { action: "PRESS FORWARD", focus: "Chest · front delts · triceps", start: "Set your shoulder blades and hold the weight at chest height.", move: "Bend your elbows under control, then press the weight along a straight path.", finish: "Return to the start without locking your arms.", breathe: "Exhale as you press, inhale on the way back.", mistake: "Don't flare your elbows all the way out to shoulder level." },
+  overhead: { action: "PRESS OVERHEAD", focus: "Shoulders · triceps · core", start: "Hold the weights at shoulder height with your ribs down.", move: "Drive the weights up past both sides of your head.", finish: "Lower under control without arching your lower back.", breathe: "Exhale as you press up.", mistake: "Don't increase your lower-back arch or let the weights drift forward." },
+  row: { action: "PULL YOUR ELBOW BACK", focus: "Back · rear delts · biceps", start: "Hinge slightly at the hips, back flat and shoulders down.", move: "Pull your elbow toward your hip and squeeze your shoulder blade.", finish: "Extend your arm slowly without rotating your torso.", breathe: "Exhale as you pull, inhale as you extend.", mistake: "Don't shrug toward your ear or swing the weight." },
+  pulldown: { action: "PULL DOWN", focus: "Lats · back · biceps", start: "Keep your chest up and grip the bar slightly wider than your shoulders.", move: "Drive your elbows down and back to bring the bar to your upper chest.", finish: "Extend your arms under control without letting your shoulders rise.", breathe: "Exhale as you pull the bar down.", mistake: "Don't pull behind your neck or rock your torso back." },
+  squat: { action: "LOWER YOUR HIPS", focus: "Quads · glutes · core", start: "Plant your feet and point your knees the same way as your toes.", move: "Send your hips back and down while keeping your chest up.", finish: "Drive through your heels and squeeze your glutes to stand.", breathe: "Inhale down, exhale up.", mistake: "Don't let your knees cave in or your heels lift." },
+  lunge: { action: "STEP AND LOWER", focus: "Legs · glutes · balance", start: "Keep your feet apart as if on train tracks and your torso tall.", move: "Bend both knees under control and bring the back knee toward the floor.", finish: "Drive through the front heel to return to the start.", breathe: "Inhale down, exhale up.", mistake: "Don't let the front knee drift inward or take too narrow a stance." },
+  hinge: { action: "PUSH YOUR HIPS BACK", focus: "Hamstrings · glutes · back", start: "Soften your knees, keep your spine neutral and the weight close to your legs.", move: "Send your hips back and hinge forward as one piece.", finish: "Push through your heels and squeeze your glutes to stand tall.", breathe: "Inhale on the way down, exhale as you stand.", mistake: "Don't round your back or let the weight drift away from you." },
+  bridge: { action: "LIFT YOUR HIPS", focus: "Glutes · hamstrings · core", start: "Lie on your back, bring your heels close to your hips and keep your lower back neutral.", move: "Push through your heels to lift your hips in line with your shoulders and knees.", finish: "Squeeze at the top and lower under control without over-arching.", breathe: "Exhale as you lift.", mistake: "Don't drive the move from your lower back or let your knees splay out." },
+  plank: { action: "BRACE YOUR BODY", focus: "Core · shoulders · hips", start: "Place your elbows under your shoulders and extend your feet back.", move: "Squeeze your abs and glutes to hold a straight line from head to heels.", finish: "Hold the position for the full time without holding your breath.", breathe: "Take short, steady breaths.", mistake: "Don't let your hips sag or pike up too high." },
+  core: { action: "CONTROL YOUR MIDLINE", focus: "Abs · lower back · hips", start: "Control your lower-back position and keep your ribs down.", move: "Keep your torso still while your arms or legs move.", finish: "Return to the start without losing control.", breathe: "Exhale slowly through the hardest part.", mistake: "Don't trade lower-back control for speed." },
+  cardio: { action: "KEEP THE RHYTHM", focus: "Heart rate · legs · coordination", start: "Stay balanced and soften your knees for the landings.", move: "Move your arms and legs together in a controlled rhythm.", finish: "Keep the rhythm with soft landings.", breathe: "Breathe steadily enough that you could still talk.", mistake: "Don't land hard or speed up out of control." },
+  mobility: { action: "LENGTHEN UNDER CONTROL", focus: "Range of motion · breathing", start: "Keep your spine long and your joints relaxed.", move: "Increase the stretch slowly within a pain-free range.", finish: "Return to the start without bouncing or forcing.", breathe: "Breathe slowly in and out through your nose.", mistake: "Don't push into pain or hold your breath." },
+  curl: { action: "BEND YOUR ELBOW", focus: "Biceps · forearms", start: "Fix your elbows at your sides and keep your wrists straight.", move: "Lift the weight toward your shoulder, bending only at the elbow.", finish: "Squeeze briefly at the top, then lower slowly without swinging.", breathe: "Exhale as you lift, inhale as you lower.", mistake: "Don't drift your elbows forward or rock your torso back." },
+  triceps: { action: "EXTEND YOUR ELBOW", focus: "Triceps · shoulder stability", start: "Fix your upper arm and keep your elbow bent under control.", move: "Extend your forearm to open the elbow and squeeze the triceps.", finish: "Return slowly without letting the elbow move.", breathe: "Exhale as you extend.", mistake: "Don't let your shoulder roll forward or your elbow flare out." },
+  raise: { action: "RAISE YOUR ARM", focus: "Shoulders · upper back", start: "Keep your arms at your sides with a soft bend in the elbows.", move: "Raise the weights to shoulder height under control.", finish: "Keep your shoulders down and lower along the same path.", breathe: "Exhale as you raise.", mistake: "Don't swing the weight or go far above shoulder height." },
+  fly: { action: "CLOSE YOUR ARMS", focus: "Chest · front delts", start: "Open your arms out to the sides with a soft elbow angle.", move: "Squeeze your chest to bring your arms together in a wide arc.", finish: "Open your arms back out slowly without losing shoulder control.", breathe: "Exhale as you close your arms.", mistake: "Don't change your elbow angle or round your shoulders forward." },
+  calf: { action: "RAISE YOUR HEELS", focus: "Calves · ankles", start: "Plant your feet evenly and don't lock your knees.", move: "Drive through the base of your big toe and raise your heels under control.", finish: "Pause briefly at the top, then lower your heels slowly.", breathe: "Exhale as you rise.", mistake: "Don't let your ankles roll out or turn it into a bounce." },
+  "leg-machine": { action: "EXTEND / CURL YOUR KNEE", focus: "Quads or hamstrings", start: "Settle your hips and back into the pad and line the machine axis up with your knee.", move: "Extend or curl your knee under control, driving with your leg muscles.", finish: "Return slowly without clanging the weights together.", breathe: "Exhale through the hardest part.", mistake: "Don't lift your hips off the pad or drop the weight quickly." },
+};
+
 function getMotionPattern(exercise: { name: string; english: string }): MotionPattern {
   // DİKKAT: burada Türkçe küçültme (tr-TR) KULLANILMAZ. Türkçe kuralında büyük
   // "I" noktasız "ı"ya döner ve "Inchworm" → "ınchworm" olarak ASCII kalıplarla
@@ -434,9 +455,33 @@ function getMotionPattern(exercise: { name: string; english: string }): MotionPa
   return "press";
 }
 
-export function getMotionGuide(exercise: { name: string; english: string }) {
-  const guide = motionGuides[getMotionPattern(exercise)];
+export function getMotionGuide(exercise: { name: string; english: string }, locale: Locale = "tr") {
+  const pattern = getMotionPattern(exercise);
+  if (locale === "en") return motionGuidesEn[pattern];
+  const guide = motionGuides[pattern];
   return { ...guide, focus: localizeMotionFocus(guide.focus) };
+}
+
+/**
+ * Hareket açıklamasının seçili dildeki hâli.
+ *
+ * Açıklamalar üç ayrı kaynaktan gelir: uygulamanın kendi kataloğu (Türkçe
+ * cümleler), hareket kütüphanesi (İngilizce) ve AI planı (üretildiği dilde).
+ * İngilizce kipte Türkçe bir cümle göstermemek için sıra şudur: önce
+ * kütüphanedeki hareketin KENDİ İngilizce anlatımı, yoksa hareket adından
+ * türetilen genel İngilizce anlatım (bkz. lib/exercise-translations.ts).
+ */
+export function movementInstructions(exercise: { id?: string; name: string; english?: string; instructions?: string; category?: string }, locale: Locale = "tr") {
+  if (locale !== "en") return exercise.instructions || "";
+  const databaseExercise = exercise.id ? getExerciseById(exercise.id) : null;
+  if (databaseExercise?.instructions.length) return databaseExercise.instructions[0];
+  const generated = turkishExerciseInstructions({
+    name: exercise.english || exercise.name,
+    force: null,
+    category: exercise.category || "strength",
+    primaryMuscles: [],
+  }, "en");
+  return generated[1] || generated[0];
 }
 
 function localizeMotionFocus(value: string) {
@@ -582,6 +627,17 @@ function findLibraryExercise(exercise: { name: string; english: string }) {
   }));
 }
 
+/**
+ * Geçmiş kayıtlarındaki hareket adları KANONİK biçimde (katalogdaki Türkçe ad)
+ * saklanır; ekranda hareket adları her zaman İngilizce gösterildiği için
+ * katalogdaki İngilizce karşılığına çevrilir. Katalogda bulunmayan bir ad (ör.
+ * AI'ın ürettiği ya da kütüphaneden gelen bir hareket) olduğu gibi gösterilir.
+ */
+export function localizeStoredExerciseName(name: string) {
+  const libraryExercise = findLibraryExercise({ name, english: name });
+  return libraryExercise ? libraryExercise.english : name;
+}
+
 function isBodyweightWorkout(exercise: AiWorkout) {
   if (typeof exercise.bodyweight === "boolean") return exercise.bodyweight;
   const databaseExercise = exercise.id ? getExerciseById(exercise.id) : null;
@@ -667,19 +723,20 @@ function AiPlanInsights({ analysis, schedule, progression, fingerprint }: { anal
  */
 function TodaysWorkoutCard({ exercises, level, fallback, onStart, onSeeAll }: { exercises: AiWorkout[]; level: string; fallback: boolean; onStart: () => void; onSeeAll: () => void }) {
   const t = useTranslations();
+  const locale = useLocale();
   if (!exercises.length) return null;
   const preview = exercises.slice(0, 4);
   return <section className="today-workout-card">
     <div className="today-workout-head"><div className="eyebrow">{t.dashboard.todayEyebrow}</div><h2>{t.dashboard.myWorkout(level)}</h2>{fallback && <small className="programs-fallback">{t.programs.smartFallbackNote}</small>}</div>
     <div className="today-workout-list">{preview.map((item, index) => {
-      const guide = getMotionGuide(item);
+      const guide = getMotionGuide(item, locale);
       return <article key={`${item.name}-${index}`} className="today-workout-row">
         <div className="today-workout-row-head">
           <span className="today-workout-icon" aria-hidden="true"><Dumbbell className="size-5" /></span>
-          <div><strong>{item.name}</strong><small>{item.sets}{item.rest ? ` · ${item.rest}` : ""}</small></div>
+          <div><strong>{movementName(item)}</strong><small>{movementPrescription(item.sets, locale)}{item.rest ? ` · ${movementPrescription(item.rest, locale)}` : ""}</small></div>
         </div>
         <details className="how-to"><summary>{t.dashboard.howTo}</summary>
-          <ol className="mini-steps"><li>{guide.start}</li><li>{item.instructions}</li><li>{guide.finish}</li></ol>
+          <ol className="mini-steps"><li>{guide.start}</li><li>{movementInstructions(item, locale)}</li><li>{guide.finish}</li></ol>
         </details>
       </article>;
     })}</div>
@@ -742,7 +799,7 @@ function PersonalRecordsCard({ userId }: { userId?: string }) {
     return () => { cancelled = true; };
   }, [userId]);
 
-  return <section className="pr-panel"><div className="section-title"><div><div className="eyebrow">{t.personalRecords.eyebrow}</div><h2>{t.personalRecords.title}</h2></div>{records.length > 0 && <span className="pr-note">{t.personalRecords.note}</span>}</div>{loading ? <p className="pr-empty">{t.personalRecords.calculating}</p> : records.length === 0 ? <p className="pr-empty">{t.personalRecords.empty}</p> : <><div className="pr-list">{records.map((record) => <article key={record.exerciseKey} className="pr-item"><div className="pr-main"><strong>{record.exerciseName}</strong><small>{t.personalRecords.bestSet(formatWeight(record.bestWeightKg, unit), record.bestReps, record.sessionCount)}</small></div><div className="pr-orm"><b>{formatWeight(record.estimatedOneRepMaxKg, unit)}</b><span>{t.personalRecords.estimatedOneRepMax}</span></div></article>)}</div><p className="pr-disclaimer">{t.personalRecords.disclaimer}</p></>}</section>;
+  return <section className="pr-panel"><div className="section-title"><div><div className="eyebrow">{t.personalRecords.eyebrow}</div><h2>{t.personalRecords.title}</h2></div>{records.length > 0 && <span className="pr-note">{t.personalRecords.note}</span>}</div>{loading ? <p className="pr-empty">{t.personalRecords.calculating}</p> : records.length === 0 ? <p className="pr-empty">{t.personalRecords.empty}</p> : <><div className="pr-list">{records.map((record) => <article key={record.exerciseKey} className="pr-item"><div className="pr-main"><strong>{localizeStoredExerciseName(record.exerciseName)}</strong><small>{t.personalRecords.bestSet(formatWeight(record.bestWeightKg, unit), record.bestReps, record.sessionCount)}</small></div><div className="pr-orm"><b>{formatWeight(record.estimatedOneRepMaxKg, unit)}</b><span>{t.personalRecords.estimatedOneRepMax}</span></div></article>)}</div><p className="pr-disclaimer">{t.personalRecords.disclaimer}</p></>}</section>;
 }
 
 function ProgressView({ name, sessions, referenceTime, energyMetrics, userId, goalText, onOpenActivityLog }: { name: string; sessions: WorkoutSessionRecord[]; referenceTime: number; energyMetrics: EnergyMetrics | null; userId?: string; goalText: string; onOpenActivityLog: () => void }) {
@@ -762,7 +819,7 @@ function ProgressView({ name, sessions, referenceTime, energyMetrics, userId, go
   const weekBuckets = [3, 2, 1, 0].map((weeksAgo) => { const end = referenceTime - weeksAgo * 7 * 24 * 60 * 60 * 1000; const start = end - 7 * 24 * 60 * 60 * 1000; return sessions.filter((session) => { const time = new Date(session.completedAt).getTime(); return time > start && time <= end; }).length; });
   const maxWeek = Math.max(1, ...weekBuckets);
 const dateLocale = locale === "en" ? "en-US" : "tr-TR";
-return <div className="subview"><div className="eyebrow">{t.progress.eyebrow}</div><h1>{t.progress.title(name || t.progress.defaultName)}<em>{t.progress.titleEm}</em></h1><p className="lead">{t.progress.lead}</p><div className="progress-cards"><div><span>{t.progress.thisWeek}</span><strong>{weeklySessions.length}</strong><small>{t.progress.completedWorkouts}</small></div><div><span>{t.progress.totalDuration}</span><strong>{Math.round(totalSeconds / 60)} {locale === "en" ? "min" : "dk"}</strong><small>{sessions.length ? t.progress.allRecords : t.progress.awaitingFirst}</small></div><div><span>{t.progress.energyBurned}</span><strong>{totalCalories} kcal</strong><small>{t.progress.metEstimate}</small></div></div><WeeklyAiReview userId={userId} goalText={goalText} referenceTime={referenceTime} /><StepHistoryCard userId={userId} /><RouteHistoryCard userId={userId} onOpenAll={onOpenActivityLog} /><PersonalRecordsCard userId={userId} /><BodyMeasurements userId={userId} referenceTime={referenceTime} /><section className="monthly-report"><div><div className="eyebrow">{t.progress.monthlyReportEyebrow}</div><h2>{t.progress.monthlySummary(new Intl.DateTimeFormat(dateLocale, { month: "long" }).format(referenceDate))}</h2><p>{t.progress.monthlyDisclaimer}</p><div className="monthly-numbers"><span><strong>{monthlySessions.length}</strong>{t.progress.workoutUnit}</span><span><strong>{monthlyMinutes}</strong>{t.progress.minuteUnit}</span><span><strong>{monthlyCalories}</strong>{t.progress.kcalUnit}</span><span><strong>%{completionRate}</strong>{t.progress.completionUnit}</span></div></div><div className="month-bars" aria-label={t.progress.fourWeekChartLabel}>{weekBuckets.map((count, index) => <div key={index}><span style={{ height: `${Math.max(8, (count / maxWeek) * 100)}%` }} /><small>{t.progress.weekShort(index + 1)}</small><b>{count}</b></div>)}</div></section>{energyMetrics && <div className="energy-reference"><div><span>{t.progress.bmrRef}</span><strong>{energyMetrics.bmr} kcal</strong><small>{t.progress.bmrHint}</small></div><div><span>{t.progress.tdeeRef}</span><strong>{energyMetrics.tdee} kcal</strong><small>{t.progress.tdeeCoefficient(energyMetrics.activityLabel)}</small></div><p>{t.progress.equationNote}</p></div>}<div className="progress-panel"><div className="section-title"><div><div className="eyebrow">{t.progress.logEyebrow}</div><h2>{sessions.length ? t.progress.recentWorkouts : t.progress.createFirst}</h2></div><span className="progress-status">{sessions.length ? t.progress.recordsCount(sessions.length) : t.progress.ready}</span></div>{sessions.length ? <div className="session-list">{sessions.slice(0, 6).map((session) => <article key={session.id}><div><strong>{session.exerciseNames.slice(0, 3).join(" · ") || t.progress.personalWorkout}</strong><small>{new Intl.DateTimeFormat(dateLocale, { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(session.completedAt))}</small>{session.difficulty && <div className="session-feedback"><span>{translateDifficulty(t, session.difficulty)}</span><span>{t.progress.fatigueLabel(session.fatigue || 3)}</span>{session.painAreas?.filter((area) => area !== "Yok").map((area) => <span className="pain" key={area}>{translatePainArea(t, area)}</span>)}</div>}</div><div><b>{Math.max(1, Math.round(session.durationSeconds / 60))} {locale === "en" ? "min" : "dk"}</b><span>{session.calories} kcal · {session.completedExercises}/{session.totalExercises} {t.progress.movementUnit}</span></div></article>)}</div> : <div className="empty-progress"><span>✦</span><p>{t.progress.emptyBody}</p></div>}</div></div>;
+return <div className="subview"><div className="eyebrow">{t.progress.eyebrow}</div><h1>{t.progress.title(name || t.progress.defaultName)}<em>{t.progress.titleEm}</em></h1><p className="lead">{t.progress.lead}</p><div className="progress-cards"><div><span>{t.progress.thisWeek}</span><strong>{weeklySessions.length}</strong><small>{t.progress.completedWorkouts}</small></div><div><span>{t.progress.totalDuration}</span><strong>{Math.round(totalSeconds / 60)} {locale === "en" ? "min" : "dk"}</strong><small>{sessions.length ? t.progress.allRecords : t.progress.awaitingFirst}</small></div><div><span>{t.progress.energyBurned}</span><strong>{totalCalories} kcal</strong><small>{t.progress.metEstimate}</small></div></div><WeeklyAiReview userId={userId} goalText={goalText} referenceTime={referenceTime} /><StepHistoryCard userId={userId} /><RouteHistoryCard userId={userId} onOpenAll={onOpenActivityLog} /><PersonalRecordsCard userId={userId} /><BodyMeasurements userId={userId} referenceTime={referenceTime} /><section className="monthly-report"><div><div className="eyebrow">{t.progress.monthlyReportEyebrow}</div><h2>{t.progress.monthlySummary(new Intl.DateTimeFormat(dateLocale, { month: "long" }).format(referenceDate))}</h2><p>{t.progress.monthlyDisclaimer}</p><div className="monthly-numbers"><span><strong>{monthlySessions.length}</strong>{t.progress.workoutUnit}</span><span><strong>{monthlyMinutes}</strong>{t.progress.minuteUnit}</span><span><strong>{monthlyCalories}</strong>{t.progress.kcalUnit}</span><span><strong>%{completionRate}</strong>{t.progress.completionUnit}</span></div></div><div className="month-bars" aria-label={t.progress.fourWeekChartLabel}>{weekBuckets.map((count, index) => <div key={index}><span style={{ height: `${Math.max(8, (count / maxWeek) * 100)}%` }} /><small>{t.progress.weekShort(index + 1)}</small><b>{count}</b></div>)}</div></section>{energyMetrics && <div className="energy-reference"><div><span>{t.progress.bmrRef}</span><strong>{energyMetrics.bmr} kcal</strong><small>{t.progress.bmrHint}</small></div><div><span>{t.progress.tdeeRef}</span><strong>{energyMetrics.tdee} kcal</strong><small>{t.progress.tdeeCoefficient(energyMetrics.activityLabel)}</small></div><p>{t.progress.equationNote}</p></div>}<div className="progress-panel"><div className="section-title"><div><div className="eyebrow">{t.progress.logEyebrow}</div><h2>{sessions.length ? t.progress.recentWorkouts : t.progress.createFirst}</h2></div><span className="progress-status">{sessions.length ? t.progress.recordsCount(sessions.length) : t.progress.ready}</span></div>{sessions.length ? <div className="session-list">{sessions.slice(0, 6).map((session) => <article key={session.id}><div><strong>{session.exerciseNames.slice(0, 3).map((exerciseName) => localizeStoredExerciseName(exerciseName)).join(" · ") || t.progress.personalWorkout}</strong><small>{new Intl.DateTimeFormat(dateLocale, { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(session.completedAt))}</small>{session.difficulty && <div className="session-feedback"><span>{translateDifficulty(t, session.difficulty)}</span><span>{t.progress.fatigueLabel(session.fatigue || 3)}</span>{session.painAreas?.filter((area) => area !== "Yok").map((area) => <span className="pain" key={area}>{translatePainArea(t, area)}</span>)}</div>}</div><div><b>{Math.max(1, Math.round(session.durationSeconds / 60))} {locale === "en" ? "min" : "dk"}</b><span>{session.calories} kcal · {session.completedExercises}/{session.totalExercises} {t.progress.movementUnit}</span></div></article>)}</div> : <div className="empty-progress"><span>✦</span><p>{t.progress.emptyBody}</p></div>}</div></div>;
 }
 
 function PersonalRecordCelebration({ records, unit, onDismiss }: { records: NewPersonalRecord[]; unit: WeightUnit; onDismiss: () => void }) {
@@ -774,11 +831,11 @@ function PersonalRecordCelebration({ records, unit, onDismiss }: { records: NewP
       <button type="button" aria-label={t.personalRecordCelebration.dismiss} onClick={onDismiss}>×</button>
     </div>
     <ul>{records.map((record) => <li key={record.exerciseKey}>
-      <strong>{record.exerciseName}</strong>
+      <strong>{localizeStoredExerciseName(record.exerciseName)}</strong>
       <span>{t.personalRecordCelebration.setDetail(formatWeight(record.weightKg, unit, { withUnit: true }), record.reps)}</span>
       <small>{record.isFirstRecord
-        ? t.personalRecordCelebration.firstRecord(record.exerciseName)
-        : t.personalRecordCelebration.beatenRecord(record.exerciseName, formatWeight(record.previousOneRepMaxKg, unit, { withUnit: true }), formatWeight(record.estimatedOneRepMaxKg, unit, { withUnit: true }))}</small>
+        ? t.personalRecordCelebration.firstRecord(localizeStoredExerciseName(record.exerciseName))
+        : t.personalRecordCelebration.beatenRecord(localizeStoredExerciseName(record.exerciseName), formatWeight(record.previousOneRepMaxKg, unit, { withUnit: true }), formatWeight(record.estimatedOneRepMaxKg, unit, { withUnit: true }))}</small>
     </li>)}</ul>
   </section>;
 }
@@ -883,6 +940,10 @@ export default function Home() {
   const [isPremium, setIsPremium] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false);
   const weightUnit = useWeightUnit();
+  // Set kaydı ve süre sayacı isteğe bağlı (bkz. lib/preferences.ts): ikisi de
+  // varsayılan açık, kapatan kullanıcı yalnız hareket listesini takip eder.
+  const setLoggingEnabled = useSetLoggingEnabled();
+  const timerEnabled = useWorkoutTimerEnabled();
   // Hedef planı cevapları (hedef kilo, haftalık gün, seans süresi, tempo)
   // plan istemine de gider: kullanıcı "haftada 3 gün 45 dk ağır" dediyse
   // program da o tempoya göre kurulmalı.
@@ -914,7 +975,7 @@ export default function Home() {
     [onDashboard, adaptation, aiWorkouts, localPlan],
   );
   const currentWorkout = activeWorkout === null ? null : playerQueue[activeWorkout] || null;
-  const currentGuide = currentWorkout ? getMotionGuide(currentWorkout) : null;
+  const currentGuide = currentWorkout ? getMotionGuide(currentWorkout, locale) : null;
   const currentPrescription = currentWorkout ? workoutPrescription(currentWorkout) : null;
   const currentWorkoutKey = currentWorkout ? exerciseLogKey(currentWorkout.name) : "";
   const currentSetDrafts = activeWorkout === null ? [] : exerciseSetDrafts[activeWorkout] || [];
@@ -1274,18 +1335,18 @@ export default function Home() {
   // kaldırıldı. Gezinme artık alt sekme çubuğunda sabit beş sütun (bkz.
   // components/layout/AppShell.tsx); kaydırılacak bir şerit yok.
 
+  // Saniyelik sayaç iki işi birden yapar: geri sayım ve seans süresi/kalori
+  // birikimi. Süre sayacı kapalıyken geri sayım YOK, ama antrenman ekranı
+  // açık olduğu sürece seans süresi ve kalori işlemeye devam eder — aksi
+  // hâlde kaydedilen antrenman "1 saniye" olarak düşerdi.
   useEffect(() => {
-    if (!isRunning || !currentWorkout) return;
+    if (!currentWorkout) return;
+    const counting = timerEnabled ? isRunning : workoutPhase !== "done";
+    if (!counting) return;
     const interval = window.setInterval(() => {
-      setTimer((current) => {
+      if (timerEnabled) setTimer((current) => {
         if (current > 1) return current - 1;
         const prescription = workoutPrescription(currentWorkout);
-        if (workoutPhase === "work" && activeWorkout !== null) {
-          setExerciseSetDrafts((drafts) => ({
-            ...drafts,
-            [activeWorkout]: (drafts[activeWorkout] || []).map((set) => set.setNumber === currentSet ? { ...set, completed: true } : set),
-          }));
-        }
         if (workoutPhase === "work" && currentSet < prescription.totalSets) {
           setWorkoutPhase("rest");
           return prescription.restSeconds;
@@ -1311,7 +1372,7 @@ export default function Home() {
       });
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [activeWorkout, aiAnalysis?.intensity, currentSet, currentWorkout, isRunning, weight, workoutPhase]);
+  }, [activeWorkout, aiAnalysis?.intensity, currentSet, currentWorkout, isRunning, timerEnabled, weight, workoutPhase]);
 
   // Kullanıcının ekipmanına ve ağrı kısıtlarına uyan, aynı bölgeyi çalıştıran
   // alternatifler (bkz. lib/exercise-alternatives.ts).
@@ -1332,6 +1393,29 @@ export default function Home() {
     // Taslaklar hareketin kendisine bağlı; değişince sıfırdan kurulmalı.
     setExerciseSetDrafts((current) => ({ ...current, [activeWorkout]: createWorkoutSetDrafts(prescription.totalSets, prescription.target) }));
     setSwapOpen(false);
+  }
+
+  /**
+   * Antrenman sırasında set sayısını değiştirir.
+   *
+   * Reçete metni ("3 set · 10 tekrar") planın kendi verisidir; sayıyı orada
+   * güncellemek hem ilerleme noktalarını hem de kayıt tablosunu tek kaynaktan
+   * tutarlı tutar. Ayrı bir "geçici set sayısı" durumu tutmak ikisini
+   * birbirinden ayırıp tutarsızlığa açık hâle getirirdi.
+   */
+  function changeSetCount(delta: number) {
+    if (activeWorkout === null || !currentWorkout) return;
+    const prescription = workoutPrescription(currentWorkout);
+    const nextTotal = Math.min(20, Math.max(1, prescription.totalSets + delta));
+    if (nextTotal === prescription.totalSets) return;
+    const nextSets = currentWorkout.sets.replace(/^\s*\d+/, String(nextTotal));
+    setPlayerQueue((queue) => queue.map((item, index) => index === activeWorkout ? { ...item, sets: nextSets } : item));
+    setExerciseSetDrafts((current) => ({
+      ...current,
+      [activeWorkout]: resizeWorkoutSetDrafts(current[activeWorkout] || [], nextTotal, prescription.target),
+    }));
+    // Silinen setlerin ötesinde kalan aktif set geri çekilir.
+    setCurrentSet((set) => Math.min(set, nextTotal));
   }
 
   // Kısayoldan gelen gezinme: önce görünüm değişir, sonra hedef bölüm görünür
@@ -1371,7 +1455,9 @@ export default function Home() {
   function updateExerciseSetDraft(exerciseIndex: number, setNumber: number, patch: Partial<Omit<WorkoutSetDraft, "setNumber">>) {
     setExerciseSetDrafts((current) => ({
       ...current,
-      [exerciseIndex]: (current[exerciseIndex] || []).map((set) => set.setNumber === setNumber ? { ...set, ...patch } : set),
+      // Kaydet düğmesi yok: değer yazıldığı anda set kaydedilmiş sayılır
+      // (bkz. lib/workout-log.ts applySetDraftPatch).
+      [exerciseIndex]: (current[exerciseIndex] || []).map((set) => set.setNumber === setNumber ? applySetDraftPatch(set, patch) : set),
     }));
   }
 
@@ -1395,8 +1481,17 @@ export default function Home() {
       setTimer(prescription.workSeconds);
       return;
     }
-    updateExerciseSetDraft(activeWorkout, currentSet, { completed: true });
+    // Set "tamamlandı" diye işaretlenmez: kayda giren şey kullanıcının
+    // gerçekten yazdığı değerdir (bkz. applySetDraftPatch). Boş bırakılan set
+    // antrenmanı tamamlamayı engellemez, yalnızca kaydedilmez.
     if (currentSet < prescription.totalSets) {
+      // Süre sayacı kapalıyken beklenecek bir geri sayım yok; doğrudan
+      // sonraki sete geçilir.
+      if (!timerEnabled) {
+        setCurrentSet((set) => set + 1);
+        setTimer(0);
+        return;
+      }
       setWorkoutPhase("rest");
       setTimer(prescription.restSeconds);
       return;
@@ -1951,15 +2046,36 @@ export default function Home() {
             <button className="back-btn" type="button" onClick={() => { setIsRunning(false); setActiveWorkout(null); }}>{t.workoutPlayer.backToPlan}</button>
             <div className="workout-session-progress" aria-label={t.workoutPlayer.progressLabel}>{playerQueue.map((exercise, index) => <span key={`${exercise.name}-${index}`} className={completedExercises.includes(index) ? "complete" : skippedExercises.includes(index) ? "skipped" : index === activeWorkout ? "active" : ""} />)}</div>
             <ExerciseAnimation exercise={currentWorkout} />
-            <div className="player-title-row"><div><div className="eyebrow">{t.workoutPlayer.movementLabel(activeWorkout + 1, playerQueue.length)}</div><h1>{currentWorkout.name}</h1></div><span className={`phase-badge ${workoutPhase}`}>{workoutPhase === "rest" ? t.workoutPlayer.phaseRest : workoutPhase === "done" ? t.workoutPlayer.phaseDone : t.workoutPlayer.phaseSet(currentSet, currentPrescription.totalSets)}</span><button type="button" className="swap-trigger" onClick={() => setSwapOpen((open) => !open)} aria-expanded={swapOpen}>{t.exerciseSwap.trigger}</button></div>
-            {swapOpen && <div className="swap-panel"><div className="eyebrow">{t.exerciseSwap.title}</div><p>{t.exerciseSwap.hint}</p>{swapOptions.length ? <div className="swap-options">{swapOptions.map((option) => <button type="button" key={option.name} onClick={() => swapCurrentExercise(option.name)}>{option.name} <small>{option.area}</small></button>)}</div> : <p className="swap-empty">{t.exerciseSwap.empty}</p>}<button type="button" className="swap-cancel" onClick={() => setSwapOpen(false)}>{t.exerciseSwap.cancel}</button></div>}
-            <div className="movement-guide"><div className="guide-heading"><span>{t.workoutPlayer.guideHeading}</span><strong>{currentGuide.focus}</strong></div><ol><li>{currentGuide.start}</li><li>{currentWorkout.instructions}</li><li>{currentGuide.finish}</li></ol></div>
+            <div className="player-title-row"><div><div className="eyebrow">{t.workoutPlayer.movementLabel(activeWorkout + 1, playerQueue.length)}</div><h1>{movementName(currentWorkout)}</h1></div><span className={`phase-badge ${workoutPhase}`}>{workoutPhase === "rest" ? t.workoutPlayer.phaseRest : workoutPhase === "done" ? t.workoutPlayer.phaseDone : t.workoutPlayer.phaseSet(currentSet, currentPrescription.totalSets)}</span><button type="button" className="swap-trigger" onClick={() => setSwapOpen((open) => !open)} aria-expanded={swapOpen}>{t.exerciseSwap.trigger}</button></div>
+            {swapOpen && <div className="swap-panel"><div className="eyebrow">{t.exerciseSwap.title}</div><p>{t.exerciseSwap.hint}</p>{swapOptions.length ? <div className="swap-options">{swapOptions.map((option) => <button type="button" key={option.name} onClick={() => swapCurrentExercise(option.name)}>{movementName(option)} <small>{movementArea(option.area, locale)}</small></button>)}</div> : <p className="swap-empty">{t.exerciseSwap.empty}</p>}<button type="button" className="swap-cancel" onClick={() => setSwapOpen(false)}>{t.exerciseSwap.cancel}</button></div>}
+            <div className="movement-guide"><div className="guide-heading"><span>{t.workoutPlayer.guideHeading}</span><strong>{currentGuide.focus}</strong></div><ol><li>{currentGuide.start}</li><li>{movementInstructions(currentWorkout, locale)}</li><li>{currentGuide.finish}</li></ol></div>
             <div className="form-cues"><div><span>{t.workoutPlayer.breatheLabel}</span><strong>{currentGuide.breathe}</strong></div><div className="warning"><span>{t.workoutPlayer.mistakeLabel}</span><strong>{currentGuide.mistake}</strong></div></div>
-            <div className={`timer-card phase-${workoutPhase}`}><span>{isRunning ? workoutPhase === "rest" ? t.workoutPlayer.timerActiveRest : t.workoutPlayer.timerActiveSet : workoutPhase === "done" ? t.workoutPlayer.timerDoneLabel : workoutPhase === "rest" ? t.workoutPlayer.timerReadyRest : t.workoutPlayer.timerReady}</span><strong>{formatClock(timer)}</strong><small>{workoutPhase === "rest" ? t.workoutPlayer.nextSet(Math.min(currentSet + 1, currentPrescription.totalSets)) : t.workoutPlayer.targetSummary(currentPrescription.target, displayedSessionCalories)}</small></div>
-            <div className="set-tracker"><div><span>{t.workoutPlayer.setsLabel}</span><strong>{currentSet} / {currentPrescription.totalSets}</strong></div><div className="set-dots">{Array.from({ length: currentPrescription.totalSets }, (_, index) => <i key={index} className={index + 1 < currentSet || workoutPhase === "done" ? "complete" : index + 1 === currentSet ? "active" : ""} />)}</div><small>{currentWorkout.rest}</small></div>
-            <WorkoutSetLogger exerciseName={currentWorkout.name} activeSet={currentSet} isBodyweight={currentIsBodyweight} sets={currentSetDrafts} previous={currentPreviousPerformance} loadingPrevious={Boolean(currentWorkoutKey) && !(currentWorkoutKey in previousPerformances)} unit={weightUnit} onChange={(setNumber, patch) => activeWorkout !== null && updateExerciseSetDraft(activeWorkout, setNumber, patch)} />
+            {/* Antrenman ayarları: ikisi de cihazda saklanır, plana dokunmaz. */}
+            <div className="player-options" role="group" aria-label={t.workoutPlayer.optionsLabel}>
+              <div>
+                <div><strong>{t.workoutPlayer.setLogToggle}</strong><small>{t.workoutPlayer.setLogToggleHint}</small></div>
+                <div className="segmented">
+                  <button type="button" aria-pressed={setLoggingEnabled} className={setLoggingEnabled ? "selected" : ""} onClick={() => setStoredSetLoggingEnabled(true)}>{t.workoutPlayer.optionOn}</button>
+                  <button type="button" aria-pressed={!setLoggingEnabled} className={setLoggingEnabled ? "" : "selected"} onClick={() => setStoredSetLoggingEnabled(false)}>{t.workoutPlayer.optionOff}</button>
+                </div>
+              </div>
+              <div>
+                <div><strong>{t.workoutPlayer.timerToggle}</strong><small>{t.workoutPlayer.timerToggleHint}</small></div>
+                <div className="segmented">
+                  <button type="button" aria-pressed={timerEnabled} className={timerEnabled ? "selected" : ""} onClick={() => setStoredWorkoutTimerEnabled(true)}>{t.workoutPlayer.optionOn}</button>
+                  <button type="button" aria-pressed={!timerEnabled} className={timerEnabled ? "" : "selected"} onClick={() => { setStoredWorkoutTimerEnabled(false); setIsRunning(false); }}>{t.workoutPlayer.optionOff}</button>
+                </div>
+              </div>
+            </div>
+            {timerEnabled && <div className={`timer-card phase-${workoutPhase}`}><span>{isRunning ? workoutPhase === "rest" ? t.workoutPlayer.timerActiveRest : t.workoutPlayer.timerActiveSet : workoutPhase === "done" ? t.workoutPlayer.timerDoneLabel : workoutPhase === "rest" ? t.workoutPlayer.timerReadyRest : t.workoutPlayer.timerReady}</span><strong>{formatClock(timer)}</strong><small>{workoutPhase === "rest" ? t.workoutPlayer.nextSet(Math.min(currentSet + 1, currentPrescription.totalSets)) : t.workoutPlayer.targetSummary(movementPrescription(currentPrescription.target, locale), displayedSessionCalories)}</small></div>}
+            {/* Set sayısı antrenman sırasında değiştirilebilir; şeridin kendisi
+                hem sayacı hem kayıt tablosunu besleyen tek kaynak. */}
+            <div className="set-tracker"><div><span>{t.workoutPlayer.setsLabel}</span><strong>{currentSet} / {currentPrescription.totalSets}</strong></div><div className="set-dots">{Array.from({ length: currentPrescription.totalSets }, (_, index) => <i key={index} className={index + 1 < currentSet || workoutPhase === "done" ? "complete" : index + 1 === currentSet ? "active" : ""} />)}</div><div className="set-count-control"><button type="button" aria-label={t.setLogger.removeSet} disabled={currentPrescription.totalSets <= 1} onClick={() => changeSetCount(-1)}>−</button><span>{t.setLogger.setCountLabel}</span><button type="button" aria-label={t.setLogger.addSet} disabled={currentPrescription.totalSets >= 20} onClick={() => changeSetCount(1)}>+</button></div><small>{movementPrescription(currentWorkout.rest, locale)}</small></div>
+            {setLoggingEnabled && <WorkoutSetLogger exerciseName={movementName(currentWorkout)} activeSet={currentSet} isBodyweight={currentIsBodyweight} sets={currentSetDrafts} previous={currentPreviousPerformance} loadingPrevious={Boolean(currentWorkoutKey) && !(currentWorkoutKey in previousPerformances)} unit={weightUnit} onChange={(setNumber, patch) => activeWorkout !== null && updateExerciseSetDraft(activeWorkout, setNumber, patch)} />}
             <div className="player-tools"><button type="button" onClick={() => activeWorkout > 0 && goToWorkout(activeWorkout - 1)} disabled={activeWorkout === 0}>{t.workoutPlayer.previousLabel}</button>{workoutPhase !== "done" && <button type="button" onClick={completeCurrentPhase}>{workoutPhase === "rest" ? t.workoutPlayer.skipRest : t.workoutPlayer.completeSet}</button>}<button type="button" onClick={skipExercise}>{t.workoutPlayer.skipExercise}</button></div>
-            <div className="player-actions"><button className="start-btn" type="button" onClick={() => workoutPhase === "done" ? activeWorkout < playerQueue.length - 1 ? goToWorkout(activeWorkout + 1) : void finishWorkout() : setIsRunning((running) => !running)}>{workoutPhase === "done" ? activeWorkout < playerQueue.length - 1 ? t.workoutPlayer.nextExercise : t.workoutPlayer.saveWorkout : isRunning ? t.workoutPlayer.pause : workoutPhase === "rest" ? t.workoutPlayer.startRest : t.workoutPlayer.startSet} <span>→</span></button></div>
+            {/* Süre sayacı kapalıyken başlat/duraklat anlamsız: ana eylem
+                doğrudan seti tamamlamak olur. */}
+            <div className="player-actions"><button className="start-btn" type="button" onClick={() => workoutPhase === "done" ? activeWorkout < playerQueue.length - 1 ? goToWorkout(activeWorkout + 1) : void finishWorkout() : timerEnabled ? setIsRunning((running) => !running) : completeCurrentPhase()}>{workoutPhase === "done" ? activeWorkout < playerQueue.length - 1 ? t.workoutPlayer.nextExercise : t.workoutPlayer.saveWorkout : !timerEnabled ? t.workoutPlayer.completeSet : isRunning ? t.workoutPlayer.pause : workoutPhase === "rest" ? t.workoutPlayer.startRest : t.workoutPlayer.startSet} <span>→</span></button></div>
             <button className="finish-btn" type="button" onClick={() => void finishWorkout()}>{t.workoutPlayer.finishAndSave}</button>
           </div> : activeView === "workout" ? <>
           {/* Antrenman sekmesi tek kavram üzerine kuruldu: PROGRAM. Eskiden

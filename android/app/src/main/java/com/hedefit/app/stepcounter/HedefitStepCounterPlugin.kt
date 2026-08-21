@@ -65,6 +65,23 @@ class HedefitStepCounterPlugin : Plugin() {
         call.resolve()
     }
 
+    /** Günlük hedefi yazar ve bildirimi (servis çalışıyorsa) hemen tazeler. */
+    @PluginMethod
+    fun setGoal(call: PluginCall) {
+        val goal = call.getInt("goal") ?: 0
+        if (goal <= 0) { call.reject("Geçersiz hedef"); return }
+        context.getSharedPreferences(StepCounterService.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            .edit().putInt(StepCounterService.KEY_GOAL, goal).apply()
+        // Bildirim yalnız servis ZATEN çalışıyorsa tazelenir; durmuş bir
+        // servisi buradan başlatmak (Android 12+ arka plan kısıtı) hem yasak
+        // hem de kullanıcı bildirimi kapatmışken istenmeyen bir şey olurdu.
+        if (StepCounterService.isRunning) {
+            val intent = Intent(context, StepCounterService::class.java).setAction(StepCounterService.ACTION_REFRESH)
+            runCatching { context.startService(intent) }
+        }
+        call.resolve()
+    }
+
     @PluginMethod
     fun getTodaySteps(call: PluginCall) {
         val result = JSObject()

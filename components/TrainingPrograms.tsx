@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Check, RefreshCw, X } from "lucide-react";
-import { ExerciseAnimation, exerciseLibrary, catalogItemToWorkout, getMotionGuide, type AiWorkout, type CatalogItem } from "@/components/FitAiApp";
+import { ExerciseAnimation, exerciseLibrary, catalogItemToWorkout, getMotionGuide, movementInstructions, type AiWorkout, type CatalogItem } from "@/components/FitAiApp";
 import { OnboardingIcon } from "@/components/onboarding/OnboardingIcon";
 import { alternativeExercises } from "@/lib/exercise-alternatives";
 import { setStoredSmartProgramSwaps, useStoredSmartProgramSwaps } from "@/lib/preferences";
@@ -25,6 +25,8 @@ import {
   type TrainingPlace,
 } from "@/lib/training-programs";
 import { useTranslations } from "@/lib/i18n/translate";
+import { useLocale } from "@/lib/i18n/locale";
+import { movementArea, movementName, movementPrescription } from "@/lib/workout-localization";
 
 // Bölgesel programın seçenekleri; katalogdaki gerçek `area` değerleri.
 const BODY_REGIONS = ["Göğüs", "Sırt", "Bacak", "Kalça", "Omuz", "Kol", "Core"] as const;
@@ -57,6 +59,7 @@ export function TrainingPrograms({
   smartFallback?: boolean;
 }) {
   const t = useTranslations();
+  const locale = useLocale();
   const [selection, setSelection] = useState<Selection | null>(null);
   const [builderId, setBuilderId] = useState<string | null>(null);
   const place: TrainingPlace = isGym ? "gym" : "home";
@@ -199,7 +202,7 @@ export function TrainingPrograms({
         {/* Hareket anlatımı listede kalır: kullanıcı başlamadan önce ne
             yapacağını görebilmeli, oynatıcıya girmek zorunda kalmamalı. */}
         <div className="program-exercise-list">{list.map((item, index) => {
-          const guide = getMotionGuide(item);
+          const guide = getMotionGuide(item, locale);
           // "item" akıllı programda değiştirilmiş hareketi taşır; hangi
           // orijinal hareketin YERİNE geçtiğini bilmek için asıl listeye
           // bakılır — aksi hâlde ikinci bir değişiklikte yanlış bölge
@@ -213,7 +216,7 @@ export function TrainingPrograms({
             <ExerciseAnimation exercise={item} compact autoplay={false} />
             <div>
               <div className="program-exercise-head">
-                <strong>{item.name}</strong>
+                <strong>{movementName(item)}</strong>
                 {/* Yalnız akıllı programda: AI aynı listeyi her gün tekrarlar,
                     kullanıcı tekrar hissettiği hareketi burada değiştirebilir.
                     Değişiklik otomatik olarak kalıcı tercihe kaydedilir. */}
@@ -224,10 +227,10 @@ export function TrainingPrograms({
                   onClick={() => setSwapOpenFor(swapOpenFor === index ? null : index)}
                 ><RefreshCw size={12} />{isSwapped ? t.exerciseSwap.activeBadge : t.exerciseSwap.trigger}</button>}
               </div>
-              <small>{item.area} · {item.sets} · {item.rest}</small>
-              {selection.kind === "smart" && justSwappedName === item.name && <small className="swap-confirm"><Check size={11} />{t.exerciseSwap.swapped(item.name)}</small>}
+              <small>{movementArea(item.area, locale)} · {movementPrescription(item.sets, locale)} · {movementPrescription(item.rest, locale)}</small>
+              {selection.kind === "smart" && justSwappedName === item.name && <small className="swap-confirm"><Check size={11} />{t.exerciseSwap.swapped(movementName(item))}</small>}
               <details className="how-to"><summary>{t.dashboard.howTo}</summary>
-                <ol className="mini-steps"><li>{guide.start}</li><li>{item.instructions}</li><li>{guide.finish}</li></ol>
+                <ol className="mini-steps"><li>{guide.start}</li><li>{movementInstructions(item, locale)}</li><li>{guide.finish}</li></ol>
               </details>
               {selection.kind === "smart" && swapOpenFor === index && <div className="swap-panel">
                 <div className="swap-panel-head">
@@ -237,14 +240,14 @@ export function TrainingPrograms({
                 <p>{t.exerciseSwap.hint}</p>
                 {isSwapped && <div className="swap-current">
                   <span>{t.exerciseSwap.currentlyLabel}</span>
-                  <strong>{item.name}</strong>
+                  <strong>{movementName(item)}</strong>
                   <button type="button" onClick={() => revertSwap(index)}>{t.exerciseSwap.revert}</button>
                 </div>}
                 {alternatives.length ? <div className="swap-options">{alternatives.map((option) => {
                   const isCurrent = option.name === item.name;
                   return <button type="button" key={option.name} className={isCurrent ? "selected" : ""} onClick={() => applySwap(index, option)}>
                     <span className="swap-option-icon" data-tone={option.tone}>{option.icon}</span>
-                    <span className="swap-option-copy"><strong>{option.name}</strong><small>{option.area}</small></span>
+                    <span className="swap-option-copy"><strong>{movementName(option)}</strong><small>{movementArea(option.area, locale)}</small></span>
                     {isCurrent && <Check size={14} />}
                   </button>;
                 })}</div> : <p className="swap-empty">{t.exerciseSwap.empty}</p>}
@@ -334,6 +337,7 @@ function CustomProgramBuilder({ slotId, initial, onSave, onCancel, onDelete }: {
   onDelete?: () => void;
 }) {
   const t = useTranslations();
+  const locale = useLocale();
   const [name, setName] = useState(initial?.name ?? "");
   const [picked, setPicked] = useState<ProgramExercise[]>(initial?.exercises ?? []);
   const [query, setQuery] = useState("");
@@ -379,7 +383,7 @@ function CustomProgramBuilder({ slotId, initial, onSave, onCancel, onDelete }: {
       <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.programs.searchPlaceholder} aria-label={t.programs.searchPlaceholder} />
       <select value={area} onChange={(event) => setArea(event.target.value)} aria-label={t.programs.areaFilter}>
         <option value="">{t.programs.allAreas}</option>
-        {[...new Set(exerciseLibrary.map((item) => item.area))].sort((a, b) => a.localeCompare(b, "tr")).map((value) => <option key={value} value={value}>{value}</option>)}
+        {[...new Set(exerciseLibrary.map((item) => item.area))].sort((a, b) => a.localeCompare(b, "tr")).map((value) => <option key={value} value={value}>{movementArea(value, locale)}</option>)}
       </select>
     </div>
 
@@ -387,7 +391,7 @@ function CustomProgramBuilder({ slotId, initial, onSave, onCancel, onDelete }: {
     <div className="program-picker">{results.map((item) => {
       const selected = pickedNames.has(item.name);
       return <button type="button" key={item.name} aria-pressed={selected} className={selected ? "program-pick selected" : "program-pick"} onClick={() => toggle(item.name)}>
-        <strong>{item.name}</strong><small>{item.area}</small>
+        <strong>{movementName(item)}</strong><small>{movementArea(item.area, locale)}</small>
       </button>;
     })}</div>
 
@@ -401,7 +405,7 @@ function CustomProgramBuilder({ slotId, initial, onSave, onCancel, onDelete }: {
       <ol className="program-prescription-list">
         {picked.map((exercise, index) => <li key={exercise.name}>
           <div className="program-prescription-title">
-            <b>{index + 1}. {exercise.name}</b>
+            <b>{index + 1}. {movementName(exercise)}</b>
             <div className="program-prescription-order">
               <button type="button" aria-label={t.programs.moveUp} disabled={index === 0} onClick={() => move(index, -1)}>↑</button>
               <button type="button" aria-label={t.programs.moveDown} disabled={index === picked.length - 1} onClick={() => move(index, 1)}>↓</button>

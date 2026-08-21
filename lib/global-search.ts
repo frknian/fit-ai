@@ -13,6 +13,8 @@
 // Böylece iki dilde de test edilebilir ve i18n bağımlılığı taşımaz.
 
 import { getExerciseByIndex, searchExerciseIndexes } from "./exercise-service.ts";
+import { translateExerciseLabel } from "./exercise-translations.ts";
+import type { Locale } from "@/lib/i18n/locale";
 import { programExerciseNames, type CustomProgram } from "./training-programs.ts";
 import type { AppView } from "./quick-actions.ts";
 
@@ -76,7 +78,7 @@ export function matchScore(haystack: string, needle: string): number {
  */
 export function globalSearch(
   query: string,
-  { programs = [], views = [], limit = MAX_SEARCH_RESULTS }: { programs?: CustomProgram[]; views?: ViewSearchEntry[]; limit?: number } = {},
+  { programs = [], views = [], limit = MAX_SEARCH_RESULTS, locale = "tr" }: { programs?: CustomProgram[]; views?: ViewSearchEntry[]; limit?: number; locale?: Locale } = {},
 ): GlobalSearchResult[] {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
@@ -111,7 +113,9 @@ export function globalSearch(
         kind: "exercise",
         id: `exercise:${exercise.id}`,
         title: exercise.name,
-        subtitle: [exercise.primaryMuscles[0], exercise.equipment].filter(Boolean).join(" · "),
+        // Kas grubu ve ekipman katalogda İngilizce saklanır; alt satır her
+        // zaman uygulamanın dilinde okunmalı.
+        subtitle: [exercise.primaryMuscles[0], exercise.equipment].filter(Boolean).map((value) => translateExerciseLabel(value, locale)).join(" · "),
         view: "library",
         exerciseId: exercise.id,
       },

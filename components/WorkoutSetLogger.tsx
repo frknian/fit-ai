@@ -13,11 +13,21 @@ function previousSetLabel(set: PreviousExercisePerformance["sets"][number], unit
     set.weightKg !== null ? formatWeight(set.weightKg, unit) : "",
     set.reps !== null ? t.setLogger.repsSuffix(set.reps) : "",
     set.durationSeconds !== null ? t.setLogger.durationSuffix(set.durationSeconds) : "",
-    set.rpe !== null ? `RPE ${set.rpe}` : "",
+    set.rpe !== null ? `${t.setLogger.effortLabel} ${set.rpe}${t.setLogger.effortScale}` : "",
   ].filter(Boolean);
   return values.join(" · ") || t.setLogger.noRecordNote;
 }
 
+/**
+ * Set kaydı tablosu.
+ *
+ * İki ürün kuralı:
+ *   • VERİ GİRMEK ZORUNLU DEĞİL. Boş bırakılan set kaydedilmez, antrenman
+ *     yine tamamlanır (kaydın tamamı da ayardan kapatılabilir). Set sayısı
+ *     oynatıcıdaki set şeridinden değiştirilir.
+ *   • KAYDET DÜĞMESİ YOK. Ağırlık, tekrar, zorluk ya da not yazıldığı anda
+ *     set kaydedilmiş sayılır; alanlar boşaltılınca kayıt geri alınır.
+ */
 export function WorkoutSetLogger({ exerciseName, activeSet, isBodyweight, sets, previous, loadingPrevious, unit, onChange }: {
   exerciseName: string;
   activeSet: number;
@@ -31,7 +41,10 @@ export function WorkoutSetLogger({ exerciseName, activeSet, isBodyweight, sets, 
   const t = useTranslations();
   const dateLocale = useLocale() === "en" ? "en-US" : "tr-TR";
   return <section className="set-log-card" aria-labelledby="set-log-title">
-    <div className="set-log-heading"><div><span>{t.setLogger.eyebrow}</span><h2 id="set-log-title">{t.setLogger.title}</h2></div><small>{isBodyweight ? t.setLogger.bodyweightHint : t.setLogger.weightedHint}</small></div>
+    <div className="set-log-heading">
+      <div><span>{t.setLogger.eyebrow}</span><h2 id="set-log-title">{t.setLogger.title}</h2></div>
+      <small>{isBodyweight ? t.setLogger.bodyweightHint : t.setLogger.weightedHint}</small>
+    </div>
 
     <div className="previous-performance">
       {loadingPrevious ? <p className="previous-empty">{t.setLogger.searchingPrevious}</p> : previous ? <>
@@ -42,7 +55,7 @@ export function WorkoutSetLogger({ exerciseName, activeSet, isBodyweight, sets, 
     </div>
 
     <div className="set-log-table">
-      <div className={`set-log-table-head ${isBodyweight ? "bodyweight" : "weighted"}`}><span>{t.setLogger.setLabel}</span>{isBodyweight ? <><span>{t.setLogger.repsLabel}</span><span>{t.setLogger.durationLabel}</span></> : <><span>{unit === "lb" ? "Lb" : "Kg"}</span><span>{t.setLogger.repsLabel}</span></>}<span>RPE</span><span>{t.setLogger.noteLabel}</span><span>{t.setLogger.statusLabel}</span></div>
+      <div className={`set-log-table-head ${isBodyweight ? "bodyweight" : "weighted"}`}><span>{t.setLogger.setLabel}</span>{isBodyweight ? <><span>{t.setLogger.repsLabel}</span><span>{t.setLogger.durationLabel}</span></> : <><span>{unit === "lb" ? "Lb" : "Kg"}</span><span>{t.setLogger.repsLabel}</span></>}<span>{t.setLogger.effortLabel}</span><span>{t.setLogger.noteLabel}</span><span>{t.setLogger.statusLabel}</span></div>
       {sets.map((set) => <div className={`set-log-row ${isBodyweight ? "bodyweight" : "weighted"} ${set.setNumber === activeSet ? "active" : ""}`} key={set.setNumber}>
         <strong>{String(set.setNumber).padStart(2, "0")}</strong>
         {isBodyweight ? <>
@@ -52,11 +65,13 @@ export function WorkoutSetLogger({ exerciseName, activeSet, isBodyweight, sets, 
           <label><span>{t.setLogger.weightLabel}</span><div className="set-input-unit"><input type="number" inputMode="decimal" min="0" max="2200" step="0.5" value={set.weightKg} onChange={(event) => onChange(set.setNumber, { weightKg: event.target.value })} aria-label={t.setLogger.weightAria(set.setNumber, unit === "lb" ? t.setLogger.poundWord : t.setLogger.kilogramWord)} placeholder="—" /><i>{unit}</i></div></label>
           <label><span>{t.setLogger.repsLabel}</span><input type="number" inputMode="numeric" min="1" max="999" value={set.reps} onChange={(event) => onChange(set.setNumber, { reps: event.target.value })} aria-label={t.setLogger.repsAria(set.setNumber)} placeholder="—" /></label>
         </>}
-        <label><span>RPE</span><select value={set.rpe} onChange={(event) => onChange(set.setNumber, { rpe: event.target.value })} aria-label={t.setLogger.rpeAria(set.setNumber)}><option value="">—</option>{Array.from({ length: 10 }, (_, index) => <option value={index + 1} key={index + 1}>{index + 1}</option>)}</select></label>
+        <label><span>{t.setLogger.effortLabel}</span><select value={set.rpe} onChange={(event) => onChange(set.setNumber, { rpe: event.target.value })} aria-label={t.setLogger.effortAria(set.setNumber)}><option value="">—</option>{Array.from({ length: 10 }, (_, index) => <option value={index + 1} key={index + 1}>{index + 1}{t.setLogger.effortScale}</option>)}</select></label>
         <label className="set-note"><span>{t.setLogger.noteLabel}</span><input type="text" maxLength={140} value={set.note} onChange={(event) => onChange(set.setNumber, { note: event.target.value })} aria-label={t.setLogger.noteAria(set.setNumber)} placeholder={t.setLogger.notePlaceholder} /></label>
-        <button type="button" className={set.completed ? "set-status complete" : "set-status"} aria-pressed={set.completed} onClick={() => onChange(set.setNumber, { completed: !set.completed })}>{set.completed ? t.setLogger.saved : t.setLogger.save}</button>
+        {/* Kaydet düğmesi yok: durum, satıra bir şey yazıldığı anda kendiliğinden değişir. */}
+        <span className={set.completed ? "set-status complete" : "set-status"} role="status">{set.completed ? t.setLogger.saved : t.setLogger.notSaved}</span>
       </div>)}
     </div>
-    <p className="rpe-help"><strong>RPE:</strong> {t.setLogger.rpeHelp}</p>
+    <p className="rpe-help"><strong>{t.setLogger.effortLabel}{t.setLogger.effortScale}:</strong> {t.setLogger.effortHelp}</p>
+    <p className="set-autosave-hint">{t.setLogger.autoSaveHint}</p>
   </section>;
 }

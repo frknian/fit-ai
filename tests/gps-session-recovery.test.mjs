@@ -61,8 +61,9 @@ test("canlı harita her GPS noktasında kullanıcıyı takip eder", () => {
   assert.match(mapView, /if \(isLive && positionChanged\) map\.easeTo\(\{ center: \[position\.lng, position\.lat\]/);
 });
 
-test("aktivite bitince rota yeşil renkte ortaya çıkar", () => {
-  assert.match(tracker, /<GpsMapView reveal route=\{route\}/);
+test("aktivite bitince rota yeşil renkte, haritasız ortaya çıkar", () => {
+  assert.match(tracker, /<GpsMapView reveal basemap=\{false\} interactive=\{false\} route=\{route\}/);
+  assert.match(mapView, /style: basemap \? RASTER_STYLE : BLANK_STYLE/);
   assert.match(mapView, /export const ROUTE_COLOR = "#5fbf3f"/);
   assert.match(mapView, /startReveal\(\)/);
 });

@@ -5,6 +5,7 @@ import { Dumbbell, LayoutGrid, ListChecks, Search, X } from "lucide-react";
 import { globalSearch, type GlobalSearchResult, type ViewSearchEntry } from "@/lib/global-search";
 import type { CustomProgram } from "@/lib/training-programs";
 import { useTranslations } from "@/lib/i18n/translate";
+import { useLocale } from "@/lib/i18n/locale";
 
 const RESULT_ICON = { exercise: Dumbbell, program: ListChecks, view: LayoutGrid } as const;
 
@@ -28,6 +29,7 @@ export function GlobalSearch({
   onSelect: (result: GlobalSearchResult) => void;
 }) {
   const t = useTranslations();
+  const locale = useLocale();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -35,7 +37,7 @@ export function GlobalSearch({
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const results = useMemo(() => globalSearch(deferredQuery, { programs, views }), [deferredQuery, programs, views]);
+  const results = useMemo(() => globalSearch(deferredQuery, { programs, views, locale }), [deferredQuery, programs, views, locale]);
 
   // Sorgu değişince seçili satır başa döner. Bu, efektte değil RENDER
   // sırasında yapılır: efektle yapıldığında liste bir kare boyunca yeni

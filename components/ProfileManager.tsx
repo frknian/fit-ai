@@ -13,6 +13,7 @@ import { EQUIPMENT_CHOICES, INJURY_CHOICES, formatChoices, parseChoices, toggleC
 import { useWeightUnit, setStoredWeightUnit } from "@/lib/preferences";
 import { kgToInputValue, parseWeightInputToKg, type WeightUnit } from "@/lib/units";
 import { LocalAiSettings } from "@/components/LocalAiSettings";
+import { StepNotificationSettings } from "@/components/StepNotificationSettings";
 import { translateGender, useTranslations } from "@/lib/i18n/translate";
 import { useLocale } from "@/lib/i18n/locale";
 
@@ -333,6 +334,9 @@ export function ProfileManager({ user, profile, avatarUrl, onSaved, onFrozen, on
     {/* Profil cevapları değişince Full Body/Bölgesel programlar kendiliğinden
         güncellenir (ekipmandan türetilirler), ama Akıllı Program AI'dan gelir
         ve yeniden üretilmesi gerekir. */}
+    {/* Adım bildirimi: yalnız Android'de (kalıcı bildirim orada var). */}
+    <StepNotificationSettings />
+
     {/* Cihaz üstü AI: köprü yoksa (web/iOS) bileşen kendini hiç göstermez. */}
     <LocalAiSettings />
 
