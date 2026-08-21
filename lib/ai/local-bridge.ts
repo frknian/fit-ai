@@ -28,6 +28,15 @@ export type NativeCapabilities = {
   lowRamDevice?: boolean;
   engineLoaded?: boolean;
   loadedModelId?: string | null;
+  /** Cihazın belleğine göre seçilen model (native karar verir, JS değil). */
+  selectedModelId?: string;
+  /**
+   * Seçilen modelin çıktısı koç sohbetinde KULLANICIYA GÖSTERİLEBİLİR mi.
+   *
+   * Küçük/int4 modeller Türkçe biçimbirimleri bozuyor ("yüzme" → "yümç");
+   * bu bayrak kapalıyken sohbet cihazda üretilmez, sunucuya gider.
+   */
+  chatReady?: boolean;
 };
 
 export type NativeModelInfo = {
@@ -36,6 +45,7 @@ export type NativeModelInfo = {
   sizeBytes: number;
   installed: boolean;
   minTotalRamMb: number;
+  turkishProseReady?: boolean;
 };
 
 export type NativeGenerateResult = {
@@ -54,6 +64,7 @@ export type LocalAiPlugin = {
   getCapabilities(options?: { modelId?: string }): Promise<NativeCapabilities>;
   listModels(): Promise<{ models: NativeModelInfo[]; defaultModelId: string }>;
   getModelStatus(options: { modelId?: string }): Promise<{ modelId: string; installed: boolean; sizeBytes: number; downloadedBytes: number; downloading: boolean; loaded: boolean }>;
+  verifyModelIntegrity(options: { modelId?: string }): Promise<{ modelId: string; valid: boolean; sizeBytes: number; sha256?: string | null }>;
   downloadModel(options: { modelId?: string }): Promise<{ installed: boolean; modelId: string }>;
   cancelDownload(): Promise<void>;
   deleteModel(options: { modelId?: string }): Promise<{ deleted: boolean }>;
@@ -63,6 +74,13 @@ export type LocalAiPlugin = {
     modelId?: string; systemPrompt: string; userPrompt: string;
     maxOutputTokens?: number; temperature?: number; timeoutMs?: number;
     stream?: boolean; requestId?: string;
+    /**
+     * Verilirse LiteRT-LM'in kısıtlı (grammar-constrained) kod çözümü açılır:
+     * motor bu şemaya uymayan bir token dizisi ÜRETEMEZ, söz dizimi düzeyinde
+     * geçersiz JSON imkânsız hâle gelir. Anlamca doğruluk (alan adları,
+     * katalog kimlikleri) yine de uygulama katmanında doğrulanmalıdır.
+     */
+    jsonSchema?: string;
   }): Promise<NativeGenerateResult>;
   cancelGeneration(): Promise<void>;
   addListener(event: "localAiToken" | "localAiDownloadProgress", handler: (data: Record<string, unknown>) => void): Promise<{ remove: () => Promise<void> }>;

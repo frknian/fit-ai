@@ -17,11 +17,27 @@ export type PromptInput = {
   knowledgeLines?: string[];
   conversationSummary?: string;
   safetyInstruction?: string;
+  /** Cihaz üstü model: kısa üslup + bilgi bölümü atlanır (prefill süresi TTFT'yi belirliyor). */
+  compact?: boolean;
 };
 
 const IDENTITY = {
   tr: "Sen Fit Koç'sun; Hedefit uygulamasının Türkçe konuşan kişisel fitness koçusun.",
   en: "You are Fit Coach, Hedefit's English-speaking personal fitness coach.",
+};
+
+/**
+ * Cihaz üstü modeller için KISA üslup.
+ *
+ * ÖLÇÜM (Gemma 4 E2B, Samsung SM-A525F): çıktı token medyanı 181 ve decode
+ * hızı 8,2 tok/s → yalnız üretim 22 saniye. Toplam medyan 26,4 sn, en kötü
+ * 45,9 sn. Mobil sohbette bu kullanılamaz. 140 kelime yerine ~70 kelime
+ * istemek üretim süresini yarıya indirir; koçluk yanıtı için 70 kelime
+ * zaten yeterli (benchmark alt sınırı 15 kelime).
+ */
+const COMPACT_STYLE = {
+  tr: "Yanıtın en fazla 70 kelime olsun; tek paragraf, doğrudan ve uygulanabilir yaz. Giriş cümlesi veya selamlama kullanma, doğrudan cevaba gir. Gereksiz uyarı yığma. Kullanıcının yazdığı dilde yanıtla.",
+  en: "Keep your answer under 70 words; a single direct, actionable paragraph. No greeting or preamble — answer directly. Don't pile on warnings. Reply in the language the user writes in.",
 };
 
 const STYLE = {
@@ -106,7 +122,7 @@ export function buildCoachSystemPrompt(input: PromptInput): string {
 
   const parts = [
     IDENTITY[locale],
-    STYLE[locale],
+    input.compact ? COMPACT_STYLE[locale] : STYLE[locale],
     SCOPE[locale],
     FACTS_RULE[locale],
     hasMemory ? MEMORY_RULE[locale] : "",

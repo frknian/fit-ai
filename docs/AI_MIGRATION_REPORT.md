@@ -486,10 +486,56 @@ pakete gömülmedi).
 Cloudflare Worker paketinde LiteRT/Android bağımlılığı **yok**; yalnız
 "köprü var mı" kontrolü var — sunucuda köprü hiçbir zaman bulunmaz.
 
-## Kalan blokaj
+## Fiziksel cihaz sonucu ve nihai karar
 
-**PHYSICAL_DEVICE_BENCHMARK_BLOCKED** — bağlı/yetkili Android cihaz, tanımlı
-AVD ve kurulu sistem imajı yok. Gerçek TTFT/token-sn/bellek ölçümü YAPILMADI ve
-**hiçbir sayı uydurulmadı**. Varsayılan model bu yüzden kanıta değil "en düşük
-risk" ilkesine dayanıyor. Cihaz bağlandığında çalıştırılacak komutlar
-`docs/LOCAL_AI_BENCHMARK.md` içinde.
+2026-08-19'da yetkili fiziksel **Samsung SM-A525F** üzerinde ölçüldü:
+Android 14 (SDK 34), `arm64-v8a`, 7.489 MB toplam RAM. Benzersiz cihaz
+tanımlayıcısı toplanmadı. Üç model de Hedefit model yöneticisiyle indirildi,
+tam boyut ve SHA-256 doğrulandı, CPU LiteRT-LM ile yüklendi, 48 senaryo ve
+ardışık 10 normal üretim çalıştırıldı.
+
+| Model | Boyut | Soğuk yükleme | Medyan TTFT | Decode | Medyan toplam | Deterministik | Hata/zaman aşımı | Son PSS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Qwen3 0.6B int4 | 497.664.000 B | 5,97 sn (sıcak: 1,21 sn) | 7,33 sn | 7 tok/sn | 43,83 sn | 29/48 | 5 | 2,28 GB |
+| Qwen2.5 1.5B q8 | 1.597.931.520 B | 59,10 sn | 15,62 sn | 4 tok/sn | 30,30 sn | 24/48 | 10 | 2,23 GB |
+| **Gemma 4 E2B** | **2.588.147.712 B** | **25,51 sn** | **4,42 sn** | **8 tok/sn** | **26,41 sn** | **45/48** | **0** | **1,61 GB** |
+
+Üç model de 10/10 ardışık üretimi çökmeden tamamladı. Qwen3 bozuk tekrarlar
+ve prompt yankısı üretti; Qwen2.5 daha okunaklı olsa da anlamsız kardiyo
+önerileri, zayıf gerçek koruma ve 10 zaman aşımı verdi. Gemma doğal ve
+uygulanabilir Türkçe, sağlanan gerçekleri ve kullanıcı tercihlerini belirgin
+biçimde daha iyi korudu; injection grubunda 5/5 geçti. Bu nedenle
+`DEFAULT_MODEL_ID = "gemma-4-e2b"`. Karmaşık akıl yürütme, şemalı üretim ve
+görsel işler ölçüm politikasına uygun olarak uzak sağlayıcıda kalır.
+
+## Çevrimdışı, yönlendirme ve iptal
+
+- Android'de Wi-Fi ve mobil veri kapalıyken `validatedNetworkAvailable=false`
+  doğrulandı. Gemma `coach-01`, `miss-01` ve `fact-01` istemlerini yerelde
+  tamamladı; her kayıtta `provider=local`, `fallbackUsed=false`, uzak istek yok.
+- Aktif LiteRT üretimi iptal edildi ve **7,45 sn** içinde durdu (sınır 10 sn).
+  Uzak yedek tetiklenmedi.
+- Router regresyonu: Automatic `local → remote → deterministic`, Local-only
+  `local → deterministic` ve asla remote, Cloud/remote modu yereli atlar.
+  Kullanıcı iptali zinciri sonlandırır ve remote'a geçmez.
+
+## Nihai doğrulama
+
+```
+npm test          → 573/573 geçti; production build başarılı
+npx tsc --noEmit  → temiz
+npm run android:build → BUILD SUCCESSFUL
+```
+
+## Kalan sınırlamalar
+
+- Ölçüm tek fiziksel cihazda yapıldı; özellikle 6 GB toplam RAM sınırındaki
+  cihazlar ayrıca doğrulanmalı.
+- Gemma 2,59 GB indirme gerektiriyor ve medyan toplam yanıt süresi 26,41 sn;
+  GPU/NPU ve ana sohbet arayüzünde token akışı bu fazda bilerek eklenmedi.
+- Gemma eksik-veri grubunda 4/5 geçti; bir senaryoda bağlamda olmayan
+  `0 antrenman` değeri üretti. Bu yüzden deterministik gerçek/safety katmanı
+  ve uzak karmaşık-iş yönlendirmesi korunmalıdır.
+- Gerçek fiziksel kanıt çevrimdışı yerel başarı ve native iptali kapsar;
+  çalışma zamanı/uzak-sağlayıcı arıza dalları deterministik router testleriyle
+  doğrulandı.

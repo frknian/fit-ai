@@ -27,6 +27,12 @@ export type AiTaskCategory =
   | "motivation"
   | "conversation"
   | "complex_reasoning"
+  // Antrenman programı üretimi complex_reasoning'den BİLEREK AYRI: ikisi de
+  // şemalı JSON üretir ama generate-plan'ın route'unda deterministik şablon
+  // yedeği YOKTUR (bir egzersiz programı "uydurmak" güvenli değil). Ayrı
+  // kategori, yerel politika ve telemetride ikisini birbirinden bağımsız
+  // yönetebilmeyi sağlar (bkz. lib/ai/local-policy.ts).
+  | "plan_generation"
   | "structured_extraction"
   | "vision";
 

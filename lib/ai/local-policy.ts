@@ -19,10 +19,21 @@ import type { AiTaskCategory } from "./types.ts";
  * genişletilebilir; böylece ölçüm sonucu yeni sürüm beklemeden uygulanabilir.
  */
 const DEFAULT_LOCAL_CATEGORIES: AiTaskCategory[] = [
-  // "conversation" LİSTEDE OLMAK ZORUNDA: koç sohbeti rotası (app/api/chat)
-  // isteği bu kategoriyle gönderir. Listeye alınmazsa cihaz üstü model
-  // uygulamanın ASIL özelliğinde hiç devreye girmez — yerel model kurulu olsa
-  // bile her mesaj uzak sağlayıcıya giderdi.
+  // "conversation" LİSTEDE ama TEK BAŞINA YETMEZ — sohbetin cihazda
+  // üretilmesi için üç kapının da açılması gerekir:
+  //
+  //   1. Kategori burada  (bu liste)
+  //   2. Cihazda seçilen modelin `chatReady` bayrağı açık
+  //      (native karar verir; bkz. LocalAiModelCatalog.turkishProseReady)
+  //   3. Üretilen metin Türkçe ses dizimi denetiminden geçiyor
+  //      (bkz. lib/ai/turkish.ts — çalışma anı koruması)
+  //
+  // Üç kapı da aynı hatanın farklı katmanlardaki karşılığı: 0,5B int4 bir
+  // model Türkçe biçimbirimleri bozup var olmayan kelimeler üretiyordu
+  // ("yüzme" → "yümç") ve bu kullanıcıya olduğu gibi gösteriliyordu.
+  // Kategori listesi hangi İŞİN, model bayrağı hangi MODELİN uygun olduğunu
+  // söyler; üçüncü kapı ise ikisi de doğruyken bile bozuk çıkan TEK BİR
+  // yanıtı yakalar ve sessizce sunucuya düşer.
   "conversation",
   "simple_coaching",
   "daily_summary",
@@ -35,7 +46,7 @@ const DEFAULT_LOCAL_CATEGORIES: AiTaskCategory[] = [
 const ALL_CATEGORIES: AiTaskCategory[] = [
   "simple_coaching", "daily_summary", "nutrition_explanation", "activity_summary",
   "goal_progress", "motivation", "conversation", "complex_reasoning",
-  "structured_extraction", "vision",
+  "plan_generation", "structured_extraction", "vision",
 ];
 
 export function localCapableCategories(): AiTaskCategory[] {
@@ -44,6 +55,37 @@ export function localCapableCategories(): AiTaskCategory[] {
   const wanted = configured.split(",").map((item) => item.trim()).filter(Boolean);
   // Bilinmeyen bir kategori adı sessizce yok sayılır; yazım hatası yüzünden
   // her isteğin yerele gitmesi ya da hiç gitmemesi istenmez.
+  return ALL_CATEGORIES.filter((category) => wanted.includes(category));
+}
+
+/**
+ * Yerelde ŞEMAYA BAĞLI (generateObject) üretime izin verilen kategoriler.
+ *
+ * `localCapableCategories()`'ten bilerek AYRI: düz metin üretimiyle
+ * yapılandırılmış JSON üretimi aynı risk sınıfında değil. LiteRT-LM'in kısıtlı
+ * kod çözümü SÖZ DİZİMİ düzeyinde geçerli JSON garanti eder ama alan
+ * değerlerinin (ör. katalogdaki egzersiz kimlikleriyle birebir eşleşme)
+ * anlamca doğru olacağını garanti etmez. Bu üç kategorinin hepsi bilerek
+ * dahil — ama güvenlik ağı ROTA SEVİYESİNDEDİR, burada değil:
+ *
+ *   · goal_progress (hedef/test analizi)     → route'ta deterministik metin
+ *     yedeği VAR (localAnalysis); yerel üretim geçersizse kullanıcı yine de
+ *     anlamlı bir kart görür.
+ *   · complex_reasoning (haftalık değerlendirme) → aynı şekilde deterministik
+ *     yedeği VAR (localWeeklyReview).
+ *   · plan_generation (antrenman programı) → route'ta şablon yedek YOK
+ *     (bir plan "uydurmak" güvenli değil). Bunun yerine route, yerel sonucu
+ *     semantik olarak doğrulayıp (workouts.length vb.) geçersizse UZAĞA
+ *     BİR KEZ yeniden dener (bkz. app/api/generate-plan/route.ts) — böylece
+ *     yerel yalnızca "önce dene" katmanı olur, kullanıcı asla bozuk bir
+ *     plan ya da gereksiz bir 502 görmez.
+ */
+const DEFAULT_LOCAL_OBJECT_CATEGORIES: AiTaskCategory[] = ["goal_progress", "complex_reasoning", "plan_generation"];
+
+export function localObjectCapableCategories(): AiTaskCategory[] {
+  const configured = process.env.LOCAL_AI_OBJECT_CATEGORIES;
+  if (!configured) return DEFAULT_LOCAL_OBJECT_CATEGORIES;
+  const wanted = configured.split(",").map((item) => item.trim()).filter(Boolean);
   return ALL_CATEGORIES.filter((category) => wanted.includes(category));
 }
 
@@ -57,8 +99,21 @@ export function localCapableCategories(): AiTaskCategory[] {
  */
 export const LOCAL_PROMPT_CHAR_BUDGET = 6_000;
 
-/** Koçluk yanıtı kısadır; uzun üretim mobilde doğrudan bekleme süresidir. */
-export const LOCAL_MAX_OUTPUT_TOKENS = 320;
+/**
+ * Koçluk yanıtı kısadır; uzun üretim mobilde doğrudan bekleme süresidir.
+ *
+ * ÖLÇÜM: 320 tavanına çarpan yanıtlar 45,9 sn sürüyordu (decode 8,2 tok/s).
+ * Kısa üslupla (~70 kelime ≈ 110 token) istenen yanıt bu tavana yaklaşmaz;
+ * tavan yalnız kontrolden çıkan üretimi keser. 200, en kötü durumu ~24 sn'ye
+ * sınırlar ve tipik yanıtı kesmez.
+ */
+export const LOCAL_MAX_OUTPUT_TOKENS = 200;
+
+/**
+ * Şemaya bağlı üretim tavanı. Düz metinden daha büyük: bir haftalık
+ * değerlendirme veya antrenman programı JSON'u onlarca alan içerir.
+ */
+export const LOCAL_OBJECT_MAX_OUTPUT_TOKENS = 900;
 
 export const LOCAL_TEMPERATURE = 0.3;
 
@@ -67,6 +122,9 @@ export const LOCAL_TEMPERATURE = 0.3;
  * uzak sağlayıcıya BİR KEZ düşer — yerel yeniden denenmez (döngü olmaz).
  */
 export const LOCAL_GENERATION_TIMEOUT_MS = 45_000;
+
+/** Şemaya bağlı üretim daha uzun sürebilir (kısıtlı kod çözüm + daha çok token). */
+export const LOCAL_OBJECT_TIMEOUT_MS = 60_000;
 
 /** Model yükleme zaman aşımı; ilk yükleme büyük modellerde on saniyeleri bulur. */
 export const LOCAL_LOAD_TIMEOUT_MS = 120_000;

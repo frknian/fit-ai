@@ -37,10 +37,11 @@ const LOCAL_CATEGORIES: readonly AiTaskCategory[] = [
   "motivation",
 ];
 
-// Serbest sohbet burada. Yerel sağlayıcı bunu YAPABİLİR (göç öncesindeki
-// localCoachReply davranışının aynısı) ama İYİ yapamaz; bu yüzden yalnızca
-// uzak sağlayıcı da başarısız olduğunda devreye girer. Kullanıcı ayarlardan
-// "Yalnızca cihazda" modunu seçerse yine kullanılır.
+// Deterministik sağlayıcı bütün desteklediği kategorilerde SON ÇAREDİR.
+// Automatic: cihaz üstü LLM → uzak sağlayıcı → deterministik.
+// Local-only: cihaz üstü LLM → deterministik (uzak sağlayıcı hiç seçilmez).
+// Böylece basit koçlukta bile bir native arıza, kaliteli uzak model dururken
+// doğrudan şablon yanıta düşmez.
 const LOCAL_LAST_RESORT_CATEGORIES: readonly AiTaskCategory[] = ["conversation", "nutrition_explanation"];
 
 const ALL_LOCAL_CATEGORIES = [...LOCAL_CATEGORIES, ...LOCAL_LAST_RESORT_CATEGORIES];
@@ -82,8 +83,8 @@ function factSentences(facts: CoachFacts, locale: "tr" | "en"): string[] {
 export const deterministicLocalProvider: AIProvider = {
   id: LOCAL_PROVIDER_ID,
   kind: "local",
-  categories: LOCAL_CATEGORIES,
-  lastResortCategories: LOCAL_LAST_RESORT_CATEGORIES,
+  categories: [],
+  lastResortCategories: ALL_LOCAL_CATEGORIES,
 
   // Her zaman hazır: kurulum, indirme veya ağ gerektirmez. Yerel katmanın
   // "her koşulda bir cevabı var" garantisi buradan gelir.

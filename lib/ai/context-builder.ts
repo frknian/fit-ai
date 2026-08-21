@@ -127,14 +127,20 @@ export async function buildTaskContext(input: {
 }
 
 /** Bağlamı sistem promptuna çevirir. */
-export function contextToSystemPrompt(context: UserCoachContext, options: { locale: "tr" | "en"; safetyInstruction?: string }): string {
+export function contextToSystemPrompt(context: UserCoachContext, options: { locale: "tr" | "en"; safetyInstruction?: string; compact?: boolean }): string {
   const promptInput: PromptInput = {
     locale: options.locale,
     factsJson: factsJson(context.facts),
     memoryLines: formatMemories(context.memories),
-    knowledgeLines: formatKnowledge(context.knowledge),
+    // Cihaz üstü modelde bilgi parçaları ATLANIR: ölçüldü, TTFT'nin tamamı
+    // prefill süresi (344 token ÷ 81 tok/s ≈ 4,3 sn). Her bilgi parçası
+    // istemi ~50 token büyütüyor, yani her biri yarım saniye gecikme. Koçluk
+    // yanıtının çekirdeği <facts> ve <memory>; genel bilgi metni mobilde bu
+    // bedeli hak etmiyor.
+    knowledgeLines: options.compact ? [] : formatKnowledge(context.knowledge),
     conversationSummary: context.conversationSummary,
     safetyInstruction: options.safetyInstruction,
+    compact: options.compact,
   };
   return buildCoachSystemPrompt(promptInput);
 }

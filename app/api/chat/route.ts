@@ -94,7 +94,7 @@ export async function POST(request: Request) {
         provider: result.provider,
         model: result.model,
         promptVersion: result.promptVersion,
-        ...(servedLocally && { notice: "AI servisi geçici olarak yanıt vermedi; güvenli yerel öneri gösteriliyor." }),
+        ...(servedLocally && { notice: "Fit Koç şu an sınırlı modda yanıt veriyor." }),
         ...(!servedLocally && Number.isFinite(usage.limit) ? { usage: { used: usage.used, limit: usage.limit } } : {}),
       });
     }
@@ -108,11 +108,14 @@ export async function POST(request: Request) {
   // AI ya hiç yanıt vermedi ya da boş döndü: kullanıcı gerçekte AI hizmeti
   // ALMADI, günlük hakkı geri iade edilir (bkz. lib/usage-limits.ts refundUsage).
   if (Number.isFinite(usage.limit)) await refundUsage(request, "chat");
+  // Koçun adı "Fit Koç" — arayüzün her yerinde böyle geçiyor
+  // (lib/i18n/dictionaries). Burada "AI koç" yazmak kullanıcıya başka bir
+  // üründen söz ediliyormuş hissi veriyordu.
   return Response.json({
     text: hasRemoteProvider()
-      ? "AI koç şu anda kullanılamıyor. Verilerin kaybolmadı; biraz sonra tekrar deneyebilirsin."
-      : "AI bağlantısı yapılandırılmadığı için koç şu anda kullanılamıyor.",
+      ? "Fit Koç şu anda yanıt veremiyor. Verilerin kaybolmadı; biraz sonra tekrar deneyebilirsin."
+      : "Fit Koç şu anda yanıt veremiyor. Bağlantı ayarların tamamlanınca tekrar deneyebilirsin.",
     source: "fallback",
-    notice: "AI servisi geçici olarak yanıt vermedi.",
+    notice: "Fit Koç geçici olarak yanıt veremedi.",
   });
 }

@@ -52,6 +52,9 @@ object LocalAiCapability {
         return ActivityManager.MemoryInfo().also { manager.getMemoryInfo(it) }
     }
 
+    /** Cihazın toplam RAM'i (MB). Model seçimi buna göre yapılır. */
+    fun totalRamMb(context: Context): Long = memoryInfo(context).totalMem / (1024 * 1024)
+
     fun isLowRamDevice(context: Context): Boolean {
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         return manager.isLowRamDevice

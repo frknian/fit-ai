@@ -27,7 +27,11 @@ ext {
     // kullanıcıda ortaya çıkan hatalar üretir.
     // kotlinVersion android/build.gradle > buildscript içinde tanımlıdır
     // (buildscript bu dosyadan önce değerlendirilir).
-    kotlinCoroutinesVersion = '1.9.0'
+    // LiteRT-LM AAR bytecode'u SendChannel.close$default'i arayüz üzerinde
+    // çağırıyor; bu köprü 1.11.0 öncesinde DefaultImpls içindeydi. Yayınlanan
+    // POM hâlâ 1.9.0 dese de gerçek cihazda üretim tamamlanırken
+    // NoSuchMethodError ile süreç çöküyor. 1.11.0 bu ABI'yi sağlar.
+    kotlinCoroutinesVersion = '1.11.0'
     // com.google.ai.edge.litertlm:litertlm-android — Google Maven'den
     // doğrulanmış en güncel kararlı sürüm (2026-08-18).
     litertLmVersion = '0.16.1'

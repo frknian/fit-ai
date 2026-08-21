@@ -178,3 +178,39 @@ yalnız boyutla** verilmemeli:
 
 Ölçüm tamamlandığında `LocalAiModelCatalog.DEFAULT_MODEL_ID` güncellenir ve
 sonuç tablosu `docs/LOCAL_AI_BENCHMARK.md` içine yazılır.
+
+---
+
+## 2026-08-21 güncellemesi — Hedefit-mini denemesi ve varsayılanın korunması
+
+Gemma 4 E2B'yi öğretmen alan bir damıtma denemesi yapıldı (bkz.
+`docs/LOCAL_AI_BENCHMARK.md` > Hedefit-mini). Sonuç: 251 MB, cihazda 35/48 —
+gerçek ve ölçülmüş bir sonuç, ama ≥40/48 hedefinin altında.
+
+**`DEFAULT_MODEL_ID` Gemma 4 E2B olarak KALIYOR.** Gerekçe: küçük ve hızlı
+olmak başlı başına bir kazanım değildir; kanıta dayalı kalite eşiğini
+tutturmamış bir modeli yalnız boyutu küçük diye varsayılan yapmak, bu projenin
+baştan beri izlediği "sezgiyle değil ölçümle karar ver" ilkesine aykırı olurdu.
+
+`hedefit-mini`, kataloğa **ikincil bir seçenek** olarak eklendi
+(`LocalAiModelCatalog.kt`). İleride eğitim verisi/yöntemi iyileştirilip
+40+/48'e ulaşıldığında `DEFAULT_MODEL_ID` burada güncellenir.
+
+## Şemaya bağlı yerel üretim (2026-08-21)
+
+LiteRT-LM 0.16.1'in `ResponseFormat.json(schema)` API'si — kısıtlı
+(grammar-constrained) kod çözüm — cihaz üstü modellerin yapılandırılmış JSON
+üretmesini mümkün kılıyor: motor şemaya UYMAYAN bir token dizisi üretemez.
+Bu, alan DEĞERLERİNİN (ör. egzersiz kimliklerinin katalogla eşleşmesi) anlamca
+doğru olacağını garanti ETMEZ; yalnız söz dizimi düzeyinde geçerli JSON
+garantisi verir.
+
+Bu nedenle şemaya bağlı üretim üç kategoride açıldı (`localObjectCapableCategories`),
+her biri kendi güvenlik ağıyla:
+
+- `goal_progress`, `complex_reasoning` — route'ta deterministik şablon yedeği
+  VAR; yerel geçersiz JSON üretse bile kullanıcı anlamlı bir kart görür.
+- `plan_generation` (antrenman programı) — route'ta şablon yedek YOK; bunun
+  yerine route yerel sonucu semantik olarak doğrular (`workouts.length >= 3`)
+  ve geçersizse UZAĞA BİR KEZ yeniden dener. Kullanıcı hiçbir zaman gereksiz
+  bir 502 görmez.

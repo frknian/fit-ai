@@ -27,6 +27,16 @@ object LocalAiModelCatalog {
      *   RAM'i. Ölçüt keyfi değil: dosya boyutunun yaklaşık iki katı + işletim
      *   sistemi ve WebView payı. Altındaki cihazda yükleme denemesi süreci
      *   öldürür, bu yüzden hiç denenmez.
+     * @param turkishProseReady Çıktısı KULLANICIYA OLDUĞU GİBİ gösterilebilecek
+     *   Türkçe üretiyor mu. Koç sohbeti bu bayrağı taşıyan modellere
+     *   yönlendirilir; taşımayanlar yalnız deneysel/ölçüm amaçlıdır.
+     *
+     *   Bayrak boyuta göre verilmiş bir tahmin DEĞİL, gözlenen bir ayrım:
+     *   ≤0,6B modeller int4'e nicemlendiğinde Türkçe biçimbirimleri bozup
+     *   var olmayan kelimeler üretiyor ("yüzme" → "yümç"). Eklemeli bir dilde
+     *   bu, üslup ayarıyla düzelen bir şey değil. Bir modelin bayrağı
+     *   açılmadan önce lib/ai/turkish.ts denetimini içeren benchmark'tan
+     *   geçmesi gerekir (bkz. docs/LOCAL_AI_BENCHMARK.md).
      */
     data class Entry(
         val id: String,
@@ -38,6 +48,7 @@ object LocalAiModelCatalog {
         val maxNumTokens: Int,
         val minTotalRamMb: Int,
         val supportsThinking: Boolean,
+        val turkishProseReady: Boolean,
     )
 
     private fun hf(repo: String, file: String) = "https://huggingface.co/$repo/resolve/main/$file?download=true"
@@ -56,6 +67,9 @@ object LocalAiModelCatalog {
             // (bkz. LocalAiEngine — görünür akıl yürütme kısa koçluk yanıtında
             // yalnızca gecikme ve token harcar).
             supportsThinking = true,
+            // 0,6B int4: hedefit-mini ile aynı sınıfta, Türkçesi sohbete
+            // yetmiyor. Ölçüm/karşılaştırma için katalogda kalıyor.
+            turkishProseReady = false,
         ),
         Entry(
             id = "qwen2.5-1.5b-q8",
@@ -67,6 +81,9 @@ object LocalAiModelCatalog {
             maxNumTokens = 2048,
             minTotalRamMb = 4_096,
             supportsThinking = false,
+            // 1,5B q8 — nicemleme int4 değil q8 olduğu için biçimbirim
+            // bozulması görülmüyor; sohbet için VARSAYILAN sınıf bu.
+            turkishProseReady = true,
         ),
         Entry(
             id = "gemma-4-e2b",
@@ -76,19 +93,86 @@ object LocalAiModelCatalog {
             sizeBytes = 2_588_147_712L,
             sha256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
             maxNumTokens = 2048,
-            minTotalRamMb = 6_144,
+            // 6144 İDİ → 8192. SM-A525F (7,6 GB toplam) eşiği geçiyordu ama
+            // ölçümde yüklemeden sonra PSS 1321 MB'a çıkıp WebView'la birlikte
+            // belleği tüketiyordu (bkz. aşağıdaki DEFAULT açıklaması). Eşik,
+            // ölçümün gerçekte gösterdiği yere çekildi: bu modeli yalnız 8 GB
+            // ve üzeri cihazlarda deniyoruz.
+            minTotalRamMb = 8_192,
             supportsThinking = false,
+            // Karşılaştırmada en yüksek kalite (45/48).
+            turkishProseReady = true,
+        ),
+        Entry(
+            id = "hedefit-mini",
+            displayName = "Hedefit Local AI",
+            fileName = "hedefit-mini.litertlm",
+            // Hedefit'in kendi distilasyon boru hattında üretildi
+            // (scripts/ml/): Gemma 4 E2B öğretmen, Qwen2.5-0.5B-Instruct
+            // öğrenci, LoRA ince ayar + int4 nicemleme. Henüz genel dağıtıma
+            // açılmadığı için indirme adresi boş; şimdilik `adb push` ile
+            // yerleştiriliyor. docs/LOCAL_AI_BENCHMARK.md > Hedefit-mini.
+            downloadUrl = "",
+            sizeBytes = 263035904L,
+            sha256 = "10f382e3de3482a8ff82a60d75aa10bb825eacd9fe36c959ac7e3771acd9ff14",
+            maxNumTokens = 1024,
+            minTotalRamMb = 2_048,
+            supportsThinking = false,
+            // 0,5B int4. Hızlı ve küçük ama Türkçesi kullanıcıya
+            // gösterilebilir değil — sahada "yüzme" yerine "yümç" üretti.
+            turkishProseReady = false,
         ),
     )
 
     fun byId(id: String?): Entry? = entries.firstOrNull { it.id == id }
 
     /**
-     * Karşılaştırma yapılmadan önceki varsayılan aday.
+     * Cihazın belleğine sığan EN İYİ sohbet modeli, yoksa null.
      *
-     * En küçük modeli seçiyoruz çünkü karşılaştırma sonuçlanana kadar
-     * "çalışmama" riski en düşük olan seçenek budur; nihai varsayılan
-     * docs/AI_MODEL_DECISION.md içindeki ölçümlere göre belirlenir.
+     * "En iyi" = en büyük: bu katalogda boyut ile Türkçe kalitesi aynı yönde
+     * gidiyor (0,5B bozuk, 1,5B kullanılabilir, E2B en iyi). Sabit tek bir
+     * varsayılan yerine cihaza göre seçmenin sebebi bu: 8 GB'lık bir telefonu
+     * 4 GB'lık bir telefonun kısıtına mahkûm etmek gereksiz bir kalite kaybı,
+     * tersi ise sürecin öldürülmesi demek.
      */
-    const val DEFAULT_MODEL_ID = "qwen3-0.6b-int4"
+    fun bestChatModelFor(totalRamMb: Long): Entry? = entries
+        .filter { it.turkishProseReady && totalRamMb >= it.minTotalRamMb }
+        .maxByOrNull { it.sizeBytes }
+
+    /**
+     * Cihazda kullanılacak model.
+     *
+     * Sohbete uygun bir model sığıyorsa o seçilir. Sığmıyorsa küçük model
+     * (`FALLBACK_MODEL_ID`) döner — ama bu, sohbetin ona yönlendirileceği
+     * anlamına GELMEZ: JS tarafı `chatReady` bayrağına bakar ve bayrak
+     * kapalıysa sohbeti sunucuya gönderir (bkz. lib/ai/local-first.ts).
+     * Küçük model yine de indirilebilir ve ölçüm/deney için kullanılabilir.
+     */
+    fun recommendedFor(totalRamMb: Long): Entry =
+        bestChatModelFor(totalRamMb) ?: byId(FALLBACK_MODEL_ID)!!
+
+    /**
+     * Sohbete uygun model bulunamadığında kalan seçenek.
+     *
+     * hedefit-mini (Hedefit'in kendi damıtılmış modeli, 251 MB, PSS 563 MB):
+     * düşük bellekli cihazlarda gerçekten ÇALIŞAN tek seçenek — medyan 9,7 sn
+     * ve motor bellekte kalabiliyor. Kıyasla Gemma 4 E2B aynı cihazda (SM-A525F,
+     * 7,6 GB) yükleme sonrası PSS 1321 MB'a çıkıyor, WebView + React üstüne
+     * eklenince boş bellek tükeniyor, sistem motoru boşaltıyor ve HER istek
+     * 2,59 GB'lık modeli baştan yüklüyordu: medyan 26,4 sn ve sık sık süreç
+     * ölümü.
+     *
+     * AMA hedefit-mini'nin Türkçesi sohbete yetmiyor (`turkishProseReady =
+     * false`). Bu yüzden burası bir "varsayılan sohbet modeli" değil, yalnız
+     * kataloğun boş dönmemesi için bir taban.
+     */
+    const val FALLBACK_MODEL_ID = "hedefit-mini"
+
+    /**
+     * Geriye dönük uyumluluk için sabit varsayılan.
+     *
+     * Yeni kod `recommendedFor(totalRamMb)` kullanmalı; cihazı bilmeyen
+     * çağrılar (ör. katalog listeleme) için taban model döner.
+     */
+    const val DEFAULT_MODEL_ID = FALLBACK_MODEL_ID
 }

@@ -177,3 +177,90 @@ Dışarıda: `vision`, `complex_reasoning`, `structured_extraction`.
 4. **Varsayılan model ölçümle seçilmedi** — bugünkü varsayılan en küçük model
    (en düşük başarısızlık riski), nihai seçim ölçümden sonra.
 5. **iOS'ta cihaz üstü AI yok**; köprü yalnız Android'de.
+
+---
+
+## 2026-08-21 güncellemesi
+
+### Şemaya bağlı yerel üretim eklendi
+- `LocalAiEngine.kt`: `generateStream(..., jsonSchema)` → `ResponseFormat.json(schema)`
+- `HedefitLocalAiPlugin.kt`: `generate()` artık `jsonSchema` parametresi kabul ediyor (verilirse akış kapanır — kısmi JSON göstermenin anlamı yok)
+- `lib/ai/providers/on-device.ts`: `generateObject<T>()` eklendi; `asSchema(schema).jsonSchema` ile şema JSON'a çevrilip native'e geçiriliyor, dönen metin ayrıştırılıp doğrulanıyor
+- `lib/ai/local-policy.ts`: `localObjectCapableCategories()` — düz metinden AYRI, daha dar bir liste (`goal_progress`, `complex_reasoning`, `plan_generation`)
+- Yeni kategori: `plan_generation` (antrenman programı), `complex_reasoning`'den ayrıldı çünkü generate-plan rotasında şablon yedek yok — route artık yerel sonucu semantik doğrulayıp geçersizse **uzağa bir kez yeniden deniyor**.
+
+### Premium'da AI kullanım sınırı kaldırıldı
+`db/migrations/20260821_premium_unlimited_ai_usage.sql` — gerekçe: maliyetin
+büyük kısmı artık cihaz üstü çıkarımla karşılanıyor. Ücretsiz plan
+DEĞİŞMEDİ. SQL fonksiyonu NULL limiti "sınır kontrolü yok" olarak yorumluyor
+(gerçek `Infinity` değeri JSON'da `null`'a döner ve entegre edilmeden önce bu
+açıkça ele alınmadı — üç değerli SQL mantığına bağımlı kalmamak için fonksiyon
+NULL'ı açıkça işliyor).
+
+**Önemli sınırlama:** bu, TÜM AI çağrılarının ücretsiz olduğu anlamına
+GELMEZ — yalnız Android'de ve yerel model kuruluyken çıkarım cihazda çalışır.
+iOS, web ve yerel modeli olmayan/başarısız olan istekler hâlâ uzak sağlayıcıya
+(ücretli) gider. Bu bilinçli bir ürün kararıdır.
+
+### Arayüz
+FitKoç paneli açıkken sağ alttaki başlatıcı düğmesi artık render edilmiyor
+(`components/AiCoachChat.tsx`); kapatınca geri geliyor.
+
+### Yeni test kapsamı
+`tests/local-ai.test.mjs`: şemaya bağlı üretimin başarı/başarısızlık/kategori
+kısıtlaması davranışları. `tests/usage-limits.test.mjs`: premium sınırsızlık.
+Tam paket: 634/634 geçer (önceki: 568).
+
+---
+
+## 2026-08-21 — KRİTİK DÜZELTME: yerel model ürün akışına bağlandı
+
+### Bulunan hata
+
+Cihaz üstü model, Phase 2 boyunca **üretim akışında hiç çalışmıyordu.**
+
+Sebep mimariydi: tüm AI rotaları `runtime = "edge"` ile Cloudflare Worker'da
+çalışıyor; yönlendirici (`lib/ai/router.ts`) ve `onDeviceProvider` da orada.
+Ama `localAiPlugin()` `globalThis.HedefitLocalAI` okuyor ve bu değişken
+yalnızca Capacitor **WebView'ına** enjekte ediliyor. Worker'da hep `undefined`
+→ `isAvailable()` her zaman `false` → yerel sağlayıcı hiç seçilemiyordu.
+
+Yani cihaz üstü model bugüne kadar SADECE instrumentation benchmark testinde
+(LocalAiEngine doğrudan çağrılarak) çalıştı; gerçek kullanıcı trafiğinin
+tamamı uzak sağlayıcıya gidiyordu. Benchmark sonuçları geçerli — model
+cihazda gerçekten çalışıyor — ama ürüne bağlı değildi.
+
+### Çözüm: `lib/ai/local-first.ts`
+
+Aynı boru hattı artık İSTEMCİDE de çalışabiliyor:
+
+```
+sanitizeCoachSignals → analyze → evaluateSafety → buildCoachContext
+→ contextToSystemPrompt → HedefitLocalAI köprüsü (cihazdaki model)
+```
+
+İkinci bir koç mantığı YAZILMADI — bu modüllerin hepsi zaten saf
+(sunucu bağımlılığı sıfır), doğrudan yeniden kullanıldı. Yalnız hafıza
+sunucudan okunuyor (`/api/ai/memory` GET), çünkü Supabase erişimi istemcide yok.
+
+`AiCoachChat.tsx` artık önce bunu deniyor; `null` dönerse (köprü yok, model
+kurulu değil, üretim başarısız/boş) mevcut `/api/chat` rotasına düşüyor.
+
+### Kazanımlar
+- **Gizlilik:** yerel yol seçildiğinde istem ve yanıt cihazdan hiç çıkmaz —
+  ne uzak sağlayıcıya ne Hedefit sunucusuna.
+- **Maliyet:** o istekler için uzak çağrı yok, kullanım hakkı harcanmaz.
+- **Çevrimdışı:** ağ olmadan çalışır (yalnız hafıza okuması ağ ister ve
+  başarısız olursa yanıt yine üretilir).
+- **Web bozulmaz:** köprü yok → sessizce sunucuya düşer.
+
+### Test kapsamı
+`tests/local-ai.test.mjs` içinde 6 yeni test: köprü yokken null dönmesi,
+model kurulu değilken null, cihazda üretimde `/api/chat`'e İSTEK GİTMEMESİ,
+güvenlik katmanının modelden önce çalışması, boş/hatalı üretimde sunucuya
+düşülmesi, hafıza okunamasa bile yanıt üretilmesi.
+
+### Doğrulanmamış
+Bu yol **gerçek cihazda henüz çalıştırılmadı** (cihaz bağlantısı koptu).
+Birim testleri sahte köprüyle davranışı doğruluyor; uçtan uca cihaz
+doğrulaması yapılmalı.

@@ -256,34 +256,48 @@ Tam olarak ${signals.exerciseCount} farklı hareket seç. Her workout için kata
   // KENDİSİNİ belirler; koç sohbetinde öğrenilen tercih burada işe yarar.
   const memories = await loadMemories(request);
 
+  const buildRequest = (policy?: Parameters<typeof generateCoachObject>[0]["policy"]) => ({
+    prompt,
+    image,
+    schema: responseSchema,
+    // Fotoğraf varsa yalnız görsel destekli sağlayıcı bu işi yapabilir.
+    category: image ? "vision" as const : "plan_generation" as const,
+    locale: locale as "tr" | "en",
+    memories,
+    facts: planFacts,
+    knowledgeQuery: `${signals.primaryGoal} ${signals.preferredStyle} antrenman programı`,
+    // Kullanıcının serbest notu güvenlik katmanından geçer.
+    userText: signals.note,
+    domainRules: "Sen güvenli ve kişiselleştirilmiş fitness programı hazırlayan bir asistansın.",
+    temperature: 0.35,
+    // Bu sağlayıcının modelleri "akıl yürütme" token'ı harcıyor ve bu da
+    // aynı bütçeden düşüyor. 3.000 ile ölçüldü: 2.997 token düşünmeye gitti,
+    // içerik 0 karakter kaldı ve üretim HER SEFERİNDE "length" ile kesildi —
+    // yani plan hiç üretilemiyordu. 8.000'de düşünme 1.212'de kalıyor ve
+    // plan tamamlanıyor.
+    maxOutputTokens: 8_000,
+    // ÖLÇÜM: bu sağlayıcının akıl yürüten modellerinde tam plan üretimi tek
+    // denemede bile 100 sn'yi aşıyor. Daha uzun beklemek kullanıcıyı boşuna
+    // oyalar; yerel plan zaten anında hazır ve profile göre üretiliyor.
+    // Bu yüzden AI'a makul bir pencere verilir, yetişmezse yedeğe düşülür.
+    abortSignal: AbortSignal.timeout(60_000),
+    policy,
+  });
+
   try {
-    const result = await generateCoachObject({
-      prompt,
-      image,
-      schema: responseSchema,
-      // Fotoğraf varsa yalnız görsel destekli sağlayıcı bu işi yapabilir.
-      category: image ? "vision" : "complex_reasoning",
-      locale,
-      memories,
-      facts: planFacts,
-      knowledgeQuery: `${signals.primaryGoal} ${signals.preferredStyle} antrenman programı`,
-      // Kullanıcının serbest notu güvenlik katmanından geçer.
-      userText: signals.note,
-      domainRules: "Sen güvenli ve kişiselleştirilmiş fitness programı hazırlayan bir asistansın.",
-      temperature: 0.35,
-      // Bu sağlayıcının modelleri "akıl yürütme" token'ı harcıyor ve bu da
-      // aynı bütçeden düşüyor. 3.000 ile ölçüldü: 2.997 token düşünmeye gitti,
-      // içerik 0 karakter kaldı ve üretim HER SEFERİNDE "length" ile kesildi —
-      // yani plan hiç üretilemiyordu. 8.000'de düşünme 1.212'de kalıyor ve
-      // plan tamamlanıyor.
-      maxOutputTokens: 8_000,
-      // ÖLÇÜM: bu sağlayıcının akıl yürüten modellerinde tam plan üretimi tek
-      // denemede bile 100 sn'yi aşıyor. Daha uzun beklemek kullanıcıyı boşuna
-      // oyalar; yerel plan zaten anında hazır ve profile göre üretiliyor.
-      // Bu yüzden AI'a makul bir pencere verilir, yetişmezse yedeğe düşülür.
-      abortSignal: AbortSignal.timeout(60_000),
-    });
-    const plan = result.object;
+    let result = await generateCoachObject(buildRequest());
+    let plan = result.object;
+    // Yerel model şemaya UYGUN JSON döndürebilir (kısıtlı kod çözüm bunu
+    // garanti eder) ama ANLAMCA yetersiz bir plan üretebilir (ör. yeterli
+    // egzersiz seçmemiş). Bu rotada — goal-plan/weekly-review'ün aksine —
+    // şablon bir yedek YOK ("uydurulmuş" bir program güvenli değil); bu
+    // yüzden yerelin sonucu geçersizse UZAĞA BİR KEZ yeniden denenir. Böylece
+    // yerel yalnızca "önce dene" katmanı olur, kullanıcı hiçbir zaman
+    // gereksiz bir 502 görmez.
+    if (plan.workouts.length < 3 && result.provider !== "openai-compatible") {
+      result = await generateCoachObject(buildRequest({ mode: "remote" }));
+      plan = result.object;
+    }
     if (plan.workouts.length < 3) {
       // Kullanıcı gerçekte kullanılabilir bir plan ALMADI; günlük hakkı iade edilir.
       if (Number.isFinite(usage.limit)) await refundUsage(request, "plan");

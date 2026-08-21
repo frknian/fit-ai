@@ -172,3 +172,22 @@ test("uzak sağlayıcı çökerse son çare yerel sağlayıcı kullanıcıyı ya
   assert.equal(response.provider, "local");
   assert.equal(response.fallbackUsed, true);
 });
+
+test("basit koçlukta da Automatic sırası yerel → uzak → deterministiktir", async () => {
+  const deterministic = {
+    ...stubProvider("local-deterministic", "local"),
+    categories: [],
+    lastResortCategories: ["simple_coaching"],
+  };
+  providerRegistry.reset([
+    stubProvider("on-device", "local", { throws: new Error("native runtime failure") }),
+    deterministic,
+    stubProvider("remote", "remote"),
+  ]);
+
+  const chain = await selectProviders(request, {}, false);
+  assert.deepEqual(chain.map((provider) => provider.id), ["on-device", "remote", "local-deterministic"]);
+  const response = await routeText(request, SILENT);
+  assert.equal(response.provider, "remote");
+  assert.equal(response.fallbackUsed, true);
+});

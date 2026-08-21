@@ -54,6 +54,41 @@ object LocalAiModelStore {
         return if (file.isFile) file.length() else 0L
     }
 
+    data class IntegrityResult(
+        val valid: Boolean,
+        val sizeBytes: Long,
+        val sha256: String?,
+    )
+
+    /**
+     * Kurulu dosyayı yeniden okuyarak boyutunu ve SHA-256 özetini doğrular.
+     *
+     * Bu pahalı işlem normal durum sorgusunda yapılmaz; gerçek cihaz
+     * karşılaştırması ve açık kullanıcı doğrulaması için ayrı tutulur.
+     */
+    fun verifyIntegrity(context: Context, model: LocalAiModelCatalog.Entry): IntegrityResult {
+        val file = modelFile(context, model)
+        if (!file.isFile) return IntegrityResult(false, 0L, null)
+        val size = file.length()
+        if (size != model.sizeBytes) return IntegrityResult(false, size, null)
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(BUFFER)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        return IntegrityResult(
+            valid = actual.equals(model.sha256, ignoreCase = true),
+            sizeBytes = size,
+            sha256 = actual,
+        )
+    }
+
     fun delete(context: Context, model: LocalAiModelCatalog.Entry): Boolean {
         partFile(context, model).delete()
         val file = modelFile(context, model)

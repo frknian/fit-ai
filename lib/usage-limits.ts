@@ -4,10 +4,22 @@ import { bearerToken } from "./api-auth.ts";
 
 export type UsageFeature = "chat" | "photo" | "text_nutrition" | "weekly_review" | "nutrition_advice" | "plan";
 
+// Premium'da sınır YOK — bkz. db/migrations/20260821_premium_unlimited_ai_usage.sql
+// gerekçesi: AI maliyetinin büyük kısmı artık cihaz üstü çıkarımla (Android +
+// LiteRT-LM) karşılanıyor. `null`, SQL fonksiyonuna "bu özellik için sınır
+// kontrolü yapma" der; TS tarafında `Number.POSITIVE_INFINITY`'e çevrilir
+// (bkz. checkAndConsumeUsage). Ücretsiz plan DEĞİŞMEDİ.
 const DAILY_LIMITS = {
   free: { chat: 5, photo: 1, text_nutrition: 3, weekly_review: 1, nutrition_advice: 5, plan: 3 },
-  premium: { chat: 20, photo: 10, text_nutrition: 30, weekly_review: 3, nutrition_advice: 20, plan: 10 },
-} as const;
+  premium: { chat: null, photo: null, text_nutrition: null, weekly_review: null, nutrition_advice: null, plan: null },
+} as const satisfies { free: Record<UsageFeature, number>; premium: Record<UsageFeature, number | null> };
+
+// Eski (geçiş dönemi) yol yalnız db/migrations/20260726_usage_limits.sql'deki
+// increment_usage_counter'ı çağırır; o fonksiyon NULL'ı "sınırsız" olarak
+// YORUMLAMAZ (integer parametre). Bu yüzden legacy yolda gerçek NULL yerine
+// pratikte hiç ulaşılamayacak büyük bir sayı kullanılır. Bu yalnız YENİ
+// migration henüz uygulanmamış eski kurulumlarda devreye girer.
+const LEGACY_UNLIMITED_SENTINEL = 100_000;
 
 export type UsageCheckResult = { allowed: boolean; used: number; limit: number; isPremium: boolean };
 
@@ -78,8 +90,12 @@ export async function checkAndConsumeUsage(request: Request, feature: UsageFeatu
     console.error("[usage-limits] check_and_consume_usage rpc failed", error?.code);
     return { error: Response.json({ error: "Kullanım sınırı kontrol edilemedi." }, { status: 500 }) };
   }
-  const result = data as { allowed: boolean; current_count: number; effective_limit: number; is_premium: boolean };
-  return { allowed: result.allowed, used: result.current_count, limit: result.effective_limit, isPremium: result.is_premium };
+  const result = data as { allowed: boolean; current_count: number; effective_limit: number | null; is_premium: boolean };
+  // SQL fonksiyonu premium + sınırsız özellik için effective_limit'i NULL
+  // döner (bkz. migration); bu, uygulamanın "sınır yok" göstergesi olan
+  // Number.POSITIVE_INFINITY'e çevrilir — çağıran taraflar zaten
+  // Number.isFinite(usage.limit) ile bu durumu kontrol ediyor.
+  return { allowed: result.allowed, used: result.current_count, limit: result.effective_limit ?? Number.POSITIVE_INFINITY, isPremium: result.is_premium };
 }
 
 /**
@@ -113,7 +129,10 @@ async function legacyCheckAndConsumeUsage(
   }
   if (profileError) return handleMissingInfrastructure(feature, "profiles.is_premium");
   const isPremium = Boolean(profile?.is_premium);
-  const limit = isPremium ? DAILY_LIMITS.premium[feature] : DAILY_LIMITS.free[feature];
+  // Eski increment_usage_counter NULL'ı sınırsız olarak yorumlamaz (integer
+  // parametre); bu yüzden burada gerçek NULL yerine LEGACY_UNLIMITED_SENTINEL
+  // kullanılır (bkz. yukarıdaki sabitin açıklaması).
+  const limit = isPremium ? (DAILY_LIMITS.premium[feature] ?? LEGACY_UNLIMITED_SENTINEL) : DAILY_LIMITS.free[feature];
 
   let { data, error } = await client.rpc("increment_usage_counter", { p_feature: feature, p_limit: limit }).single();
   // text_nutrition sayacı sonradan eklendi. Üretim migration'ı henüz

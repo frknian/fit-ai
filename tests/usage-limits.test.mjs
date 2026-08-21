@@ -18,7 +18,11 @@ test("ücretsiz kullanıcı için doğru günlük limit uygulanır", async () =>
   }
 });
 
-test("ücretli kullanıcı için daha yüksek limit uygulanır", async () => {
+test("ücretli kullanıcı için AI kullanımı sınırsızdır", async () => {
+  // bkz. db/migrations/20260821_premium_unlimited_ai_usage.sql — AI maliyeti
+  // büyük ölçüde cihaz üstü çıkarımla karşılandığı için premium'da günlük
+  // sınır kaldırıldı. SQL fonksiyonu bunu effective_limit=NULL ile ifade eder;
+  // istemci tarafı bunu Number.POSITIVE_INFINITY'e çevirir.
   const restoreEnv = withSupabaseAuthEnv();
   const previousFetch = globalThis.fetch;
   globalThis.fetch = withUsageMock({ isPremium: true, allowed: true, currentCount: 8 });
@@ -26,7 +30,7 @@ test("ücretli kullanıcı için daha yüksek limit uygulanır", async () => {
     const request = authorizedRequest("http://localhost/x");
     const result = await checkAndConsumeUsage(request, "photo", TEST_USER_ID);
     assert.ok(!("error" in result));
-    assert.deepEqual(result, { allowed: true, used: 8, limit: 10, isPremium: true });
+    assert.deepEqual(result, { allowed: true, used: 8, limit: Number.POSITIVE_INFINITY, isPremium: true });
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
@@ -246,7 +250,7 @@ test("haftalık AI değerlendirme ücretsiz kullanıcı için düşük limitle s
   }
 });
 
-test("AI beslenme önerisi ücretli kullanıcı için daha yüksek limit uygular", async () => {
+test("AI beslenme önerisi ücretli kullanıcı için sınırsızdır", async () => {
   const restoreEnv = withSupabaseAuthEnv();
   const previousFetch = globalThis.fetch;
   globalThis.fetch = withUsageMock({ isPremium: true, allowed: true, currentCount: 4 });
@@ -254,7 +258,7 @@ test("AI beslenme önerisi ücretli kullanıcı için daha yüksek limit uygular
     const request = authorizedRequest("http://localhost/x");
     const result = await checkAndConsumeUsage(request, "nutrition_advice", TEST_USER_ID);
     assert.ok(!("error" in result));
-    assert.deepEqual(result, { allowed: true, used: 4, limit: 20, isPremium: true });
+    assert.deepEqual(result, { allowed: true, used: 4, limit: Number.POSITIVE_INFINITY, isPremium: true });
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();

@@ -9,11 +9,12 @@
 // gider (Intelligence Engine + Memory + Context Builder + Safety). Native kod
 // kendi başına bağlam üretmez, veritabanına erişmez.
 
+import { asSchema } from "ai";
 import { AiUnsupportedRequestError } from "../errors.ts";
 import { localAiPlugin } from "../local-bridge.ts";
 import { detectDeviceAiCapability } from "../capability.ts";
-import { LOCAL_MAX_OUTPUT_TOKENS, LOCAL_PROMPT_CHAR_BUDGET, LOCAL_GENERATION_TIMEOUT_MS, LOCAL_TEMPERATURE, localCapableCategories } from "../local-policy.ts";
-import type { AIProvider, AiRequest, AiResponse } from "../types.ts";
+import { LOCAL_MAX_OUTPUT_TOKENS, LOCAL_OBJECT_MAX_OUTPUT_TOKENS, LOCAL_PROMPT_CHAR_BUDGET, LOCAL_GENERATION_TIMEOUT_MS, LOCAL_OBJECT_TIMEOUT_MS, LOCAL_TEMPERATURE, localCapableCategories, localObjectCapableCategories } from "../local-policy.ts";
+import type { AIProvider, AiObjectRequest, AiObjectResponse, AiRequest, AiResponse } from "../types.ts";
 
 export const ON_DEVICE_PROVIDER_ID = "on-device-litertlm";
 
@@ -42,6 +43,17 @@ function isCancellation(error: unknown): boolean {
 export function fitLocalPrompt(text: string, budget = LOCAL_PROMPT_CHAR_BUDGET): string {
   if (text.length <= budget) return text;
   return `${text.slice(0, budget - 1)}…`;
+}
+
+/** Model çıktısını JSON olarak ayrıştırır. Hata atarsa router zincirin bir sonraki halkasına geçer. */
+function parseObjectResponse<T>(text: string): T {
+  // Kısıtlı kod çözüm bazen kod bloğu/gereksiz boşluk ekleyebilir; JSON'un
+  // kendisini metin içinden çıkarmak, katı bir JSON.parse'tan daha toleranslı.
+  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  const candidate = start >= 0 && end > start ? trimmed.slice(start, end + 1) : trimmed;
+  return JSON.parse(candidate) as T;
 }
 
 export const onDeviceProvider: AIProvider = {
@@ -90,6 +102,51 @@ export const onDeviceProvider: AIProvider = {
       throw error;
     }
   },
-  // generateObject BİLEREK yok: küçük yerel modellerin şema uyumu ölçülmeden
-  // yapılandırılmış üretimi yerele vermek, sessizce bozuk JSON üretir.
+
+  /**
+   * Şemaya bağlı yerel üretim.
+   *
+   * LiteRT-LM'in kısıtlı (grammar-constrained) kod çözümü sayesinde çıktının
+   * SÖZ DİZİMİ düzeyinde şemaya aykırı olması imkânsızdır — motor öyle bir
+   * token dizisi üretemez. Ama bu, ALAN DEĞERLERİNİN anlamca doğru olacağını
+   * (ör. egzersiz kimliklerinin gerçek katalogla eşleşmesi) GARANTİ ETMEZ.
+   * Küçük bir modelin (hedefit-mini gibi) bu konudaki başarısı henüz dar
+   * kapsamda ölçülmüştür; bu yüzden hangi kategorilerin şemalı üretime uygun
+   * sayıldığı `localObjectCapableCategories()` ile AYRI ve DAHA DAR tutulur
+   * (bkz. lib/ai/local-policy.ts). Çağıran rota yine de kendi anlamsal
+   * doğrulamasını (validateGoalAnalysis, workouts.length vb.) yapmalıdır —
+   * burası yalnız "geçerli JSON" garantisi verir, "doğru plan" değil.
+   */
+  async generateObject<T>(request: AiObjectRequest<T>): Promise<AiObjectResponse<T>> {
+    const plugin = localAiPlugin();
+    if (!plugin) throw new AiUnsupportedRequestError("native bridge unavailable");
+    if (request.image) throw new AiUnsupportedRequestError("on-device provider has no vision support");
+    if (!localObjectCapableCategories().includes(request.category)) {
+      throw new AiUnsupportedRequestError(`on-device structured output not enabled for ${request.category}`);
+    }
+
+    const jsonSchema = JSON.stringify(await asSchema(request.schema).jsonSchema);
+    const startedAt = Date.now();
+    try {
+      const result = await plugin.generate({
+        systemPrompt: fitLocalPrompt(request.system ?? ""),
+        userPrompt: fitLocalPrompt(request.prompt, 3_000),
+        maxOutputTokens: Math.min(request.maxOutputTokens ?? LOCAL_OBJECT_MAX_OUTPUT_TOKENS, LOCAL_OBJECT_MAX_OUTPUT_TOKENS),
+        temperature: request.temperature ?? LOCAL_TEMPERATURE,
+        timeoutMs: LOCAL_OBJECT_TIMEOUT_MS,
+        stream: false,
+        jsonSchema,
+      });
+      return {
+        object: parseObjectResponse<T>(result.text),
+        provider: ON_DEVICE_PROVIDER_ID,
+        model: result.modelId,
+        latencyMs: result.totalMs ?? Date.now() - startedAt,
+        usage: { inputTokens: result.promptTokens, outputTokens: result.outputTokens },
+      };
+    } catch (error) {
+      if (isCancellation(error)) throw new LocalGenerationCancelledError();
+      throw error;
+    }
+  },
 };

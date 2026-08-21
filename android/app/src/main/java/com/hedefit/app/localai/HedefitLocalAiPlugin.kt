@@ -1,6 +1,7 @@
 package com.hedefit.app.localai
 
 import android.content.ComponentCallbacks2
+import android.content.res.Configuration
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -49,32 +50,80 @@ class HedefitLocalAiPlugin : Plugin() {
     // ve ısısını gereksiz yere zorlar.
     private val generating = AtomicBoolean(false)
 
+    // Üretim sürerken gelen bellek baskısı bildirimi. Motoru O ANDA bırakmak,
+    // LiteRT-LM hâlâ kod çözerken altındaki native nesneleri serbest bırakmak
+    // demektir — bu, sistemin öldürmesinden daha kötü, kesin bir çökme olurdu.
+    // Bunun yerine üretim iptal edilir ve bırakma üretim bittikten sonra yapılır.
+    private val releaseWhenIdle = AtomicBoolean(false)
+
+    /**
+     * Sistem bellek baskısı bildirdiğinde modeli bırakırız.
+     *
+     * Model belleği sürecin en büyük tek tüketicisidir (yüklü motor yüzlerce
+     * MB); onu tutmak uğruna sürecin öldürülmesine izin vermek kullanıcının
+     * uygulamayı kaybetmesi demektir. Bırakıldıktan sonra bir sonraki istek
+     * modeli yeniden yükler ya da uzak sağlayıcıya düşer.
+     *
+     * KAYIT NEDEN ELLE YAPILIYOR: Capacitor'ın `Plugin` sınıfında bellek
+     * baskısı için bir yaşam döngüsü kancası YOK — `handleOnPause`,
+     * `handleOnDestroy` vb. var, `onTrimMemory` yok. Daha önce bu sınıfta
+     * `onTrimMemory` adında bir metot vardı ama hiçbir şey onu ÇAĞIRMIYORDU:
+     * `override` değildi ve süreç hiçbir `ComponentCallbacks2` kaydetmemişti.
+     * Yani bellek bırakma kodu yazılmış ama hiç çalışmamıştı; motor bellekte
+     * kalıyor, sistem bütün süreci öldürüyor ve WebView baştan yükleniyordu —
+     * kullanıcıya "sayfa kendi kendine yenileniyor" diye görünen şey buydu.
+     */
+    private val memoryCallbacks = object : ComponentCallbacks2 {
+        override fun onTrimMemory(level: Int) {
+            if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) releaseEngineWhenSafe()
+        }
+
+        // Yapılandırma değişikliği (dönme, tema) bellekle ilgisizdir.
+        override fun onConfigurationChanged(newConfig: Configuration) {}
+
+        @Deprecated("ComponentCallbacks üzerinde kaldırıldı; API 34 öncesinde hâlâ çağrılır.")
+        override fun onLowMemory() {
+            releaseEngineWhenSafe()
+        }
+    }
+
+    private fun releaseEngineWhenSafe() {
+        if (generating.get()) {
+            // Üretimi durdur; bırakma işini üretim döngüsünün sonu yapar.
+            releaseWhenIdle.set(true)
+            engine.cancel()
+            return
+        }
+        engine.release()
+    }
+
+    override fun load() {
+        super.load()
+        // Uygulama context'ine kaydediyoruz: bildirim, Activity yeniden
+        // yaratılsa da sürecin tamamı için gelir.
+        context.applicationContext.registerComponentCallbacks(memoryCallbacks)
+    }
+
     override fun handleOnDestroy() {
+        runCatching { context.applicationContext.unregisterComponentCallbacks(memoryCallbacks) }
         scope.cancel()
         engine.release()
         super.handleOnDestroy()
     }
 
     /**
-     * Sistem bellek baskısı bildirdiğinde modeli bırakırız.
+     * Cihazın belleğine göre seçilmiş model.
      *
-     * Model belleği en büyük tek tüketicidir; onu tutmak uğruna sürecin
-     * öldürülmesine izin vermek kullanıcının uygulamayı kaybetmesi demektir.
-     * Bırakıldıktan sonra bir sonraki istek yeniden yükler veya uzağa düşer.
+     * Sabit bir varsayılan yerine cihaza göre seçiyoruz: 8 GB'lık bir telefonu
+     * 4 GB'lık bir telefonun modeline mahkûm etmek gereksiz kalite kaybı,
+     * tersi ise sürecin öldürülmesi demek (bkz. LocalAiModelCatalog).
      */
-    override fun handleOnPause() {
-        super.handleOnPause()
-    }
-
-    fun onTrimMemory(level: Int) {
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
-            engine.release()
-        }
-    }
+    private fun recommendedModel(): LocalAiModelCatalog.Entry =
+        LocalAiModelCatalog.recommendedFor(LocalAiCapability.totalRamMb(context))
 
     private fun resolveModel(call: PluginCall): LocalAiModelCatalog.Entry? {
         // JS yalnız KİMLİK verebilir; bilinmeyen kimlik reddedilir.
-        val id = call.getString("modelId") ?: LocalAiModelCatalog.DEFAULT_MODEL_ID
+        val id = call.getString("modelId") ?: return recommendedModel()
         return LocalAiModelCatalog.byId(id)
     }
 
@@ -82,10 +131,15 @@ class HedefitLocalAiPlugin : Plugin() {
     fun getCapabilities(call: PluginCall) {
         scope.launch {
             runCatching {
-                val model = LocalAiModelCatalog.byId(call.getString("modelId") ?: LocalAiModelCatalog.DEFAULT_MODEL_ID)
+                val model = call.getString("modelId")?.let { LocalAiModelCatalog.byId(it) } ?: recommendedModel()
                 val report = LocalAiCapability.evaluate(context, model)
                 JSObject().apply {
                     put("runtimeAvailable", true)
+                    // Hangi modelin kullanılacağı ve o modelin çıktısının koç
+                    // sohbetinde KULLANICIYA GÖSTERİLEBİLİR olup olmadığı.
+                    // JS bu bayrağa bakar; kapalıysa sohbeti sunucuya yollar.
+                    put("selectedModelId", model.id)
+                    put("chatReady", model.turkishProseReady && report.state == LocalAiCapability.State.MODEL_READY)
                     put("supported", report.supported)
                     put("state", report.state.name)
                     put("reason", report.reason)
@@ -114,11 +168,12 @@ class HedefitLocalAiPlugin : Plugin() {
                     put("sizeBytes", entry.sizeBytes)
                     put("installed", LocalAiModelStore.isInstalled(context, entry))
                     put("minTotalRamMb", entry.minTotalRamMb)
+                    put("turkishProseReady", entry.turkishProseReady)
                 })
             }
             call.resolve(JSObject().apply {
                 put("models", models)
-                put("defaultModelId", LocalAiModelCatalog.DEFAULT_MODEL_ID)
+                put("defaultModelId", recommendedModel().id)
             })
         }
     }
@@ -135,6 +190,25 @@ class HedefitLocalAiPlugin : Plugin() {
                 put("downloading", downloadJob?.isActive == true)
                 put("loaded", engine.currentModelId == model.id && engine.isLoaded)
             })
+        }
+    }
+
+    @PluginMethod
+    fun verifyModelIntegrity(call: PluginCall) {
+        val model = resolveModel(call) ?: return call.reject("unknown_model")
+        scope.launch {
+            runCatching { LocalAiModelStore.verifyIntegrity(context, model) }
+                .onSuccess { result ->
+                    call.resolve(JSObject().apply {
+                        put("modelId", model.id)
+                        put("valid", result.valid)
+                        put("sizeBytes", result.sizeBytes)
+                        // Özeti yalnız doğrulama kanıtı olarak döndürürüz;
+                        // cihaz veya kullanıcı tanımlayıcısı değildir.
+                        put("sha256", result.sha256)
+                    })
+                }
+                .onFailure { call.reject("integrity_check_failed", it.javaClass.simpleName) }
         }
     }
 
@@ -227,6 +301,11 @@ class HedefitLocalAiPlugin : Plugin() {
         val timeoutMs = (call.getInt("timeoutMs") ?: 60_000).toLong()
         val stream = call.getBoolean("stream") ?: true
         val requestId = call.getString("requestId").orEmpty()
+        // Verilirse LiteRT-LM'in kısıtlı kod çözümünü açar (bkz. LocalAiEngine
+        // generateStream jsonSchema açıklaması). Akış (stream) şema kısıtlı
+        // üretimde KAPATILIR: JS tarafı ancak tüm metin bitince JSON.parse
+        // yapabilir, yarım parçaları göstermenin bir anlamı yok.
+        val jsonSchema = call.getString("jsonSchema")
 
         if (!generating.compareAndSet(false, true)) return call.reject("generation_in_progress")
         generationCancelledByUser = false
@@ -237,14 +316,14 @@ class HedefitLocalAiPlugin : Plugin() {
             val outcome = runCatching {
                 if (!engine.isLoaded || engine.currentModelId != model.id) engine.load(context, model)
                 withTimeoutOrNull(timeoutMs) {
-                    engine.generateStream(model, systemPrompt, userPrompt, maxOutputTokens, temperature)
+                    engine.generateStream(model, systemPrompt, userPrompt, maxOutputTokens, temperature, jsonSchema = jsonSchema)
                         .collect { message ->
                             val chunk = message.contents.contents
                                 .filterIsInstance<com.google.ai.edge.litertlm.Content.Text>()
                                 .joinToString("") { it.text }
                             if (chunk.isNotEmpty()) {
                                 builder.append(chunk)
-                                if (stream && requestId.isNotEmpty()) {
+                                if (stream && jsonSchema == null && requestId.isNotEmpty()) {
                                     notifyListeners("localAiToken", JSObject().apply {
                                         put("requestId", requestId)
                                         put("chunk", chunk)
@@ -285,6 +364,10 @@ class HedefitLocalAiPlugin : Plugin() {
                 if (generationCancelledByUser) call.reject("cancelled")
                 else call.reject("generation_failed", error.javaClass.simpleName)
             }
+
+            // Bellek baskısı üretim sırasında geldiyse bırakma buraya
+            // ertelenmişti; ölçümler okunduktan sonra artık güvenli.
+            if (releaseWhenIdle.compareAndSet(true, false)) engine.release()
         }
     }
 

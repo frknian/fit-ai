@@ -8,6 +8,8 @@ import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.ExperimentalApi
+import com.google.ai.edge.litertlm.ExperimentalFlags
+import com.google.ai.edge.litertlm.ResponseFormat
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ThinkingConfig
 import kotlinx.coroutines.flow.Flow
@@ -43,6 +45,7 @@ class LocalAiEngine {
      * `initialize()` on saniyeye kadar sürebilir ve ana iş parçacığını
      * kilitlerdi (bkz. HedefitLocalAiPlugin, kendi havuzunda çalıştırır).
      */
+    @OptIn(ExperimentalApi::class)
     fun load(context: Context, model: LocalAiModelCatalog.Entry): Long = synchronized(lock) {
         if (loadedModelId == model.id && engine != null) return lastLoadMs
 
@@ -53,6 +56,10 @@ class LocalAiEngine {
         val file = LocalAiModelStore.modelFile(context, model)
         if (!file.isFile) throw IllegalStateException("model_not_installed")
 
+        // BenchmarkInfo varsayılan olarak KAPALI ve çağrı sessizce hata verir.
+        // Phase 2 karşılaştırması ile ürün telemetrisi TTFT/decode hızını bu
+        // API'den okuduğu için motor yaratılmadan önce açık olmalıdır.
+        ExperimentalFlags.enableBenchmark = true
         val startedAt = System.currentTimeMillis()
         val config = EngineConfig(
             modelPath = file.absolutePath,
@@ -83,7 +90,7 @@ class LocalAiEngine {
      * hem birikmiş geçmişte iki kez yer alır ve bağlam bütçesi şişer.
      * Her üretim taze bir oturumla yapılır.
      */
-    private fun newConversation(model: LocalAiModelCatalog.Entry, systemPrompt: String, maxOutputTokens: Int, temperature: Double): Conversation {
+    private fun newConversation(model: LocalAiModelCatalog.Entry, systemPrompt: String, maxOutputTokens: Int, temperature: Double, needsResponseFormat: Boolean = false): Conversation {
         val active = engine ?: throw IllegalStateException("engine_not_loaded")
         conversation?.runCatching { close() }
         val config = ConversationConfig(
@@ -100,20 +107,35 @@ class LocalAiEngine {
             // Görünür akıl yürütme KAPALI: 140 kelimelik bir koçluk yanıtı için
             // yüzlerce token düşünmek yalnızca gecikme ve pil harcar.
             thinkingConfig = if (model.supportsThinking) ThinkingConfig(false) else null,
+            // Yalnız şema kısıtlı üretim istendiğinde açılır; her sohbet
+            // oturumunda gereksiz kısıtlı-kod-çözme yolunu etkinleştirmemek için.
+            enableResponseFormat = needsResponseFormat,
         )
         return active.createConversation(config).also { conversation = it }
     }
 
-    /** Akışlı üretim. Çağıran taraf Flow'u toplar ve iptali coroutine ile yapar. */
+    /**
+     * Akışlı üretim. Çağıran taraf Flow'u toplar ve iptali coroutine ile yapar.
+     *
+     * @param jsonSchema Verilirse LiteRT-LM'in kısıtlı (grammar-constrained)
+     *   kod çözümü devreye girer: motor bu şemaya UYMAYAN bir token DİZİSİ
+     *   üretemez, yani söz dizimi düzeyinde geçersiz JSON imkânsız hâle gelir.
+     *   Bu, alan adlarının/değerlerin ANLAMCA doğru olacağını garanti ETMEZ —
+     *   onu uygulama katmanındaki şema doğrulayıcı (bkz. lib/ai/providers/
+     *   on-device.ts) ve rota düzeyindeki semantik kontroller (ör.
+     *   validateGoalAnalysis, workouts.length) üstlenir.
+     */
     fun generateStream(
         model: LocalAiModelCatalog.Entry,
         systemPrompt: String,
         userPrompt: String,
         maxOutputTokens: Int,
         temperature: Double,
+        jsonSchema: String? = null,
     ): Flow<com.google.ai.edge.litertlm.Message> = synchronized(lock) {
-        val session = newConversation(model, systemPrompt, maxOutputTokens, temperature)
-        session.sendMessageAsync(userPrompt)
+        val session = newConversation(model, systemPrompt, maxOutputTokens, temperature, needsResponseFormat = jsonSchema != null)
+        val responseFormat = jsonSchema?.let { ResponseFormat.json(it) }
+        session.sendMessageAsync(userPrompt, responseFormat = responseFormat)
     }
 
     /**
