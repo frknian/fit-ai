@@ -13,7 +13,7 @@ import { useTranslations, type Dictionary } from "@/lib/i18n/translate";
 import { isValidBirthDate } from "@/lib/profile";
 
 type AuthMode = "signup" | "login" | "reset";
-type AuthStep = "form" | "verify";
+type AuthStep = "landing" | "form" | "verify";
 
 type GoogleCredentialResponse = { credential?: string };
 type GoogleIdentityApi = {
@@ -129,7 +129,10 @@ function friendlyAuthError(message: string, copy: Dictionary["auth"]) {
 export function AuthScreen({ status, onSignedIn }: { status: "loading" | "anonymous" | "unavailable"; onSignedIn: (user: User) => void }) {
   const t = useTranslations();
   const [mode, setMode] = useState<AuthMode>("signup");
-  const [step, setStep] = useState<AuthStep>("form");
+  // İlk açılışta önce bir SEÇİM ekranı gösterilir (Giriş yap / Google ile
+  // giriş yap / Kayıt ol); e-posta formu yalnız kullanıcı bir seçim
+  // yaptıktan sonra açılır.
+  const [step, setStep] = useState<AuthStep>("landing");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordAgain, setPasswordAgain] = useState("");
@@ -177,7 +180,10 @@ export function AuthScreen({ status, onSignedIn }: { status: "loading" | "anonym
   });
 
   useEffect(() => {
-    if (!usesGoogleIdentityButton || !googleClientId || status === "unavailable" || mode === "reset") {
+    // Google düğmesi hem başlangıç seçim ekranında hem de e-posta formunda
+    // görünür (bkz. googleButtonBlock); `step` bağımlılıklarda olmalı, yoksa
+    // ekranlar arası geçişte konteyner değişse de düğme yeniden çizilmez.
+    if (!usesGoogleIdentityButton || !googleClientId || status === "unavailable" || mode === "reset" || step === "verify") {
       return;
     }
     let active = true;
@@ -215,7 +221,7 @@ export function AuthScreen({ status, onSignedIn }: { status: "loading" | "anonym
       active = false;
       container.replaceChildren();
     };
-  }, [googleClientId, mode, status, usesGoogleIdentityButton]);
+  }, [googleClientId, mode, status, step, usesGoogleIdentityButton]);
 
   function changeMode(nextMode: AuthMode) {
     setMode(nextMode);
@@ -233,6 +239,13 @@ export function AuthScreen({ status, onSignedIn }: { status: "loading" | "anonym
     setError("");
     setNotice("");
     setCode("");
+  }
+
+  function backToLanding() {
+    setStep("landing");
+    setGoogleButtonReady(false);
+    setError("");
+    setNotice("");
   }
 
   async function handleEmailAuth(event: FormEvent<HTMLFormElement>) {
@@ -426,6 +439,18 @@ export function AuthScreen({ status, onSignedIn }: { status: "loading" | "anonym
     return <SportyLoader title={t.auth.loadingTitle} body={t.auth.loadingBody} />;
   }
 
+  // Başlangıç ekranı ve e-posta formu aynı Google düğmesini paylaşır — ikisi
+  // aynı anda ekranda olmadığı için (step ya "landing" ya "form") tek bir
+  // `googleButtonRef` konteynerini sırayla kullanmaları güvenli.
+  const googleButtonBlock = usesGoogleIdentityButton ? (
+    <div className={`google-identity-button${googleButtonReady ? " ready" : ""}`} aria-label={t.auth.googleButton}>
+      <div ref={googleButtonRef} />
+      {!googleButtonReady && <span>{t.auth.submitBusy}</span>}
+    </div>
+  ) : (
+    <button type="button" className="google-auth-button" onClick={() => void handleGoogleSignIn()} disabled={busy || status === "unavailable"}><GoogleMark /> {t.auth.googleButton}</button>
+  );
+
   return (
     <main className="auth-shell">
       <div className="toggle-row auth-toggle-row"><LanguageToggle /><ThemeToggle /></div>
@@ -441,15 +466,36 @@ export function AuthScreen({ status, onSignedIn }: { status: "loading" | "anonym
             diğer moda geçiren bağlantı. Sekme anahtarı kaldırıldı — üç ekranın
             hepsinde bu bağlantı deseni var ve iki ayrı geçiş yolu gereksizdi. */}
         <div className="auth-panel">
-          {(mode === "reset" || step === "verify") && (
-            <button type="button" className="auth-back" aria-label={t.auth.backToForm} onClick={() => step === "verify" ? backToForm() : changeMode("login")} disabled={busy}>
+          {/* Geri oku üç akışta görünür: doğrulama kodundan forma, şifre
+              sıfırlamadan girişe, giriş/kayıt formundan başlangıç seçimine.
+              Başlangıç ekranının (step==="landing") kendisinde ok yoktur —
+              geri gidilecek bir yer kalmamıştır. */}
+          {(step === "verify" || step === "form") && (
+            <button type="button" className="auth-back" aria-label={step === "verify" ? t.auth.backToForm : mode === "reset" ? t.auth.backToForm : t.auth.backToLanding} onClick={() => step === "verify" ? backToForm() : mode === "reset" ? changeMode("login") : backToLanding()} disabled={busy}>
               <ArrowLeft className="size-5" />
             </button>
           )}
-          <div className="auth-panel-heading"><span>{mode === "signup" ? t.auth.headingSignupEyebrow : mode === "reset" ? t.auth.headingResetEyebrow : t.auth.headingLoginEyebrow}</span><h2>{mode === "signup" ? t.auth.headingSignupTitle : mode === "reset" ? t.auth.headingResetTitle : t.auth.headingLoginTitle}</h2><p>{mode === "signup" ? t.auth.headingSignupBody : mode === "reset" ? t.auth.headingResetBody : t.auth.headingLoginBody}</p></div>
+          {step !== "verify" && (
+            <div className="auth-panel-heading">
+              {step === "landing" ? (
+                <><span>{t.auth.headingLandingEyebrow}</span><h2>{t.auth.headingLandingTitle}</h2><p>{t.auth.headingLandingBody}</p></>
+              ) : (
+                <><span>{mode === "signup" ? t.auth.headingSignupEyebrow : mode === "reset" ? t.auth.headingResetEyebrow : t.auth.headingLoginEyebrow}</span><h2>{mode === "signup" ? t.auth.headingSignupTitle : mode === "reset" ? t.auth.headingResetTitle : t.auth.headingLoginTitle}</h2><p>{mode === "signup" ? t.auth.headingSignupBody : mode === "reset" ? t.auth.headingResetBody : t.auth.headingLoginBody}</p></>
+              )}
+            </div>
+          )}
 
           {status === "unavailable" && <div className="auth-message error auth-configuration" role="alert"><strong>{t.auth.unavailableTitle}</strong><span>{t.auth.unavailableBody}</span></div>}
-          {step === "form" ? (
+          {step === "landing" ? (
+            // Uygulama ilk açıldığında görülen üç seçenek: giriş yap, Google
+            // ile giriş yap, kayıt ol. E-posta/şifre alanları burada YOK —
+            // yalnız bir seçim yaptıktan sonra açılır.
+            <div className="auth-landing-actions">
+              <button type="button" className="auth-submit" onClick={() => changeMode("login")} disabled={status === "unavailable"}>{t.auth.landingLoginButton}<span>→</span></button>
+              {googleButtonBlock}
+              <button type="button" className="auth-landing-signup" onClick={() => changeMode("signup")} disabled={status === "unavailable"}>{t.auth.landingSignupButton}</button>
+            </div>
+          ) : step === "form" ? (
             <>
               <form className="auth-form" onSubmit={handleEmailAuth}>
                 <AuthField label={t.auth.emailLabel} icon={Mail} type="email" name="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder={t.auth.emailPlaceholder} />
@@ -462,14 +508,7 @@ export function AuthScreen({ status, onSignedIn }: { status: "loading" | "anonym
               </form>
               {mode !== "reset" && <>
                 <div className="auth-divider"><span>{t.auth.dividerText}</span></div>
-                {usesGoogleIdentityButton ? (
-                  <div className={`google-identity-button${googleButtonReady ? " ready" : ""}`} aria-label={t.auth.googleButton}>
-                    <div ref={googleButtonRef} />
-                    {!googleButtonReady && <span>{t.auth.submitBusy}</span>}
-                  </div>
-                ) : (
-                  <button type="button" className="google-auth-button" onClick={() => void handleGoogleSignIn()} disabled={busy || status === "unavailable"}><GoogleMark /> {t.auth.googleButton}</button>
-                )}
+                {googleButtonBlock}
               </>}
             </>
           ) : (

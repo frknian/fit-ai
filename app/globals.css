@@ -3068,3 +3068,22 @@ h1, h2, h3, .brand, .dashboard h1, .step-content h1, .workout-player h1,
 .monthly-numbers strong {
   font-variant-numeric: tabular-nums;
 }
+
+/* --- Başlangıç seçim ekranı (components/AuthScreen.tsx, step="landing") ---
+   Uygulama ilk açıldığında görülen üç seçenek: Giriş yap (birincil,
+   .auth-submit ile aynı stil), Google ile giriş yap, Kayıt ol (üçüncül,
+   çerçeveli). Aralarında ince bir ayraç yerine yalnız boşluk var — "veya"
+   yazısı yalnız e-posta/Google ayrımında anlamlıydı, üç seçenek arasında
+   gereksizdi. */
+.auth-landing-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 6px; }
+.auth-landing-actions .auth-submit { margin-top: 0; }
+.auth-landing-signup {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; min-height: 50px; padding: 0 17px;
+  border: 1px solid var(--line); border-radius: 7px;
+  background: transparent; color: var(--ink);
+  font-size: 12px; font-weight: 800; cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.auth-landing-signup:hover:not(:disabled) { border-color: #a9bf57; background: var(--control-hover); }
+.auth-landing-signup:disabled { opacity: .55; cursor: wait; }
