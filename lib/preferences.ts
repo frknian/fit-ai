@@ -131,6 +131,10 @@ const smartProgramSwapsStore = jsonPreference("hedefit:smart-program-swaps");
 const customRegionsStore = jsonPreference("hedefit:custom-regions");
 // Günlük sabah hatırlatması (bkz. lib/daily-reminders.ts).
 const dailyReminderStore = jsonPreference("hedefit:daily-reminder");
+// "Bugün" görev listesindeki hangi görev türlerinin görüneceği (bkz.
+// lib/daily-tasks.ts). Görevin kendisi türetilmeye devam eder — burada
+// tutulan yalnız görünürlük, ayrı bir görev kaydı değil.
+const dailyTaskVisibilityStore = jsonPreference("hedefit:daily-task-visibility");
 
 export function setStoredCustomPrograms(programs: unknown) {
   customProgramsStore.write(programs);
@@ -187,6 +191,23 @@ export function useStoredCustomRegions(): unknown {
     return JSON.parse(raw);
   } catch {
     return null;
+  }
+}
+
+export function setStoredDailyTaskVisibility(visibility: Record<string, boolean>) {
+  dailyTaskVisibilityStore.write(visibility);
+}
+
+/** Anahtarı olmayan görev türü varsayılan olarak GÖRÜNÜR sayılır. */
+export function useStoredDailyTaskVisibility(): Record<string, boolean> {
+  const raw = useSyncExternalStore(subscribe, dailyTaskVisibilityStore.read, () => null);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === "boolean")) as Record<string, boolean>;
+  } catch {
+    return {};
   }
 }
 

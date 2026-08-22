@@ -16,12 +16,10 @@ type AssistantMeta = { provider?: string; model?: string; promptVersion?: string
 /** Koçun önerdiği eylemler; uygulanması için kullanıcının basması gerekir. */
 type CoachMessageActions = { actions?: CoachAction[] };
 
-export function AiCoachChat({ context, signals, onUpgradeRequest, embedded = false, onAction }: {
+export function AiCoachChat({ context, signals, onUpgradeRequest, onAction }: {
   context: string;
   signals?: CoachSignals;
   onUpgradeRequest?: () => void;
-  /** Kendi sekmesinde tam ekran: başlatıcı ve kapatma düğmesi yok. */
-  embedded?: boolean;
   /**
    * Koçun önerdiği eylemi UYGULAR. Verilmezse eylem düğmeleri hiç
    * gösterilmez — çalışmayan bir düğme, düğme olmamasından kötü.
@@ -34,10 +32,6 @@ export function AiCoachChat({ context, signals, onUpgradeRequest, embedded = fal
   const t = useTranslations();
   const locale = useLocale();
   const suggestions = [t.aiCoachChat.suggestion1, t.aiCoachChat.suggestion2, t.aiCoachChat.suggestion3];
-  // Koç kendi sekmesindeyken panel HER ZAMAN açıktır; yüzen başlatıcı yalnız
-  // gömülü olmayan kullanımda (eski panel) görünür.
-  const [open, setOpen] = useState(false);
-  const isOpen = embedded || open;
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Array<CoachMessage & { id: string; meta?: AssistantMeta } & CoachMessageActions>>([]);
   // Verilen oylar yalnız bu oturumda tutulur; kalıcı kayıt sunucuda
@@ -51,27 +45,14 @@ export function AiCoachChat({ context, signals, onUpgradeRequest, embedded = fal
   const [limitReached, setLimitReached] = useState(false);
   const [notice, setNotice] = useState("");
   const [usage, setUsage] = useState<{ used: number; limit: number } | null>(null);
-  const launcherRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const requestController = useRef<AbortController | null>(null);
   const lastConversation = useRef<CoachMessage[]>([]);
   const adUnlock = useAdUnlock("chat");
 
-  function closeCoach() {
-    setOpen(false);
-    window.requestAnimationFrame(() => launcherRef.current?.focus());
-  }
-
   useEffect(() => {
-    if (!isOpen) return;
     inputRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      // Sekme olarak açıkken Escape'in kapatacağı bir şey yok.
-      if (event.key === "Escape" && !embedded) closeCoach();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isOpen, embedded]);
+  }, []);
 
   useEffect(() => () => requestController.current?.abort(), []);
 
@@ -201,12 +182,10 @@ export function AiCoachChat({ context, signals, onUpgradeRequest, embedded = fal
     setBusy(false);
   }
 
-  return <>
-    {/* Panel açıkken kapatma zaten panel başlığındaki × düğmesiyle yapılıyor;
-        sağ alttaki başlatıcı kutusunun panelle üst üste durması gereksizdi. */}
-    {!embedded && !open && <button ref={launcherRef} type="button" className="coach-launcher" aria-label={t.aiCoachChat.openCoach} aria-expanded={false} aria-controls="ai-coach-panel" onClick={() => setOpen(true)}><span aria-hidden="true">✦</span><strong>{t.aiCoachChat.launcherLabel}</strong></button>}
-    {isOpen && <aside id="ai-coach-panel" className={embedded ? "coach-chat coach-embedded" : "coach-chat"} role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : false} aria-labelledby="ai-coach-title">
-      <header><div><span className="coach-online" aria-hidden="true" /><div><strong id="ai-coach-title">{t.aiCoachChat.title}</strong><small>{t.aiCoachChat.subtitle}</small></div></div>{!embedded && <button type="button" aria-label={t.aiCoachChat.closeCoach} onClick={closeCoach}>×</button>}</header>
+  // Koç yalnız alt sekme çubuğundaki kendi sekmesinden açılır; yüzen
+  // başlatıcı ve kapatma düğmesi yok, panel her zaman tam ekran.
+  return <aside id="ai-coach-panel" className="coach-chat coach-embedded" role="region" aria-labelledby="ai-coach-title">
+      <header><div><span className="coach-online" aria-hidden="true" /><div><strong id="ai-coach-title">{t.aiCoachChat.title}</strong><small>{t.aiCoachChat.subtitle}</small></div></div></header>
       <Conversation className="coach-conversation"><ConversationContent className="coach-messages">
         {messages.length === 0 ? <ConversationEmptyState title={t.aiCoachChat.emptyTitle} description={t.aiCoachChat.emptyDescription} icon={<span className="coach-empty-icon">✦</span>} /> : messages.map((message) => <Message from={message.role} key={message.id}><MessageContent><MessageResponse>{message.text}</MessageResponse>
           {/* Eylem düğmeleri: koçun önerisini tek dokunuşla uygulamaya
@@ -239,6 +218,5 @@ export function AiCoachChat({ context, signals, onUpgradeRequest, embedded = fal
       {messages.length === 0 && <div className="coach-suggestions">{suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => void send(suggestion)}>{suggestion}</button>)}</div>}
       <form className="coach-input" onSubmit={submit}><label htmlFor="coach-question" className="sr-only">{t.aiCoachChat.inputLabel}</label><textarea ref={inputRef} id="coach-question" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(input); } }} placeholder={t.aiCoachChat.inputPlaceholder} maxLength={600} rows={2} /><button type={busy ? "button" : "submit"} aria-label={busy ? t.aiCoachChat.stopResponse : t.aiCoachChat.sendQuestion} onClick={busy ? stop : undefined}>{busy ? "■" : "↑"}</button></form>
       <p className="coach-disclaimer">{t.aiCoachChat.disclaimer}</p>
-    </aside>}
-  </>;
+  </aside>;
 }

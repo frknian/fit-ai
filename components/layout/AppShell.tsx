@@ -65,10 +65,12 @@ export function AppShell({
 
       <header className="hf-topbar">
         <div className="hf-topbar-brand">{brand}</div>
-        {search && <div className="hf-topbar-search">{search}</div>}
-        {/* Telefonda sekme çubuğuna sığmayan görünümler başlıkta ikon olarak
-            durur; hiçbir ekran erişilemez hâle gelmez. */}
+        {/* Arama, zil/dil/tema/profil ile AYNI grupta durur — hepsi eşit
+            boyutlu daire, aralarında minimal boşluk. Telefonda sekme
+            çubuğuna sığmayan görünümler de burada ikon olarak durur; hiçbir
+            ekran erişilemez hâle gelmez. */}
         <div className="hf-topbar-actions">
+          {search && <div className="hf-topbar-search">{search}</div>}
           {secondary.map((item) => (
             <IconButton
               key={item.id}

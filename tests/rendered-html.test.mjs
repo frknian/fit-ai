@@ -325,9 +325,9 @@ test("mobil gezinme alt sekme çubuğunda ve hiçbir görünüm erişilemez kalm
     const entry = specialEntry[view];
     assert.ok(entry ? entry() : navBlock.includes(`id: "${view}"`), `erişilemez görünüm: ${view}`);
   }
-  // Koç artık kendi sekmesi ve sekmedeyken yüzen panel ikinci kez çizilmez.
+  // Koç artık YALNIZ kendi sekmesinden açılır; yüzen başlatıcı hiçbir yerde çizilmez.
   assert.ok(navBlock.includes('id: "coach"'), "Koç sekmesi eksik");
-  assert.match(page, /nav\.tab !== "coach" && <AiCoachChat/);
+  assert.doesNotMatch(page, /coach-launcher/);
 
   // Sabit çubuk içeriği örtmemeli ve çentikli telefonda ekran altına gömülmemeli.
   const tabbar = styles.match(/\.hf-tabbar \{([^}]*)\}/)?.[1] ?? "";

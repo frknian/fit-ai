@@ -664,18 +664,12 @@ button,input { font:inherit; } button { cursor:pointer; }
 .toggle-row { display:flex; align-items:center; gap:8px; }
 .onboarding-toggle-row { position:fixed; z-index:40; top:22px; right:5.5vw; }
 
-.coach-launcher { position:fixed; z-index:95; right:24px; bottom:24px; display:flex; align-items:center; gap:9px; min-height:48px; padding:0 17px; border:1px solid #34352f; border-radius:999px; background:#22231f; color:#fff; box-shadow:0 14px 35px rgba(0,0,0,.22); transition:transform .2s ease,box-shadow .2s ease; }
-.coach-launcher:hover,.coach-launcher.active { transform:translateY(-2px); box-shadow:0 18px 42px rgba(0,0,0,.28); }
-.coach-launcher span { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:var(--lime); color:#26271f; font-size:13px; }
-.coach-launcher strong { font-size:11px; letter-spacing:.4px; }
-.coach-chat { position:fixed; z-index:94; right:24px; bottom:82px; display:grid; grid-template-rows:auto minmax(0,1fr) auto auto auto; width:min(390px,calc(100vw - 32px)); height:min(620px,calc(100vh - 112px)); overflow:hidden; border:1px solid var(--line); border-radius:16px; background:var(--surface-elevated); color:var(--ink); box-shadow:0 28px 80px rgba(0,0,0,.28); }
+.coach-chat { display:grid; grid-template-rows:auto minmax(0,1fr) auto auto auto; overflow:hidden; border:1px solid var(--line); background:var(--surface-elevated); color:var(--ink); }
 .coach-chat > header { display:flex; align-items:center; justify-content:space-between; min-height:68px; padding:13px 15px; border-bottom:1px solid var(--line); background:var(--surface-soft); }
 .coach-chat > header > div { display:flex; align-items:center; gap:10px; }
 .coach-chat > header strong,.coach-chat > header small { display:block; }
 .coach-chat > header strong { font-size:12px; }
 .coach-chat > header small { margin-top:3px; color:var(--muted-text); font-size:9px; }
-.coach-chat > header button { display:grid; place-items:center; width:34px; height:34px; border:0; border-radius:50%; background:transparent; color:var(--muted-text); font-size:23px; }
-.coach-chat > header button:hover { background:var(--surface); color:var(--ink); }
 .coach-online { width:9px; height:9px; border-radius:50%; background:#a8ca3a; box-shadow:0 0 0 4px rgba(168,202,58,.15); }
 .coach-conversation { min-height:0; background:var(--surface-elevated); }
 .coach-messages { gap:12px; padding:18px 14px; }
@@ -803,8 +797,6 @@ button,input { font:inherit; } button { cursor:pointer; }
      kırpılıyordu. Düğmeler 14+36=50 px'te biter, içerik altından başlar. */
   .onboarding-wrap { margin-top:62px; }
   .top-actions { gap:7px; }
-  .coach-launcher { right:16px; bottom:16px; min-height:46px; padding:0 14px; }
-  .coach-chat:not(.coach-embedded) { right:8px; bottom:72px; width:calc(100vw - 16px); height:min(620px,calc(100dvh - 88px)); border-radius:14px; }
   .set-log-card { padding:13px; }
   .set-log-heading { align-items:flex-start; flex-direction:column; gap:8px; }
 }
@@ -2303,7 +2295,7 @@ h1, h2, h3, .brand, .dashboard h1, .step-content h1, .workout-player h1,
 }
 .native-app .hf-topbar { top:env(safe-area-inset-top); }
 .hf-topbar-brand { display:flex; align-items:center; min-width:0; }
-.hf-topbar-actions { display:flex; align-items:center; gap:2px; }
+.hf-topbar-actions { display:flex; align-items:center; gap:4px; }
 .hf-topbar-icon {
   display:grid; place-items:center; width:44px; height:44px; border:0; border-radius:var(--hf-radius-full);
   background:transparent; color:var(--hf-on-surface-variant); cursor:pointer; transition:background .16s var(--hf-ease), color .16s var(--hf-ease);
@@ -2343,10 +2335,9 @@ h1, h2, h3, .brand, .dashboard h1, .step-content h1, .workout-player h1,
    etiketler kırpılmasın diye punto ve iç boşluk küçülür. */
 @media (max-width:430px) { .hf-tab { font-size:9px; padding:6px 1px; gap:3px; } }
 .hf-tab.active { background:var(--hf-primary-container); color:var(--hf-on-primary-container); font-weight:750; }
-/* Sekme çubuğu içeriğin üstüne biner: alt boşluk ve yüzen koç düğmesi kalkar. */
+/* Sekme çubuğu içeriğin üstüne biner: alt boşluk kalkar. */
 .hf-shell .hf-main { padding-bottom:96px; }
 .hf-shell > footer { margin-bottom:78px; }
-.coach-launcher { bottom:calc(84px + env(safe-area-inset-bottom)); }
 
 @media (min-width:1024px) {
   .hf-shell {
@@ -2368,7 +2359,6 @@ h1, h2, h3, .brand, .dashboard h1, .step-content h1, .workout-player h1,
   .hf-main { grid-area:main; padding-bottom:var(--hf-space-xl); }
   .hf-shell > footer { grid-area:foot; margin-bottom:0; }
   .hf-tabbar { display:none; }
-  .coach-launcher { bottom:24px; }
 }
 
 /* --- 4. Yüzeyler: tonal katman + saç teli kenar + ortam gölgesi ---------- */
@@ -2630,7 +2620,21 @@ h1, h2, h3, .brand, .dashboard h1, .step-content h1, .workout-player h1,
 @media (max-width:640px) { .program-prescription-fields { grid-template-columns:repeat(3,minmax(0,1fr)); } .program-dropset { grid-column:1/-1; } }
 
 /* --- 17. Genel arama: başlıkta tetikleyici, ortada komut paleti ---------- */
-.hf-topbar-search { display:flex; min-width:0; flex:1; justify-content:flex-end; }
+.hf-topbar-search { display:flex; min-width:0; }
+/* Zil/dil/tema/profil ile aynı grupta, aynı boyutta daire: arama artık
+   ortada ayrı bir kutu değil, eylem düğmelerinin bir parçası. */
+.hf-topbar-actions .language-toggle,
+.hf-topbar-actions .theme-toggle {
+  display:grid; place-items:center; width:44px; height:44px; padding:0; gap:0;
+  border:0; border-radius:var(--hf-radius-full); background:transparent; color:var(--hf-on-surface-variant); transform:none;
+}
+.hf-topbar-actions .language-toggle:hover,
+.hf-topbar-actions .theme-toggle:hover { background:var(--hf-surface-highest); color:var(--hf-primary); transform:none; }
+.hf-topbar-actions .language-toggle span,
+.hf-topbar-actions .theme-toggle span { font-size:16px; }
+.hf-topbar-actions .language-toggle small,
+.hf-topbar-actions .theme-toggle small { display:none; }
+.hf-topbar-actions .topbar-avatar { width:44px; height:44px; }
 .hf-search-trigger {
   display:flex; align-items:center; gap:10px; min-height:44px; padding:0 14px;
   border:1px solid var(--hf-outline-variant); border-radius:var(--hf-radius-full);
@@ -2645,7 +2649,11 @@ h1, h2, h3, .brand, .dashboard h1, .step-content h1, .workout-player h1,
   .hf-search-trigger { width:44px; padding:0; justify-content:center; border-color:transparent; background:transparent; }
   .hf-search-trigger > span { display:none; }
 }
-@media (min-width:1024px) { .hf-topbar-search { justify-content:flex-start; } .hf-search-trigger { width:min(420px,100%); } }
+@media (min-width:1024px) {
+  .hf-topbar-actions { flex:1; justify-content:flex-end; }
+  .hf-topbar-search { flex:0 1 420px; }
+  .hf-search-trigger { width:100%; }
+}
 
 .hf-search-overlay {
   position:fixed; z-index:140; inset:0; display:grid; align-items:start; justify-items:center;
@@ -2953,17 +2961,21 @@ h1, h2, h3, .brand, .dashboard h1, .step-content h1, .workout-player h1,
 .topbar-avatar[aria-pressed="true"] { border-color: #8da42f; color: var(--ink); }
 
 /* --- Koç kendi sekmesinde ------------------------------------------------
-   Yüzen panel değil, sayfanın kendisi: sabit konum ve panel gölgesi kalkar,
-   yükseklik içeriğe göre akar. */
+   Yüzen panel değil, sayfanın kendisi: sabit konum ve panel gölgesi kalkar.
+   Yükseklik sabit bir hesap yerine esnek sütunla doldurulur — üst/alt çubuk
+   boyutu ekran boyutuna göre değişse de (masaüstü sidenav'da çubuklar farklı),
+   koç panelinin altında boşluk kalmaz. */
+.hf-shell:has(.coach-chat.coach-embedded) .hf-main { display: flex; flex-direction: column; min-height: 0; }
+.hf-shell:has(.coach-chat.coach-embedded) .dashboard { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; max-width: none; margin: 0; }
 .coach-chat.coach-embedded {
   position: static;
   inset: auto;
+  flex: 1;
+  min-height: 0;
   width: 100%;
   max-width: none;
-  height: auto;
-  min-height: 60vh;
   margin: 0;
-  border-radius: var(--r-lg, 12px);
+  border-radius: 0;
   box-shadow: none;
   animation: none;
 }
@@ -2979,7 +2991,17 @@ h1, h2, h3, .brand, .dashboard h1, .step-content h1, .workout-player h1,
    götürür. */
 .daily-tasks { margin: 0 0 20px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .daily-tasks-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.daily-tasks-head-actions { display: flex; align-items: center; gap: 8px; }
 .daily-tasks-count { color: var(--muted-text); font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.daily-tasks-edit {
+  display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+  border: 1px solid var(--line); border-radius: 50%;
+  background: transparent; color: var(--muted-text); cursor: pointer;
+}
+.daily-tasks-edit:hover,.daily-tasks-edit[aria-expanded="true"] { border-color: #a9bf57; color: var(--ink); background: var(--control-hover); }
+.daily-tasks-editor { display: flex; flex-direction: column; gap: 2px; margin: 10px 0 0; padding: 8px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); list-style: none; }
+.daily-tasks-editor label { display: flex; align-items: center; gap: 8px; padding: 5px 4px; font-size: 12px; cursor: pointer; }
+.daily-tasks-empty { margin: 10px 0 0; color: var(--muted-text); font-size: 11px; }
 .daily-tasks-list { display: flex; flex-direction: column; gap: 2px; margin: 10px 0 0; padding: 0; list-style: none; }
 .daily-task {
   display: flex; align-items: center; gap: 10px; width: 100%;
