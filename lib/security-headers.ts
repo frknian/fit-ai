@@ -12,7 +12,11 @@ export const contentSecurityPolicy = [
   "frame-ancestors 'none'",
   "form-action 'self'",
   "script-src 'self' 'unsafe-inline' https://accounts.google.com",
-  "style-src 'self' 'unsafe-inline'",
+  // Google Identity Services kendi düğmesini çizerken bir stil sayfası
+  // yükler (accounts.google.com/gsi/style); bu olmadan düğme markasız/çıplak
+  // görünüyordu. script/frame/connect zaten bu kaynağa izin veriyordu, yalnız
+  // style-src unutulmuştu.
+  "style-src 'self' 'unsafe-inline' https://accounts.google.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "frame-src https://accounts.google.com",

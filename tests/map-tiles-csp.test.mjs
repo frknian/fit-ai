@@ -36,3 +36,12 @@ test("worker geolocation ve konum izinlerini engellemez", async () => {
   const { securityHeaders } = await import("../lib/security-headers.ts");
   assert.match(securityHeaders["Permissions-Policy"], /geolocation=\(self\)/);
 });
+
+test("Google Identity düğmesinin stil sayfası CSP tarafından engellenmez", async () => {
+  // GSI kendi düğmesini çizerken accounts.google.com/gsi/style'ı yükler;
+  // script/frame/connect zaten bu kaynağa izin veriyordu, style-src'de
+  // unutulmuştu ve düğme markasız/çıplak görünüyordu (canlıda gözlemlendi).
+  const { contentSecurityPolicy } = await import("../lib/security-headers.ts");
+  const styleSrc = contentSecurityPolicy.split("; ").find((directive) => directive.startsWith("style-src"));
+  assert.ok(styleSrc?.includes("https://accounts.google.com"), "style-src Google Identity'ye izin vermeli");
+});
