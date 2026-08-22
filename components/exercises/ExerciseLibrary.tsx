@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ExerciseCard } from "./ExerciseCard";
 import { ExerciseDetail } from "./ExerciseDetail";
 import { ExerciseFilters } from "./ExerciseFilters";
-import { filterExercises, getAllExercises, getExerciseById, getExerciseFilterOptions } from "@/lib/exercise-service";
+import { countExercisesByFacet, filterExercises, getAllExercises, getExerciseById, getExerciseFilterOptions } from "@/lib/exercise-service";
 import type { Exercise, ExerciseFilters as Filters } from "@/types/exercise";
 import { useTranslations } from "@/lib/i18n/translate";
 import { SectionHeader } from "@/components/design";
@@ -19,6 +19,15 @@ export function ExerciseLibrary({ initialExerciseId, onOpenWorkout, onAddWorkout
   const [isPending, startTransition] = useTransition();
   const toastTimer = useRef<number | null>(null);
   const options = useMemo(() => getExerciseFilterOptions(filters), [filters]);
+  // Rozetlerin yanındaki sayılar. Dört boyut × ~40 seçenek kadar filtreleme
+  // yapar; katalog değişmediği ve filtreler yalnız kullanıcı hareketiyle
+  // değiştiği için memo yeterli.
+  const counts = useMemo(() => ({
+    muscles: countExercisesByFacet(filters, "muscle"),
+    equipment: countExercisesByFacet(filters, "equipment"),
+    levels: countExercisesByFacet(filters, "level"),
+    categories: countExercisesByFacet(filters, "category"),
+  }), [filters]);
   const exercises = useMemo(() => filterExercises(filters), [filters]);
   useEffect(() => () => { if (toastTimer.current !== null) window.clearTimeout(toastTimer.current); }, []);
   // Genel aramadan bir hareket seçildiyse kütüphane açılır açılmaz onun
@@ -47,5 +56,5 @@ export function ExerciseLibrary({ initialExerciseId, onOpenWorkout, onAddWorkout
     setVisibleCount(24);
   });
 
-  return <div className="subview database-library"><div className="eyebrow">{t.exerciseLibrary.eyebrow}</div><h1>{t.exerciseLibrary.title1}<br /><em>{t.exerciseLibrary.title2}</em></h1><p className="lead">{t.exerciseLibrary.lead(getAllExercises().length)}</p><ExerciseFilters filters={filters} options={options} onChange={updateFilters} onClear={() => updateFilters({})} /><SectionHeader className="library-result-row" eyebrow={t.exerciseLibrary.eyebrow} title={t.exerciseLibrary.resultCount(exercises.length)} action={<span>{isPending ? t.exerciseLibrary.filtering : t.exerciseLibrary.localImages}</span>} />{exercises.length ? <div className="database-exercise-grid">{exercises.slice(0, visibleCount).map((exercise) => <ExerciseCard exercise={exercise} favorite={favorites.includes(exercise.id)} onDetail={() => setSelected(exercise)} onFavorite={() => toggleFavorite(exercise.id)} key={exercise.id} />)}</div> : <div className="library-empty"><strong>{t.exerciseLibrary.noExercisesFound}</strong><p>{t.exerciseLibrary.tryDifferentFilters}</p><button type="button" onClick={() => updateFilters({})}>{t.exerciseLibrary.clearFilters}</button></div>}{visibleCount < exercises.length && <button type="button" className="load-exercises" onClick={() => setVisibleCount((count) => count + 24)}>{t.exerciseLibrary.loadMore}</button>}{selected && <ExerciseDetail exercise={selected} favorite={favorites.includes(selected.id)} onClose={() => setSelected(null)} onFavorite={() => toggleFavorite(selected.id)} onAdd={() => addWorkout(selected)} onOpen={() => onOpenWorkout(selected)} />}{addedName && <div className="exercise-added" role="status">{t.exerciseLibrary.addedToWorkout(addedName)}</div>}</div>;
+  return <div className="subview database-library"><div className="eyebrow">{t.exerciseLibrary.eyebrow}</div><h1>{t.exerciseLibrary.title1}<br /><em>{t.exerciseLibrary.title2}</em></h1><p className="lead">{t.exerciseLibrary.lead(getAllExercises().length)}</p><ExerciseFilters filters={filters} options={options} counts={counts} onChange={updateFilters} onClear={() => updateFilters({})} /><SectionHeader className="library-result-row" eyebrow={t.exerciseLibrary.eyebrow} title={t.exerciseLibrary.resultCount(exercises.length)} action={<span>{isPending ? t.exerciseLibrary.filtering : t.exerciseLibrary.localImages}</span>} />{exercises.length ? <div className="database-exercise-grid">{exercises.slice(0, visibleCount).map((exercise) => <ExerciseCard exercise={exercise} favorite={favorites.includes(exercise.id)} onDetail={() => setSelected(exercise)} onFavorite={() => toggleFavorite(exercise.id)} key={exercise.id} />)}</div> : <div className="library-empty"><strong>{t.exerciseLibrary.noExercisesFound}</strong><p>{t.exerciseLibrary.tryDifferentFilters}</p><button type="button" onClick={() => updateFilters({})}>{t.exerciseLibrary.clearFilters}</button></div>}{visibleCount < exercises.length && <button type="button" className="load-exercises" onClick={() => setVisibleCount((count) => count + 24)}>{t.exerciseLibrary.loadMore}</button>}{selected && <ExerciseDetail exercise={selected} favorite={favorites.includes(selected.id)} onClose={() => setSelected(null)} onFavorite={() => toggleFavorite(selected.id)} onAdd={() => addWorkout(selected)} onOpen={() => onOpenWorkout(selected)} />}{addedName && <div className="exercise-added" role="status">{t.exerciseLibrary.addedToWorkout(addedName)}</div>}</div>;
 }

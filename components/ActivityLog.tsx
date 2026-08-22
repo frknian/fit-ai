@@ -10,6 +10,7 @@ import { useTranslations, translateIntensity } from "@/lib/i18n/translate";
 import { useLocale } from "@/lib/i18n/locale";
 import { GpsMapView, type MapCapture } from "@/components/GpsMapView";
 import { RoutePreviewThumbnail } from "@/components/RoutePreviewThumbnail";
+import { ActivityIcon } from "@/components/ActivityIcon";
 
 function formatEntryDate(value: string, locale: string) {
   return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric", weekday: "short" }).format(new Date(`${value}T12:00:00`));
@@ -135,7 +136,9 @@ export function ActivityLog({ userId, onClose }: { userId: string; onClose: () =
           const route = routesByEntryId[entry.id];
           const points = route ? decodePolyline(route.encodedPolyline) : [];
           return <article key={entry.id} className="activity-log-row" onClick={() => setSelected(entry)}>
-            {points.length > 1 ? <RoutePreviewThumbnail route={points} /> : <div className="route-preview-thumb route-preview-thumb-placeholder" aria-hidden="true" />}
+            {/* Rotası olmayan kayıt (manuel giriş) boş gri bir kutu olarak
+                duruyordu; artık aktivitenin kendi simgesini gösterir. */}
+            {points.length > 1 ? <RoutePreviewThumbnail route={points} /> : <div className="route-preview-thumb route-preview-thumb-placeholder"><ActivityIcon name={entry.activityKey} /></div>}
             <div>
               <strong>{entry.activityName}</strong>
               <small>{formatEntryDate(entry.localDate, dateLocale)} · {entry.durationMinutes} {t.activityLogger.chartUnitMinutes}{entry.distanceKm ? ` · ${entry.distanceKm.toFixed(2)} km` : ""}</small>

@@ -9,6 +9,7 @@ import { loadMemories } from "../../../lib/ai/memory.ts";
 import { sanitizeCoachSignals } from "../../../lib/ai/signals.ts";
 import { AiAllProvidersFailedError } from "../../../lib/ai/errors.ts";
 import { checkAndConsumeUsage, refundUsage, usageLimitExceeded } from "../../../lib/usage-limits.ts";
+import { parseCoachActions } from "../../../lib/ai/coach-actions.ts";
 
 export const runtime = "edge";
 
@@ -84,10 +85,18 @@ export async function POST(request: Request) {
       // öncesindeki davranış da buydu (bkz. lib/usage-limits.ts refundUsage).
       const servedLocally = result.provider === LOCAL_PROVIDER_ID;
       if (servedLocally && Number.isFinite(usage.limit)) await refundUsage(request, "chat");
+      // Eylemler YALNIZCA gerçek modelden ayrıştırılır. Yerel yedek şablon
+      // yanıtlar üretir; oradan yapılandırılmış çağrı beklemek, kullanıcıya
+      // model onaylamamışken "plana ekle" düğmesi göstermek olurdu
+      // (bkz. lib/ai/coach-actions.ts).
+      const parsed = servedLocally ? { text: result.text, actions: [] } : parseCoachActions(result.text);
       // Sınır uygulanmıyorsa (bkz. lib/usage-limits.ts) limit sonsuzdur; JSON'da
       // null'a dönüşüp arayüzde "0/null" görüneceği için alanı hiç göndermiyoruz.
       return Response.json({
-        text: result.text,
+        text: parsed.text,
+        // Her eylem bir ÖNERİdir: uygulanması için kullanıcının düğmeye
+        // basması gerekir (bkz. components/AiCoachChat.tsx).
+        ...(parsed.actions.length ? { actions: parsed.actions } : {}),
         // Göç öncesindeki source sözleşmesi korunur: "ai" = gerçek model,
         // "fallback" = güvenli yerel öneri.
         source: servedLocally ? "fallback" : "ai",

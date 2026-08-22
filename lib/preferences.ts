@@ -125,6 +125,12 @@ function jsonPreference(key: string) {
 const customProgramsStore = jsonPreference("hedefit:custom-programs");
 const programLogStore = jsonPreference("hedefit:program-log");
 const smartProgramSwapsStore = jsonPreference("hedefit:smart-program-swaps");
+// Kullanıcının kendi tanımladığı bölgesel gruplar (ör. "İtiş günü" = göğüs +
+// omuz + kol). Özel programlarla aynı katmanda tutulur: küçük bir JSON, ayrı
+// tablo açmayı gerektirmiyor ve PreferenceSync ile cihazlar arasında eşitlenir.
+const customRegionsStore = jsonPreference("hedefit:custom-regions");
+// Günlük sabah hatırlatması (bkz. lib/daily-reminders.ts).
+const dailyReminderStore = jsonPreference("hedefit:daily-reminder");
 
 export function setStoredCustomPrograms(programs: unknown) {
   customProgramsStore.write(programs);
@@ -151,6 +157,36 @@ export function useStoredSmartProgramSwaps(): Record<string, string> {
     return Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === "string")) as Record<string, string>;
   } catch {
     return {};
+  }
+}
+
+export function setStoredDailyReminder(preferences: unknown) {
+  dailyReminderStore.write(preferences);
+}
+
+/** Ham JSON; çağıran normalizeDailyReminder ile doğrular. */
+export function useStoredDailyReminder(): unknown {
+  const raw = useSyncExternalStore(subscribe, dailyReminderStore.read, () => null);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredCustomRegions(regions: unknown) {
+  customRegionsStore.write(regions);
+}
+
+/** Ham JSON; çağıran normalizeCustomRegions ile doğrular. */
+export function useStoredCustomRegions(): unknown {
+  const raw = useSyncExternalStore(subscribe, customRegionsStore.read, () => null);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
   }
 }
 
@@ -222,6 +258,40 @@ function writeFlag(key: string, enabled: boolean) {
   }
   listeners.forEach((listener) => listener());
   notifyPreferenceChange();
+}
+
+/**
+ * Kullanma kılavuzu gösterildi mi?
+ *
+ * Diğer bayraklardan farklı olarak varsayılan KAPALI ("henüz görülmedi"):
+ * readFlag anahtar yokken true döner, oysa burada anahtarın olmaması tam da
+ * kılavuzun hiç gösterilmediği anlamına gelir.
+ */
+const GUIDE_SEEN_KEY = "hedefit:guide-seen";
+
+function readGuideSeen(): boolean {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem(GUIDE_SEEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setStoredGuideSeen(seen: boolean) {
+  try {
+    if (seen) localStorage.setItem(GUIDE_SEEN_KEY, "1");
+    else localStorage.removeItem(GUIDE_SEEN_KEY);
+  } catch {
+    // yerel depolama kapalıysa kılavuz her açılışta gösterilir
+  }
+  listeners.forEach((listener) => listener());
+  notifyPreferenceChange();
+}
+
+/** Sunucuda "görüldü" varsayılır: kılavuz yalnız tarayıcıda anlamlıdır ve
+    sunucu render'ında bir an görünüp kaybolmamalıdır. */
+export function useGuideSeen(): boolean {
+  return useSyncExternalStore(subscribe, readGuideSeen, () => true);
 }
 
 export function setStoredSetLoggingEnabled(enabled: boolean) {

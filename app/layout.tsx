@@ -4,7 +4,11 @@ import "./globals.css";
 // Tema ve dil, ilk boyamadan önce senkron olarak uygulanır; aksi halde
 // CSS text-transform:uppercase, <html lang> Türkçe kalırsa İngilizce
 // metinlerde "i" harfini yanlış büyük harfe çevirir (ör. "WİTH").
-const themeScript = `(function(){try{var t=localStorage.getItem('hedefit-theme')||localStorage.getItem('form-ai-theme');if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.classList.toggle('dark',t==='dark')}catch(e){}try{var l=localStorage.getItem('hedefit:locale')||localStorage.getItem('fitai:locale');if(l!=='en'&&l!=='tr'){l=(navigator.language||'tr').toLowerCase().indexOf('en')===0?'en':'tr'}document.documentElement.lang=l}catch(e){}})()`;
+// Tema seçimi ilk boyamadan ÖNCE uygulanır (aksi hâlde açık tema bir an
+// görünüp koyuya dönerdi). Varsayılan KOYU: uygulama koyu-öncelikli
+// tasarlandı (bkz. docs/MOBIL_TASARIM_PLANI.md 3.4). Açık tema korunuyor —
+// GPS ekranı güneş altında kullanılıyor ve orada koyu ekran okunmuyor.
+const themeScript = `(function(){try{var t=localStorage.getItem('hedefit-theme')||localStorage.getItem('form-ai-theme');if(t!=='light'&&t!=='dark'){t='dark'}document.documentElement.classList.toggle('dark',t==='dark')}catch(e){}try{var l=localStorage.getItem('hedefit:locale')||localStorage.getItem('fitai:locale');if(l!=='en'&&l!=='tr'){l=(navigator.language||'tr').toLowerCase().indexOf('en')===0?'en':'tr'}document.documentElement.lang=l}catch(e){}})()`;
 
 export const viewport = { themeColor: "#D9F76B" };
 

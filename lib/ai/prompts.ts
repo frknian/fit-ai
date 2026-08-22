@@ -7,7 +7,10 @@
 // `AI_COACH_PROMPT_VERSION` saklanır; prompt değişince sürüm artırılır ve eski
 // ölçümler yeni promptla karıştırılmaz.
 
-export const AI_COACH_PROMPT_VERSION = "v1";
+import { COACH_ACTIONS_INSTRUCTION } from "./coach-actions.ts";
+
+// v2: koç yanıtlarına eylem bloğu talimatı eklendi (bkz. coach-actions.ts).
+export const AI_COACH_PROMPT_VERSION = "v2";
 
 export type PromptInput = {
   locale: "tr" | "en";
@@ -127,6 +130,10 @@ export function buildCoachSystemPrompt(input: PromptInput): string {
     FACTS_RULE[locale],
     hasMemory ? MEMORY_RULE[locale] : "",
     untrustedTags ? UNTRUSTED_RULE[locale](untrustedTags) : "",
+    // Eylem talimatı YALNIZ uzak modele gider. Cihaz üstü model (compact)
+    // hem yapılandırılmış çıktıda güvenilir değil hem de her ek talimat
+    // prefill süresine doğrudan yansıyor.
+    input.compact ? "" : COACH_ACTIONS_INSTRUCTION[locale],
     input.safetyInstruction,
   ].filter(Boolean);
 

@@ -598,7 +598,9 @@ button,input { font:inherit; } button { cursor:pointer; }
 
 /* Açık kaynak egzersiz veri tabanı, gerçek kare animasyonları ve detay görünümü. */
 .database-library { padding-bottom:80px; }
-.database-filters { display:grid; grid-template-columns:2fr repeat(4,1fr) auto; gap:9px; align-items:end; margin:28px 0 18px; padding:16px; border:1px solid var(--line); border-radius:11px; background:#fbfbf7; }
+/* Filtreler artık açılır liste değil, sayılı rozet satırları (bkz.
+   components/exercises/ExerciseFilters.tsx): tek sütunlu bir yığın. */
+.database-filters { display:grid; grid-template-columns:1fr; gap:14px; align-items:stretch; margin:28px 0 18px; padding:16px; border:1px solid var(--line); border-radius:11px; background:#fbfbf7; }
 .database-filters label { display:grid; gap:7px; min-width:0; }.database-filters label > span { color:#8b8e86; font-size:8px; font-weight:850; letter-spacing:1px; }
 .database-filters input,.database-filters select { width:100%; min-width:0; height:42px; padding:0 11px; border:1px solid #dddeda; border-radius:7px; outline:none; background:#fff; color:#454742; font-size:10px; }.database-filters input:focus,.database-filters select:focus { border-color:#8ca52f; box-shadow:0 0 0 3px #edf5d1; }
 /* .clear-filters artık ChipButton bileşeni (components/design/Chip.tsx); yalnız yerleşimi burada kalır. */
@@ -628,11 +630,11 @@ button,input { font:inherit; } button { cursor:pointer; }
 .workout-player > .db-exercise-animation { margin-bottom:25px; }
 
 @media (max-width:980px) {
-  .database-filters { grid-template-columns:repeat(3,1fr); }.exercise-search { grid-column:span 2; }.database-exercise-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .database-exercise-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .exercise-detail { grid-template-columns:1fr; }.detail-copy { padding-right:0; }
 }
 @media (max-width:700px) {
-  .database-filters { grid-template-columns:1fr 1fr; padding:12px; }.exercise-search { grid-column:1/-1; }.clear-filters { grid-column:1/-1; }
+  .database-filters { padding:12px; }
   .database-exercise-grid { grid-template-columns:1fr; }.db-exercise-animation.compact { height:210px; }
   .workout-card > .db-exercise-animation.compact { flex-basis:110px; width:110px; height:96px; }
   .exercise-detail-overlay { padding:8px; align-items:end; }.exercise-detail { grid-template-columns:1fr; gap:14px; max-height:96vh; padding:12px; border-radius:15px 15px 5px 5px; }.db-exercise-animation.large { height:280px; }.detail-copy { padding:8px; }.detail-copy h2 { font-size:26px; }.exercise-metadata { grid-template-columns:1fr 1fr; }.detail-actions { flex-direction:column; }
@@ -802,7 +804,7 @@ button,input { font:inherit; } button { cursor:pointer; }
   .onboarding-wrap { margin-top:62px; }
   .top-actions { gap:7px; }
   .coach-launcher { right:16px; bottom:16px; min-height:46px; padding:0 14px; }
-  .coach-chat { right:8px; bottom:72px; width:calc(100vw - 16px); height:min(620px,calc(100dvh - 88px)); border-radius:14px; }
+  .coach-chat:not(.coach-embedded) { right:8px; bottom:72px; width:calc(100vw - 16px); height:min(620px,calc(100dvh - 88px)); border-radius:14px; }
   .set-log-card { padding:13px; }
   .set-log-heading { align-items:flex-start; flex-direction:column; gap:8px; }
 }
@@ -1902,7 +1904,9 @@ button.brand:hover .brand-mark { transform:scale(1.06); }
 
 .program-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
 /* Kendi programların en altta, üçü yan yana (dar ekranda da). */
-.program-cards.program-custom-row { grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:12px; }
+/* Kart sayısı artık sabit değil (kurulan program + bir "yeni program" kartı):
+   sabit üç sütun yerine sığdığı kadar yerleşen esnek ızgara. */
+.program-cards.program-custom-row { grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); margin-top:12px; }
 .program-custom-row .program-card { padding:14px; }
 .program-custom-row .program-card h3 { font-size:14px; }
 .program-custom-row .program-card p,.program-custom-row .program-card small { font-size:10px; }
@@ -2785,4 +2789,282 @@ h1, h2, h3, .brand, .dashboard h1, .step-content h1, .workout-player h1,
   .set-tracker .set-count-control,.set-tracker small { grid-column:1/-1; }
   .player-options > div { flex-direction:column; align-items:stretch; }
   .player-options .segmented { width:100%; }
+}
+
+/* --- Aktivite simgeleri (components/ActivityIcon.tsx) ---------------------
+   Aktivite listelerinde spor adının baş harfleri ("KO", "Bİ") yerine sporun
+   kendi çizgi simgesi durur. Kaplar zaten place-items:center ile ortalanmış
+   dairelerdi; burada yalnız simgenin ölçüsü ve çizgi kalınlığı verilir. */
+.activity-icon { width:22px; height:22px; }
+.activity-option-icon .activity-icon,.activity-form-title > span .activity-icon { width:24px; height:24px; }
+.activity-history-icon .activity-icon { width:19px; height:19px; }
+/* Rota günlüğünde rotası olmayan (manuel) kayıt: boş kutu yerine simge. */
+.route-preview-thumb-placeholder { display:grid; place-items:center; color:var(--muted-text); }
+.route-preview-thumb-placeholder .activity-icon { width:32px; height:32px; opacity:.65; }
+
+/* --- Özel bölgeler (Bölgesel program kartı) -------------------------------
+   Sabit bölgelerin yanında kullanıcının kendi kurduğu gruplar durur; her
+   birinin yanında küçük bir silme düğmesi vardır. */
+.program-region-custom { position:relative; display:inline-flex; }
+.program-region-custom .equipment { padding-right:26px; }
+.program-region-remove {
+  position:absolute; top:50%; right:6px; transform:translateY(-50%);
+  display:grid; place-items:center; width:18px; height:18px; padding:0;
+  border:0; border-radius:50%; background:transparent; color:var(--muted-text); cursor:pointer;
+}
+.program-region-remove:hover { background:var(--control-hover); color:var(--ink); }
+.program-region-add { display:inline-flex; align-items:center; gap:6px; border-style:dashed; }
+.region-builder label { display:block; margin:14px 0 0; color:var(--muted-text); font-size:9px; font-weight:850; letter-spacing:1px; }
+.region-builder label input { display:block; width:100%; margin-top:6px; height:38px; padding:0 10px; border:1px solid var(--line); border-radius:6px; background:var(--surface-elevated); color:var(--ink); font:inherit; font-size:12px; }
+.region-area-grid { margin-top:14px; }
+
+/* --- Ayarlar alt sayfası (components/SettingsPanel.tsx) -------------------
+   Profil ekranı yalnız kimlik ve ölçüdür; değiştirilebilir her ayar buradadır.
+   Kutular profil ekranındaki `profile-box` yapısını aynen kullanır. */
+.profile-manager-title-row { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
+.profile-settings-button {
+  display:inline-flex; align-items:center; gap:7px; flex:0 0 auto;
+  min-height:36px; padding:0 13px; border:1px solid var(--line); border-radius:999px;
+  background:var(--surface-elevated); color:var(--ink); font-size:11px; font-weight:800; cursor:pointer;
+}
+.profile-settings-button:hover { border-color:#a9bf57; background:color-mix(in srgb,var(--lime) 10%,var(--surface-elevated)); }
+.settings-head { margin-bottom:18px; }
+.settings-head .back-btn { display:inline-flex; align-items:center; gap:6px; margin-bottom:12px; }
+.settings-head h2 { margin:6px 0 6px; font-size:20px; }
+.settings-head p { max-width:60ch; margin:0; color:var(--muted-text); font-size:11px; line-height:1.55; }
+/* Profil ekranındaki tek test girişi: sorular artık yalnız testin içinde. */
+.profile-test-link {
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  margin-top:18px; padding:15px 16px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft);
+}
+.profile-test-link span { display:block; color:var(--muted-text); font-size:8px; font-weight:850; letter-spacing:1px; }
+.profile-test-link strong { display:block; margin-top:5px; font-size:12px; }
+.profile-test-link p { max-width:52ch; margin:4px 0 0; color:var(--muted-text); font-size:10px; line-height:1.5; }
+.profile-test-link button { flex:0 0 auto; min-height:38px; padding:0 15px; border:1px solid var(--line); border-radius:8px; background:var(--surface-elevated); color:var(--ink); font-size:10px; font-weight:800; cursor:pointer; }
+.profile-test-link button:hover { border-color:#a9bf57; }
+
+/* --- Günlük hatırlatma ayrıntısı ------------------------------------------ */
+.daily-reminder-detail { display:grid; gap:12px; margin:10px 0 0; padding:14px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); }
+.daily-reminder-detail > label { display:block; color:var(--muted-text); font-size:8px; font-weight:850; letter-spacing:1px; }
+.daily-reminder-detail select { display:block; width:140px; height:38px; margin-top:6px; padding:0 10px; border:1px solid var(--line); border-radius:6px; background:var(--surface-elevated); color:var(--ink); font:inherit; font-size:12px; }
+.daily-reminder-toggles { display:flex; flex-wrap:wrap; gap:8px; }
+
+/* --- Kullanma kılavuzu (components/UserGuide.tsx) -------------------------- */
+.user-guide-overlay { position:fixed; z-index:120; inset:0; display:grid; place-items:center; padding:20px; background:rgba(24,24,21,.7); backdrop-filter:blur(8px); }
+.user-guide { width:min(430px,100%); padding:24px; border-radius:16px; background:var(--surface); box-shadow:0 30px 80px rgba(0,0,0,.3); text-align:center; }
+.user-guide-head { display:flex; align-items:center; justify-content:space-between; }
+.user-guide-skip { padding:0; border:0; background:transparent; color:var(--muted-text); font-size:10px; font-weight:800; cursor:pointer; }
+.user-guide-icon { display:grid; place-items:center; width:56px; height:56px; margin:18px auto 0; border-radius:50%; background:#e8f3c2; color:#56691c; }
+.dark .user-guide-icon { background:#303a23; color:#d3e991; }
+.user-guide h2 { margin:16px 0 8px; font-size:19px; }
+.user-guide p { max-width:44ch; margin:0 auto; color:var(--muted-text); font-size:12px; line-height:1.6; }
+.user-guide-dots { display:flex; justify-content:center; gap:6px; margin:20px 0 18px; }
+.user-guide-dots button { width:7px; height:7px; padding:0; border:0; border-radius:50%; background:var(--line); cursor:pointer; }
+.user-guide-dots button.active { width:20px; border-radius:99px; background:#8da42f; }
+.user-guide-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.user-guide-actions .back-btn:disabled { opacity:.35; cursor:not-allowed; }
+.user-guide-count { color:var(--muted-text); font-size:10px; font-variant-numeric:tabular-nums; }
+.user-guide-actions .primary-btn { min-height:40px; padding:0 18px; }
+
+/* --- Uyku kaydı (components/SleepLogger.tsx) ------------------------------
+   Aktivite günlüğüyle aynı kart dili: aynı başlık satırı, aynı form ızgarası
+   ve aynı geçmiş listesi yapısı kullanılır. */
+.sleep-logger { margin:0 0 24px; padding:22px; border:1px solid var(--line); border-radius:11px; background:var(--surface); }
+.sleep-logger .activity-logger-head p { max-width:56ch; margin-top:6px; }
+.sleep-logger-icon { display:grid; place-items:center; flex:0 0 42px; width:42px; height:42px; border-radius:50%; background:#e6ecfb; color:#3f4f7a; }
+.dark .sleep-logger-icon { background:#232a3a; color:#b9c9ef; }
+.sleep-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:16px; }
+.sleep-summary > div { padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--surface-soft); }
+.sleep-summary span,.sleep-summary strong,.sleep-summary small { display:block; }
+.sleep-summary span { color:var(--muted-text); font-size:8px; font-weight:850; letter-spacing:1px; }
+.sleep-summary strong { margin:7px 0 4px; font-size:19px; }
+.sleep-summary small { color:var(--muted-text); font-size:8px; }
+.sleep-toggle { min-height:40px; margin-top:14px; padding:0 16px; border:1px solid var(--line); border-radius:8px; background:var(--surface-elevated); color:var(--ink); font-size:10px; font-weight:850; cursor:pointer; }
+.sleep-toggle:hover { border-color:#a9bf57; }
+.sleep-form { border-color:#ccd6ee; background:color-mix(in srgb,#6f86c4 6%,var(--surface-soft)); }
+.dark .sleep-form { border-color:#39415a; background:#1c1f28; }
+.sleep-form-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.sleep-history { margin-top:16px; }
+@media (max-width:700px) {
+  .sleep-summary { grid-template-columns:1fr; }
+  .sleep-form-grid { grid-template-columns:1fr 1fr; }
+}
+
+/* --- Doğa hedefi kartı (components/OutdoorGoalCard.tsx) -------------------- */
+.outdoor-card { margin:0 0 20px; padding:18px 20px; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
+.outdoor-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.outdoor-card-head h3 { margin:5px 0 0; font-size:16px; }
+.outdoor-badge { flex:0 0 auto; padding:5px 11px; border-radius:999px; background:#e8f3c2; color:#4f6118; font-size:9px; font-weight:850; letter-spacing:.6px; }
+.outdoor-badge[data-badge="none"] { background:var(--surface-soft); color:var(--muted-text); }
+.outdoor-badge[data-badge="tree"],.outdoor-badge[data-badge="forest"] { background:#cfe58a; color:#3c4a12; }
+.dark .outdoor-badge { background:#303a23; color:#d3e991; }
+.dark .outdoor-badge[data-badge="none"] { background:var(--surface-soft); color:var(--muted-text); }
+.outdoor-card-copy { max-width:58ch; margin:10px 0 0; color:var(--muted-text); font-size:11px; line-height:1.55; }
+.outdoor-progress { height:8px; margin-top:14px; border-radius:99px; background:var(--surface-soft); overflow:hidden; }
+.outdoor-progress > span { display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,#a9c94a,#7f9c25); transition:width .3s var(--ease); }
+.outdoor-meta { display:flex; flex-wrap:wrap; gap:12px; margin-top:9px; color:var(--muted-text); font-size:9px; font-weight:750; }
+.outdoor-start {
+  display:inline-flex; align-items:center; gap:9px; min-height:40px; margin-top:14px; padding:0 15px;
+  border:1px solid var(--line); border-radius:9px; background:var(--surface-elevated); color:var(--ink);
+  font-size:11px; font-weight:850; cursor:pointer;
+}
+.outdoor-start:hover { border-color:#a9bf57; background:color-mix(in srgb,var(--lime) 10%,var(--surface-elevated)); }
+.outdoor-start .activity-icon { width:20px; height:20px; }
+
+/* --- Kütüphane filtre rozetleri ------------------------------------------
+   Her boyut (kas grubu, ekipman, kategori, seviye) kendi satırında ve her
+   rozet kaç harekete karşılık geldiğini gösterir; kullanıcı boş sonuç veren
+   bir seçim yapmak zorunda kalmaz. Satırlar dar ekranda yatay kaydırılır. */
+.exercise-facet { display:grid; gap:8px; min-width:0; }
+.exercise-facet-title { color:var(--muted-text); font-size:8px; font-weight:850; letter-spacing:1px; text-transform:uppercase; }
+.exercise-facet-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.exercise-facet-chip {
+  display:inline-flex; align-items:center; gap:6px; min-height:32px; padding:0 11px;
+  border:1px solid var(--line); border-radius:999px; background:var(--surface-elevated);
+  color:var(--ink); font-size:10px; font-weight:750; text-transform:capitalize; cursor:pointer;
+  transition:border-color .15s var(--ease), background .15s var(--ease);
+}
+.exercise-facet-chip:hover { border-color:#a9bf57; }
+.exercise-facet-chip > b { color:var(--muted-text); font-size:9px; font-weight:800; font-variant-numeric:tabular-nums; }
+.exercise-facet-chip.active { border-color:#8da42f; background:color-mix(in srgb,var(--lime) 18%,var(--surface-elevated)); }
+.exercise-facet-chip.active > b { color:#5c6f1f; }
+.dark .exercise-facet-chip { background:var(--surface); }
+.dark .exercise-facet-chip.active > b { color:#d3e991; }
+@media (max-width:700px) {
+  /* Telefonda sarmak yerine kaydır: dört satır sarmalı rozet ekranın
+     tamamını yiyordu. */
+  .exercise-facet-chips { flex-wrap:nowrap; overflow-x:auto; padding-bottom:4px; scrollbar-width:none; }
+  .exercise-facet-chips::-webkit-scrollbar { display:none; }
+  .exercise-facet-chip { flex:0 0 auto; }
+}
+
+/* --- Başlıktaki profil avatarı ------------------------------------------
+   Profil alt sekme çubuğundan indi (beş sütunun her biri bir EYLEM; profil
+   değil). Her ekrandan erişilebilir kalması için başlık çubuğunda durur. */
+.topbar-avatar {
+  display: grid; place-items: center;
+  width: 32px; height: 32px; padding: 0;
+  border: 1px solid var(--line); border-radius: 50%;
+  background: var(--surface-elevated); color: var(--muted-text);
+  font-size: 12px; font-weight: 800; cursor: pointer; overflow: hidden;
+}
+.topbar-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.topbar-avatar:hover { border-color: #a9bf57; color: var(--ink); }
+.topbar-avatar[aria-pressed="true"] { border-color: #8da42f; color: var(--ink); }
+
+/* --- Koç kendi sekmesinde ------------------------------------------------
+   Yüzen panel değil, sayfanın kendisi: sabit konum ve panel gölgesi kalkar,
+   yükseklik içeriğe göre akar. */
+.coach-chat.coach-embedded {
+  position: static;
+  inset: auto;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 60vh;
+  margin: 0;
+  border-radius: var(--r-lg, 12px);
+  box-shadow: none;
+  animation: none;
+}
+
+/* --- Kart hiyerarşisi ----------------------------------------------------
+   Günün ana hedefi tam genişlikte ve bir kademe yükseltilmiş yüzeyde durur;
+   ikincil ve mini kartlar onun altında akar (bkz. components/design/StatTile). */
+.stat-tile-primary { grid-column: 1 / -1; background: var(--hf-surface-container, var(--surface-elevated)); }
+
+/* --- Günün görevleri (components/DailyTasksCard.tsx) ----------------------
+   Ana ekranın "bugün ne yapmalıyım" cevabı. Ölçüm kartlarının aksine kısa ve
+   eylem odaklı: en fazla dört satır, her satır bir dokunuşla ilgili ekrana
+   götürür. */
+.daily-tasks { margin: 0 0 20px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.daily-tasks-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.daily-tasks-count { color: var(--muted-text); font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.daily-tasks-list { display: flex; flex-direction: column; gap: 2px; margin: 10px 0 0; padding: 0; list-style: none; }
+.daily-task {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 6px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted-text);
+  font-size: 12px; text-align: left; cursor: pointer;
+}
+.daily-task:hover { background: var(--control-hover); }
+.daily-task > b { margin-left: auto; color: var(--muted-text); font-size: 10px; font-variant-numeric: tabular-nums; }
+.daily-task-box {
+  display: grid; place-items: center; flex: 0 0 16px; width: 16px; height: 16px;
+  border: 1.5px solid var(--line); border-radius: 50%;
+}
+.daily-task.done { color: var(--ink); }
+.daily-task.done .daily-task-box { border-color: #8da42f; background: #b1cf45; color: #1c1c1a; }
+
+/* --- Antrenman ekranındaki kütüphane girişi ------------------------------
+   Kütüphane başlık çubuğundaki ikondan buraya taşındı: antrenmanla ilişkisi
+   ancak burada görünüyor (bkz. docs/MOBIL_TASARIM_PLANI.md 3.2.1). */
+.programs-library-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; margin-top: 14px; padding: 15px 16px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-soft); color: var(--ink); cursor: pointer; text-align: left;
+}
+.programs-library-row:hover { border-color: #a9bf57; background: var(--control-hover); }
+.programs-library-row b { display: block; font-size: 12px; font-weight: 700; }
+.programs-library-row i { display: block; margin-top: 3px; color: var(--muted-text); font-size: 10px; font-style: normal; }
+.today-workout-links { display: flex; flex-wrap: wrap; gap: 14px; }
+
+/* --- Koç eylemleri (lib/ai/coach-actions.ts) -----------------------------
+   Koçun önerisini tek dokunuşla uygulamaya çeviren düğmeler. Yeşil yalnız
+   burada kullanılıyor çünkü bu bir AI vurgusu ve birincil eylem — paletin
+   ayrılmış beş rolünden ikisi. */
+.coach-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.coach-action {
+  padding: 7px 12px;
+  border: 1px solid #a9c94a; border-radius: 999px;
+  background: color-mix(in srgb, var(--lime) 12%, transparent);
+  color: #5c6f1f; font-size: 10px; font-weight: 800; cursor: pointer;
+}
+.coach-action:hover { background: color-mix(in srgb, var(--lime) 22%, transparent); }
+.dark .coach-action { color: #d3e991; border-color: #7f9c25; }
+
+/* --- Onboarding kontrol noktası (Faz 6: hızlı başlangıç) ------------------
+   Hızlı beşliden sonra gelen ara ekran: "Planı Kur" (Önerilen) ya da "Birkaç
+   soru daha". question-card ile aynı yüzey; yalnız içerik hizası ve eylem
+   düzeni farklı. */
+.checkpoint-card { text-align: center; padding: 40px 30px; }
+.checkpoint-card .eyebrow { text-align: center; }
+.checkpoint-card h2 { max-width: none; text-align: center; margin: 0 0 12px; }
+.checkpoint-card .lead { max-width: 46ch; margin: 0 auto; }
+.checkpoint-actions { align-items: flex-start; }
+.checkpoint-actions-right { display: flex; align-items: center; gap: 16px; }
+.secondary-btn { border: 0; background: transparent; color: var(--muted-text); font-size: 12px; font-weight: 700; margin-top: 28px; text-decoration: underline; text-underline-offset: 3px; }
+.secondary-btn:hover { color: var(--ink); }
+@media (max-width: 700px) {
+  .checkpoint-actions { flex-direction: column; align-items: stretch; gap: 12px; }
+  .checkpoint-actions-right { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
+  .checkpoint-actions-right .primary-btn { width: 100%; text-align: center; }
+}
+
+/* --- Su ve uyku mini kartları (ana ekran) ---------------------------------
+   HydrationFasting'in compact modu ve SleepSummaryCard aynı ikincil kart
+   dilini paylaşır: home-top-row'daki DailyEnergyRing/StepCounterCard ile
+   aynı ızgara, aynı yükseklik hissi. */
+.hydration-mini,.sleep-mini {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: 11px;
+  background: var(--surface-soft, #fbfbf7); color: var(--ink);
+  text-align: left; cursor: pointer;
+}
+.hydration-mini:hover,.sleep-mini:hover { border-color: #a9bf57; }
+.hydration-mini-head,.sleep-mini-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.hydration-mini-head strong,.sleep-mini-head strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.sleep-mini small { color: var(--muted-text); font-size: 9px; }
+
+/* --- Faz 4b: metrik ölçek — kalan ekranlara tabular-nums --------------
+   Rakamlar tasarım öğesidir (bkz. docs/MOBIL_TASARIM_PLANI.md 3.5): sayaç
+   çalışırken ya da bir sayı güncellenirken rakamlar birbirinin yerine geçip
+   zıplamamalı. Bu dört selector'da eksikti; en kritik olanı .timer-card —
+   antrenman oynatıcısının canlı geri sayımı. */
+.progress-cards strong,
+.timer-card strong,
+.activity-daily-summaries strong,
+.monthly-numbers strong {
+  font-variant-numeric: tabular-nums;
 }

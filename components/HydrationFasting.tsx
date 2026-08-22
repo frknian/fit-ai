@@ -17,7 +17,18 @@ type OpenFast = { id: string; startedAt: string; targetHours: number };
 // sessizce gizler yerine durumu söyler ve uygulamanın kalanını etkilemez.
 const MISSING_TABLE_CODES = new Set(["42P01", "PGRST205"]);
 
-export function HydrationFasting({ userId, weightKg }: { userId?: string; weightKg?: number | null }) {
+export function HydrationFasting({ userId, weightKg, compact = false, onOpen }: {
+  userId?: string;
+  weightKg?: number | null;
+  /**
+   * Ana ekrandaki MİNİ kart: yalnız su ilerlemesi, oruç bölümü yok. Kartın
+   * kendisi dokununca tam ekrana götürür — hızlı ekleme düğmeleri burada
+   * durmaz, ikinci bir tıklama gerektirmesi bilinçli: ana ekranda yanlışlıkla
+   * su eklemek istemiyoruz.
+   */
+  compact?: boolean;
+  onOpen?: () => void;
+}) {
   const t = useTranslations();
   const locale = useLocale();
   const [waterMl, setWaterMl] = useState(0);
@@ -87,10 +98,19 @@ export function HydrationFasting({ userId, weightKg }: { userId?: string; weight
     setNow(new Date());
   }
 
-  if (unavailable) return <section className="hydration-card" id="hydration-card"><p className="hydration-note">{t.hydration.notConfigured}</p></section>;
+  if (unavailable) {
+    return compact ? null : <section className="hydration-card" id="hydration-card"><p className="hydration-note">{t.hydration.notConfigured}</p></section>;
+  }
 
   const percent = waterProgressPercent(waterMl, goalMl);
   const fast = openFast ? fastingState({ startedAt: openFast.startedAt, targetHours: openFast.targetHours }, now) : null;
+
+  if (compact) {
+    return <button type="button" className="hydration-mini" onClick={onOpen} aria-label={t.hydration.waterEyebrow}>
+      <div className="hydration-mini-head"><span className="eyebrow">{t.hydration.waterEyebrow}</span><strong>{t.hydration.waterAmount(waterMl, goalMl)}</strong></div>
+      <div className="hydration-bar" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${percent}%` }} /></div>
+    </button>;
+  }
 
   return <section className="hydration-card">
     <div className="hydration-water">

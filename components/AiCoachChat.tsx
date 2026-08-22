@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { Conversation, ConversationContent, ConversationEmptyState, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import type { CoachMessage } from "@/lib/ai-coach";
+import type { CoachAction } from "@/lib/ai/coach-actions";
 import { authorizedFetch } from "@/lib/api-client";
 import { generateLocalCoachResponse } from "@/lib/ai/local-first";
 import { useTranslations } from "@/lib/i18n/translate";
@@ -12,14 +13,33 @@ import { useAdUnlock } from "@/hooks/useAdUnlock";
 
 type CoachSignals = Record<string, unknown>;
 type AssistantMeta = { provider?: string; model?: string; promptVersion?: string };
+/** Koçun önerdiği eylemler; uygulanması için kullanıcının basması gerekir. */
+type CoachMessageActions = { actions?: CoachAction[] };
 
-export function AiCoachChat({ context, signals, onUpgradeRequest }: { context: string; signals?: CoachSignals; onUpgradeRequest?: () => void }) {
+export function AiCoachChat({ context, signals, onUpgradeRequest, embedded = false, onAction }: {
+  context: string;
+  signals?: CoachSignals;
+  onUpgradeRequest?: () => void;
+  /** Kendi sekmesinde tam ekran: başlatıcı ve kapatma düğmesi yok. */
+  embedded?: boolean;
+  /**
+   * Koçun önerdiği eylemi UYGULAR. Verilmezse eylem düğmeleri hiç
+   * gösterilmez — çalışmayan bir düğme, düğme olmamasından kötü.
+   *
+   * Eylem asla kendiliğinden çalışmaz: model yalnız ÖNERİR, basan kullanıcıdır
+   * (bkz. lib/ai/coach-actions.ts).
+   */
+  onAction?: (action: CoachAction) => void;
+}) {
   const t = useTranslations();
   const locale = useLocale();
   const suggestions = [t.aiCoachChat.suggestion1, t.aiCoachChat.suggestion2, t.aiCoachChat.suggestion3];
+  // Koç kendi sekmesindeyken panel HER ZAMAN açıktır; yüzen başlatıcı yalnız
+  // gömülü olmayan kullanımda (eski panel) görünür.
   const [open, setOpen] = useState(false);
+  const isOpen = embedded || open;
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Array<CoachMessage & { id: string; meta?: AssistantMeta }>>([]);
+  const [messages, setMessages] = useState<Array<CoachMessage & { id: string; meta?: AssistantMeta } & CoachMessageActions>>([]);
   // Verilen oylar yalnız bu oturumda tutulur; kalıcı kayıt sunucuda
   // (ai_feedback). Amaç düğmenin basıldığını göstermek.
   const [ratings, setRatings] = useState<Record<string, 1 | -1>>({});
@@ -43,14 +63,15 @@ export function AiCoachChat({ context, signals, onUpgradeRequest }: { context: s
   }
 
   useEffect(() => {
-    if (!open) return;
+    if (!isOpen) return;
     inputRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeCoach();
+      // Sekme olarak açıkken Escape'in kapatacağı bir şey yok.
+      if (event.key === "Escape" && !embedded) closeCoach();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  }, [isOpen, embedded]);
 
   useEffect(() => () => requestController.current?.abort(), []);
 
@@ -90,7 +111,7 @@ export function AiCoachChat({ context, signals, onUpgradeRequest }: { context: s
       }
 
       const response = await authorizedFetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, signals, messages: conversation.map(({ role, text: messageText }) => ({ role, text: messageText })), locale }), signal: controller.signal });
-      const result = await response.json().catch(() => ({})) as { text?: string; error?: string; notice?: string; usage?: { used: number; limit: number }; limitReached?: boolean; provider?: string; model?: string; promptVersion?: string };
+      const result = await response.json().catch(() => ({})) as { text?: string; error?: string; notice?: string; usage?: { used: number; limit: number }; limitReached?: boolean; provider?: string; model?: string; promptVersion?: string; actions?: CoachAction[] };
       if (!response.ok || !result.text) {
         if (result.limitReached) setLimitReached(true);
         throw new Error(result.error || t.aiCoachChat.coachUnresponsive);
@@ -100,6 +121,9 @@ export function AiCoachChat({ context, signals, onUpgradeRequest }: { context: s
         role: "assistant",
         text: result.text as string,
         meta: { provider: result.provider, model: result.model, promptVersion: result.promptVersion },
+        // Eylemler yalnız uygulama bir işleyici verdiyse gösterilir: düğmenin
+        // hiçbir şey yapmaması, düğme olmamasından kötü.
+        ...(onAction && result.actions?.length ? { actions: result.actions } : {}),
       }]);
       setNotice(result.notice || "");
       if (result.usage) setUsage(result.usage);
@@ -154,6 +178,23 @@ export function AiCoachChat({ context, signals, onUpgradeRequest }: { context: s
     void send(input);
   }
 
+  /** Aynı eylem listesinde iki düğmeyi ayırt eden anahtar. */
+  function actionKey(action: CoachAction): string {
+    return action.type === "createWorkout" ? `createWorkout:${action.region}` : action.type;
+  }
+
+  function actionLabel(action: CoachAction): string {
+    switch (action.type) {
+      case "openWorkout": return t.coachActions.openWorkout;
+      case "createWorkout": return t.coachActions.createWorkout(action.region);
+      case "startOutdoor": return t.coachActions.startOutdoor;
+      case "suggestMeal": return t.coachActions.suggestMeal;
+      case "remind": return t.coachActions.remind;
+      case "changeGoal": return t.coachActions.changeGoal;
+      default: return "";
+    }
+  }
+
   function stop() {
     requestController.current?.abort();
     requestController.current = null;
@@ -163,11 +204,21 @@ export function AiCoachChat({ context, signals, onUpgradeRequest }: { context: s
   return <>
     {/* Panel açıkken kapatma zaten panel başlığındaki × düğmesiyle yapılıyor;
         sağ alttaki başlatıcı kutusunun panelle üst üste durması gereksizdi. */}
-    {!open && <button ref={launcherRef} type="button" className="coach-launcher" aria-label={t.aiCoachChat.openCoach} aria-expanded={false} aria-controls="ai-coach-panel" onClick={() => setOpen(true)}><span aria-hidden="true">✦</span><strong>{t.aiCoachChat.launcherLabel}</strong></button>}
-    {open && <aside id="ai-coach-panel" className="coach-chat" role="dialog" aria-modal="false" aria-labelledby="ai-coach-title">
-      <header><div><span className="coach-online" aria-hidden="true" /><div><strong id="ai-coach-title">{t.aiCoachChat.title}</strong><small>{t.aiCoachChat.subtitle}</small></div></div><button type="button" aria-label={t.aiCoachChat.closeCoach} onClick={closeCoach}>×</button></header>
+    {!embedded && !open && <button ref={launcherRef} type="button" className="coach-launcher" aria-label={t.aiCoachChat.openCoach} aria-expanded={false} aria-controls="ai-coach-panel" onClick={() => setOpen(true)}><span aria-hidden="true">✦</span><strong>{t.aiCoachChat.launcherLabel}</strong></button>}
+    {isOpen && <aside id="ai-coach-panel" className={embedded ? "coach-chat coach-embedded" : "coach-chat"} role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : false} aria-labelledby="ai-coach-title">
+      <header><div><span className="coach-online" aria-hidden="true" /><div><strong id="ai-coach-title">{t.aiCoachChat.title}</strong><small>{t.aiCoachChat.subtitle}</small></div></div>{!embedded && <button type="button" aria-label={t.aiCoachChat.closeCoach} onClick={closeCoach}>×</button>}</header>
       <Conversation className="coach-conversation"><ConversationContent className="coach-messages">
         {messages.length === 0 ? <ConversationEmptyState title={t.aiCoachChat.emptyTitle} description={t.aiCoachChat.emptyDescription} icon={<span className="coach-empty-icon">✦</span>} /> : messages.map((message) => <Message from={message.role} key={message.id}><MessageContent><MessageResponse>{message.text}</MessageResponse>
+          {/* Eylem düğmeleri: koçun önerisini tek dokunuşla uygulamaya
+              çevirir. Uygulanması KULLANICI onayına bağlı — model kendi
+              başına plan yazamaz, hedef değiştiremez. */}
+          {message.role === "assistant" && message.actions?.length ? <div className="coach-actions">
+            {message.actions.map((action) => (
+              <button type="button" key={actionKey(action)} className="coach-action" onClick={() => onAction?.(action)}>
+                {actionLabel(action)}
+              </button>
+            ))}
+          </div> : null}
           {message.role === "assistant" && <div className="coach-feedback">
             <button type="button" aria-label={t.aiCoachChat.helpful} aria-pressed={ratings[message.id] === 1} className={ratings[message.id] === 1 ? "active" : ""} onClick={() => void rateMessage(message.id, 1, message.meta)}>👍</button>
             <button type="button" aria-label={t.aiCoachChat.notHelpful} aria-pressed={ratings[message.id] === -1} className={ratings[message.id] === -1 ? "active" : ""} onClick={() => void rateMessage(message.id, -1, message.meta)}>👎</button>

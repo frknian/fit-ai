@@ -12,6 +12,7 @@ const PROGRESS_TABLES = [
   "activity_logs",
   "user_streaks",
   "body_measurements",
+  "sleep_logs",
   "workout_sessions",
 ] as const;
 

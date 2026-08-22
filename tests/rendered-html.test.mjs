@@ -302,11 +302,32 @@ test("mobil gezinme alt sekme çubuğunda ve hiçbir görünüm erişilemez kalm
   assert.match(shell, /items\.filter\(\(item\) => !item\.primary\)/);
   assert.match(shell, /className="hf-topbar-icon"/);
 
-  // AppView'daki her görünümün kabukta bir gezinme girdisi olmalı.
+  // AppView'daki her görünüm bir yerden AÇILABİLİR olmalı. Alt çubuk beşe
+  // indiği için ikisinin girişi değişti; garanti aynı, kontrol noktası farklı.
   const views = [...quickActions.matchAll(/export type AppView =([^;]+);/g)][0][1]
     .split("|").map((value) => value.trim().replace(/"/g, ""));
   const navBlock = page.slice(page.indexOf("const navItems: ShellNavItem[]"), page.indexOf("const brand ="));
-  for (const view of views) assert.ok(navBlock.includes(`id: "${view}"`), `gezinmede eksik görünüm: ${view}`);
+  // Alt çubukta olmayan görünümlerin her birinin EKRAN İÇİNDE bir girişi
+  // olmalı; ikonların kaldırılması onları erişilemez bırakmamalı.
+  const specialEntry = {
+    // "plan" artık Bugün sekmesinin kökü; sekme kimliği rota modelinden gelir.
+    plan: () => navBlock.includes('id: "today"'),
+    // Profil: başlıktaki avatar.
+    profile: () => page.includes('className="topbar-avatar"') && page.includes('onClick={() => setActiveView("profile")}'),
+    // Takvim: Bugün ekranındaki "Planı gör".
+    calendar: () => page.includes('onOpenPlan={() => setActiveView("calendar")}'),
+    // Kütüphane: Antrenman ekranındaki kütüphane satırı.
+    library: () => page.includes('onOpenLibrary={() => setActiveView("library")}'),
+    // Beslenme: Bugün ekranındaki kalori çemberi.
+    nutrition: () => page.includes('onOpen={() => navigateFromQuickAction("nutrition")}'),
+  };
+  for (const view of views) {
+    const entry = specialEntry[view];
+    assert.ok(entry ? entry() : navBlock.includes(`id: "${view}"`), `erişilemez görünüm: ${view}`);
+  }
+  // Koç artık kendi sekmesi ve sekmedeyken yüzen panel ikinci kez çizilmez.
+  assert.ok(navBlock.includes('id: "coach"'), "Koç sekmesi eksik");
+  assert.match(page, /nav\.tab !== "coach" && <AiCoachChat/);
 
   // Sabit çubuk içeriği örtmemeli ve çentikli telefonda ekran altına gömülmemeli.
   const tabbar = styles.match(/\.hf-tabbar \{([^}]*)\}/)?.[1] ?? "";
@@ -331,4 +352,15 @@ test("veritabanı kurulum sırası belgelenmiştir", async () => {
   assert.match(guide, /db\/migrations/);
   // Tanıtım sayfasından rehbere ulaşılabilmeli, yoksa belge fiilen kaybolur.
   assert.match(readme, /docs\/GELISTIRME\.md/);
+});
+
+test("koyu tema varsayılan, açık tema korunur", async () => {
+  const layout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  // Uygulama koyu-öncelikli tasarlandı; saklı tercih yoksa koyu açılır.
+  assert.match(layout, /if\(t!=='light'&&t!=='dark'\)\{t='dark'\}/);
+  // Tercih ilk boyamadan ÖNCE uygulanmalı, yoksa açık tema bir an görünür.
+  assert.match(layout, /dangerouslySetInnerHTML=\{\{ __html: themeScript \}\}/);
+  // Açık tema kaldırılmadı: GPS ekranı güneş altında kullanılıyor.
+  const toggle = await readFile(new URL("../components/ThemeToggle.tsx", import.meta.url), "utf8");
+  assert.match(toggle, /hedefit-theme/);
 });

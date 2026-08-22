@@ -30,7 +30,8 @@ test("ana ekran mobil sayfalayıcı olmadan tek akışta durur", () => {
 });
 
 test("hedef planının tam hâli yalnız kaplamada, dokununca açılır", () => {
-  assert.match(app, /const \[goalPlanOpen, setGoalPlanOpen\] = useState\(false\);/);
+  // Kaplama durumu rota yığınından geliyor: geri tuşu onu kapatır, uygulamayı değil.
+  assert.match(app, /const goalPlanOpen = overlayOpen\("goalPlan"\);/);
   assert.match(app, /\{goalPlanOpen && authUser && <div className="goal-plan-overlay"/);
   // Kaplamadaki kart compact DEĞİL: grafik, AI analizi ve sihirbaz orada tam görünür.
   const overlayStart = app.indexOf('className="goal-plan-overlay"');
@@ -107,6 +108,7 @@ test("hazır programlar tek listede, kendi programların en altta", () => {
   // Başlık şeridi ("PROGRAMLAR" + "Seç, başla…") liste ekranından kalktı.
   assert.doesNotMatch(panelBlock, /programs-hint/);
   assert.ok(!training.slice(panel).includes("t.programs.eyebrow"), "liste ekranında PROGRAMLAR başlığı kalmamalı");
-  // Üç özel program yan yana durur.
-  assert.match(css, /\.program-cards\.program-custom-row \{ grid-template-columns:repeat\(3,minmax\(0,1fr\)\);/);
+  // Özel program kartlarının sayısı sabit değil (kurulan program + "yeni
+  // program" kartı): sığdığı kadar yerleşen esnek ızgara.
+  assert.match(css, /\.program-cards\.program-custom-row \{ grid-template-columns:repeat\(auto-fill,minmax\(220px,1fr\)\);/);
 });

@@ -52,7 +52,10 @@ test("yarım kalan oturum varsa takip kaplaması cihazda otomatik açılır", ()
   // Diskte kayıt olsa da kaplama (gpsTrackerOpen) kapalı başlarsa
   // GpsActivityTracker hiç mount olmaz ve kurtarma mantığı tetiklenmez —
   // rota kullanıcıya asla gösterilmez. Cihazda doğrulanan gerçek hata.
-  assert.match(app, /const \[gpsTrackerOpen, setGpsTrackerOpen\] = useState\(hasPersistedGpsSession\)/);
+  // Kaplamanın açık/kapalı durumu artık rota yığınında (bkz. lib/navigation.ts):
+  // yarım oturum varsa takip ekranı mount'ta yığına itilir.
+  assert.match(app, /if \(hasPersistedGpsSession\(\)\) navPush\(\{ name: "gpsTracker" \}\)/);
+  assert.match(app, /const gpsTrackerOpen = overlayOpen\("gpsTracker"\)/);
   assert.match(app, /import \{ hasPersistedGpsSession \} from "@\/lib\/gps-session-store"/);
 });
 

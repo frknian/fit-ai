@@ -70,6 +70,26 @@ seri takibi, adım geçmişi, kaydedilmiş rotaların haritalı geçmişi,
 koşu/yürüyüş/bisiklet/yüzme gibi aktivite kayıtları ve haftalık yapay zeka
 değerlendirmesi.
 
+### Doğada spor
+Ana sayfadaki "Bu hafta doğada" kartı haftalık açık hava süreni gösterir,
+hedefe kalanı söyler ve tek dokunuşla Hedefit Rota'yı başlatır. Açık havada
+geçirdiğin her hafta bir rozet kazandırır (tohum → filiz → ağaç → orman) ve
+üst üste tutturulan haftalar seri olarak sayılır.
+
+### Uyku kaydı
+Kaç saat uyuduğunu aktivite sekmesinden gir — doğrudan saat/dakika olarak ya da
+yatış ve kalkış saatinden hesaplatarak. Son yedi gecenin ortalamasını ve
+kaçının önerilen 7–9 saat aralığında kaldığını görürsün.
+
+### Günlük hatırlatmalar
+Her sabah seçtiğin saatte bir selam: o gün antrenman günüyse hatırlatır,
+değilse hareketli kalmayı önerir; isteğe bağlı su ve doğa önerileri ekler.
+Ayarlardan açılır, saati ve içeriği oradan seçilir.
+
+### Kullanma kılavuzu
+İlk kayıttan sonra uygulama aşama aşama tanıtılır; sonrasında Ayarlar →
+"Uygulamayı tanı" ile istediğin zaman geri dönebilirsin.
+
 ### AI koç sohbeti
 Programın, hareketlerin veya beslenmen hakkında soru sor. Koç senin profilini
 ve planını bilerek cevaplar.
@@ -214,6 +234,26 @@ Body measurements with trend charts, personal records via estimated 1RM, daily
 streaks, step history, a mapped history of your recorded routes, activity
 logging for running, walking, cycling and swimming, and a weekly AI review.
 
+### Training outdoors
+The "Outdoors this week" card on the home screen shows your weekly outdoor
+minutes, tells you what is left to the goal and starts Hedefit Rota in one tap.
+Every week outdoors earns a badge (seed → sprout → tree → forest), and
+consecutive weeks count as a streak.
+
+### Sleep log
+Enter how long you slept from the activity tab — either as hours and minutes or
+by letting bedtime and wake-up time calculate it. You see the average of the
+last seven nights and how many of them stayed in the recommended 7–9 hour range.
+
+### Daily reminders
+A greeting every morning at the time you choose: it reminds you when it is a
+training day and suggests staying active when it is not, plus optional hydration
+and outdoor tips. Turn it on in Settings and pick the time and content there.
+
+### User guide
+The app introduces itself step by step after you first sign up; afterwards you
+can reopen it any time from Settings → "Get to know the app".
+
 ### AI coach chat
 Ask about your program, a specific movement, or your nutrition. The coach
 answers knowing your profile and your plan.
@@ -229,7 +269,9 @@ suggestion based on your data, and your daily AI quota is refunded.
 
 ### Details
 Light and dark themes · kg/lb preference · workout calendar and reminders ·
-Turkish and English · export all your data as a single JSON file
+Turkish and English · export all your data as a single JSON file ·
+profile and settings on separate pages (identity and measurements in the
+profile; preferences, notifications, data and account in settings)
 
 ## Plans
 

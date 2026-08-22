@@ -117,12 +117,13 @@ test("profil testinde seçenekli sorular soruya göre tek ya da çoklu seçimlid
   assert.doesNotMatch(appSource, /function setAnswer\(/);
   assert.doesNotMatch(appSource, /toggleInjury/);
   // Seçili durum birleşik değerden okunmalı, tam eşitlikle değil.
-  assert.match(appSource, /\(history\[questionIndex\] \|\| ""\)\.split\(" · "\)\.includes\(answer\)/);
+  // (questionIndex artık akıştaki KONUM; gerçek history index'i currentQuestion'dır.)
+  assert.match(appSource, /\(history\[currentQuestion\] \|\| ""\)\.split\(" · "\)\.includes\(answer\)/);
   // Çoklu seçimde "Yok"/"Hiçbiri" gibi dışlayıcı cevaplar diğerleriyle
   // birlikte işaretlenemez. "Hayır"/"0 gün" artık gerekmiyor: onların
   // sorduğu sorular (deneyim, son 3 ay sıklığı) tek seçimli oldu.
   assert.match(appSource, /EXCLUSIVE_ANSWERS = new Set\(\["Yok", "Hiçbiri"\]\)/);
-  assert.match(appSource, /isSingleSelect = SINGLE_SELECT_QUESTIONS\.includes\(questionIndex\)/);
+  assert.match(appSource, /isSingleSelect = SINGLE_SELECT_QUESTIONS\.includes\(currentQuestion\)/);
 });
 
 test("birleşik cevaplar aşağı akışta tam eşitlikle okunmaz", () => {
@@ -211,7 +212,9 @@ test("hedef kilo profil testinden önce sorulur ve plana yazılır", () => {
 });
 
 test("soru sayacı sorunun üstünde ve şıklar eşit boyutta", async () => {
-  assert.match(appSource, /<div className="question-counter"><b>\{questionIndex \+ 1\}<\/b><span>\/\{QUESTION_COUNT\}<\/span><\/div>/);
+  // Sayaç GÖSTERİLEN soru sayısını sayar (bkz. QUESTIONS_SHOWN_BY_POSITION):
+  // kontrol noktası bir soru değildir, sayacı artırmaz.
+  assert.match(appSource, /<div className="question-counter"><b>\{QUESTIONS_SHOWN_BY_POSITION\[questionIndex\]\}<\/b><span>\/\{QUESTION_COUNT\}<\/span><\/div>/);
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   const grid = css.match(/\.answer-grid \{ display:grid; grid-template-columns:repeat\(auto-fit,minmax\(150px,1fr\)\); ([^}]*)\}/)?.[1] ?? "";
   assert.ok(grid.length > 0, "şıklar eşit sütunlu grid'e alınmamış");
@@ -245,18 +248,30 @@ test("program sistemi dört tür sunar, ortamı profilden alır", async () => {
   // Akıllı program AI'dan gelir; testi tamamlamadan açılamaz.
   assert.match(source, /disabled=\{!smartWorkouts\.length\}/, "akıllı program test tamamlanmadan açılabiliyor");
   assert.match(source, /kind: "fullBody", place/);
-  assert.match(source, /kind: "split", place, area/);
+  assert.match(source, /kind: "split", place, regionId: region\.id/);
   // Ortam ekipman profiline çevrilmeli, yoksa evde salon aleti çıkar.
   assert.match(source, /placeToProfile\(selection\.place, equipmentText\)/);
   // Salon/ev anahtarı ekrandan kalktı: kullanıcı bunu profil testinde söylüyor.
   assert.doesNotMatch(source, /className="program-place"/, "ekrandaki salon/ev seçimi kalmamalı");
   assert.match(source, /const place: TrainingPlace = isGym \? "gym" : "home";/);
-  assert.match(source, /const BODY_REGIONS = \["Göğüs", "Sırt", "Bacak", "Kalça", "Omuz", "Kol", "Core"\] as const;/);
+  // Bölgeler artık tek bir katalog alanı değil, alan LİSTESİ: "üst vücut",
+  // "arka vücut", "itiş" gibi birleşik gruplar da aynı yapıyla çalışır
+  // (bkz. lib/training-programs.ts → BODY_REGIONS).
+  assert.match(source, /BODY_REGIONS\.map\(\(region\) =>/);
+  assert.match(source, /distributeRegionExercises\(pool, selection\.areas/);
+  // Kullanıcı kendi bölgesini kurabilir ve silebilir.
+  assert.match(source, /function RegionBuilder/);
+  assert.match(source, /setStoredCustomRegions\(upsertCustomRegion/);
+  assert.match(source, /setStoredCustomRegions\(removeCustomRegion/);
 });
 
-test("özel programlar üç slotla sınırlı ve kütüphaneden kurulur", async () => {
+test("özel program sayısı ihtiyaca göre artıp azalır ve kütüphaneden kurulur", async () => {
   const source = await readFile(new URL("../components/TrainingPrograms.tsx", import.meta.url), "utf8");
-  assert.match(source, /Array\.from\(\{ length: CUSTOM_PROGRAM_SLOTS \}/);
+  // Ekranda sabit üç kart yoktu artık: kurulmuş programlar + tek bir "yeni
+  // program" kartı. Boş slotlar kullanıcıya boş kutu olarak gösterilmiyor.
+  assert.ok(!source.includes("CUSTOM_PROGRAM_SLOTS"), "sabit slot sayısı kalmamalı");
+  assert.match(source, /customPrograms\.map\(\(program\) => \(/);
+  assert.match(source, /\{freeSlot && <article className="program-card program-card-empty"/);
   assert.match(source, /function CustomProgramBuilder/);
   // Kurucu gerçek katalogdan seçtirmeli, sabit bir listeden değil.
   assert.match(source, /exerciseLibrary\s*\n?\s*\.filter\(\(item\) => \(!area \|\| item\.area === area\)/);

@@ -54,6 +54,7 @@ export default function GizlilikPage() {
           </li>
           <li>Aktivite kayıtları (yürüyüş, koşu, bisiklet vb.: süre, mesafe, adım)</li>
           <li>Beslenme kayıtları: yediğiniz besinler, porsiyon, kalori ve makro değerleri</li>
+          <li>Uyku kayıtları: kendi girdiğiniz uyku süresi, yatış/kalkış saati, uyku kalitesi değerlendirmeniz ve notunuz (yalnızca elle girilir; cihazın uyku ölçümü okunmaz)</li>
           <li>Hedefleriniz ve profil testi cevaplarınız</li>
         </ul>
 

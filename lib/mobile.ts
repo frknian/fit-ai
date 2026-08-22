@@ -7,6 +7,7 @@ import { LocalNotifications } from "@capacitor/local-notifications";
 import { Network } from "@capacitor/network";
 import { Health } from "capacitor-health";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { DailyReminderPlanEntry } from "@/lib/daily-reminders";
 import type { ReminderPreferences, WorkoutScheduleEntry } from "@/lib/workout-calendar";
 
 export const mobileAuthCallback = "com.hedefit.app://auth/callback";
@@ -64,6 +65,61 @@ export async function scheduleMobileWorkouts(preferences: ReminderPreferences, e
     .filter((notification) => notification.schedule.at.getTime() > now)
     .slice(0, 60);
   if (notifications.length) await LocalNotifications.schedule({ notifications });
+}
+
+/**
+ * Günlük sabah hatırlatmaları (bkz. lib/daily-reminders.ts).
+ *
+ * Antrenman hatırlatmasıyla aynı kalıp: önce bu uygulamanın kurduğu eski
+ * bildirimler iptal edilir, sonra plandaki günler yeniden kurulur. `extra`
+ * bayrağı ayrı: antrenman bildirimlerini yanlışlıkla silmemek için.
+ */
+export async function scheduleDailyReminders(entries: DailyReminderPlanEntry[]) {
+  if (!isNativeApp()) return;
+  const pending = await LocalNotifications.getPending();
+  const own = pending.notifications.filter((notification) => notification.extra?.hedefitDaily === true);
+  if (own.length) await LocalNotifications.cancel({ notifications: own.map(({ id }) => ({ id })) });
+  const now = Date.now();
+  const notifications = entries
+    .filter((entry) => entry.at.getTime() > now)
+    .slice(0, 30)
+    .map((entry) => ({
+      id: notificationId(`daily-${entry.dateKey}`),
+      title: entry.title,
+      body: entry.body,
+      schedule: { at: entry.at },
+      extra: { hedefitDaily: true, dateKey: entry.dateKey },
+    }));
+  if (notifications.length) await LocalNotifications.schedule({ notifications });
+}
+
+/**
+ * Android donanım geri tuşu.
+ *
+ * Eskiden burada `canGoBack` bayrağına bakan tek bir dinleyici vardı. Uygulama
+ * tek sayfa olduğu ve geçmişe hiç yazmadığı için o bayrak pratikte hep `false`
+ * dönüyordu: kullanıcı ayarlardayken ya da antrenman oynatıcısındayken geri
+ * tuşuna bastığında uygulama kapanıp arka plana düşüyordu.
+ *
+ * Artık kararı rota durumu veriyor (bkz. lib/navigation.ts). `handler` geri
+ * gidilecek bir yer bulup işlediyse `true` döner; dönmezse uygulama arka plana
+ * alınır — Android'de beklenen davranış budur.
+ */
+export function registerBackButton(handler: () => boolean) {
+  if (!isNativeApp()) return () => undefined;
+  let handle: { remove: () => Promise<void> } | null = null;
+  let cancelled = false;
+  void App.addListener("backButton", () => {
+    if (handler()) return;
+    void App.minimizeApp();
+  }).then((registered) => {
+    if (cancelled) void registered.remove();
+    else handle = registered;
+  });
+  return () => {
+    cancelled = true;
+    void handle?.remove();
+  };
 }
 
 let adsInitialized = false;
@@ -214,10 +270,6 @@ export function registerMobileRuntime(options: { supabase: SupabaseClient | null
     if (code) await options.supabase.auth.exchangeCodeForSession(code);
     await Browser.close().catch(() => undefined);
     window.location.assign("/");
-  }).then((handle) => handles.push(handle));
-  void App.addListener("backButton", ({ canGoBack }) => {
-    if (canGoBack) window.history.back();
-    else void App.minimizeApp();
   }).then((handle) => handles.push(handle));
   return () => {
     active = false;

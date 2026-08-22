@@ -17,8 +17,16 @@ import { detectUserEquipmentProfile, type EquipmentProfile } from "./ready-progr
 export type ProgramKind = "smart" | "fullBody" | "split" | "custom";
 export type TrainingPlace = "home" | "gym";
 
-/** Kullanıcının kurabileceği program sayısı. */
-export const CUSTOM_PROGRAM_SLOTS = 3;
+/**
+ * Kullanıcının kurabileceği program sayısının ÜST SINIRI.
+ *
+ * Eskiden bu sayı sabit üç slottu ve ekranda her zaman üç kart duruyordu:
+ * kullanmayan kişi iki boş kutuya bakıyor, dördüncü programı isteyen ise
+ * hiç kuramıyordu. Artık ekranda yalnızca KURULMUŞ programlar ve tek bir
+ * "yeni program" kartı görünür; sayı ihtiyaç kadar artar, silindikçe azalır.
+ * Üst sınır yalnızca tercih deposunun (localStorage) şişmesini engeller.
+ */
+export const CUSTOM_PROGRAM_LIMIT = 12;
 
 /**
  * Programdaki tek bir hareketin reçetesi.
@@ -131,6 +139,109 @@ export function estimateProgramMinutes(exercises: ProgramExercise[]): number {
   return exercises.length ? Math.max(1, Math.round(seconds / 60)) : 0;
 }
 
+// --- Bölgesel programlar ----------------------------------------------------
+//
+// Bölgesel program eskiden yalnız katalogdaki TEK bir `area` değerine
+// (Göğüs, Sırt, Bacak…) bakıyordu. Gerçekte insanlar "üst vücut", "arka
+// vücut", "itiş günü" gibi BİRDEN ÇOK bölgeyi birlikte çalışır. Bölge artık
+// bir alan LİSTESİDİR; tek bölgeli olanlar bu yapının özel hâlidir.
+
+export type BodyRegion = {
+  /** Sözlük anahtarı (t.programs.regions[id]) ve program anahtarının parçası. */
+  id: string;
+  /** Katalogdaki `area` değerleri. Sıra, hareket dağıtımının sırasıdır. */
+  areas: string[];
+};
+
+/** Katalogda gerçekten bulunan bölge adları. Özel bölge kurucusu da bunu kullanır. */
+export const TRAINING_AREAS = ["Göğüs", "Sırt", "Omuz", "Kol", "Bacak", "Kalça", "Core", "Kondisyon"] as const;
+
+/** Sabit bölgeler: önce tekil kaslar, sonra birleşik gruplar. */
+export const BODY_REGIONS: BodyRegion[] = [
+  { id: "chest", areas: ["Göğüs"] },
+  { id: "back", areas: ["Sırt"] },
+  { id: "shoulders", areas: ["Omuz"] },
+  { id: "arms", areas: ["Kol"] },
+  { id: "legs", areas: ["Bacak"] },
+  { id: "hips", areas: ["Kalça"] },
+  { id: "core", areas: ["Core"] },
+  { id: "upperBody", areas: ["Göğüs", "Sırt", "Omuz", "Kol"] },
+  { id: "lowerBody", areas: ["Bacak", "Kalça"] },
+  // "Arka vücut" (posterior zincir): sırt, kalça ve bacağın arka yüzü.
+  { id: "posterior", areas: ["Sırt", "Kalça", "Bacak"] },
+  { id: "push", areas: ["Göğüs", "Omuz", "Kol"] },
+  { id: "pull", areas: ["Sırt", "Kol"] },
+];
+
+/** Kullanıcının kendi kurduğu bölge. Sabit bölgelerin yanında durur. */
+export type CustomRegion = { id: string; name: string; areas: string[] };
+
+export const CUSTOM_REGION_LIMIT = 6;
+
+/** Bozuk/eski kayıtları eleyerek özel bölgeleri okur. */
+export function normalizeCustomRegions(raw: unknown): CustomRegion[] {
+  if (!Array.isArray(raw)) return [];
+  const valid = new Set<string>(TRAINING_AREAS);
+  const seen = new Set<string>();
+  const regions: CustomRegion[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const value = item as Record<string, unknown>;
+    const id = typeof value.id === "string" ? value.id.trim().slice(0, 40) : "";
+    const name = typeof value.name === "string" ? value.name.trim().slice(0, 40) : "";
+    const areas = Array.isArray(value.areas) ? [...new Set(value.areas.filter((area): area is string => typeof area === "string" && valid.has(area)))] : [];
+    if (!id || !name || !areas.length || seen.has(id)) continue;
+    seen.add(id);
+    regions.push({ id, name, areas });
+    if (regions.length >= CUSTOM_REGION_LIMIT) break;
+  }
+  return regions;
+}
+
+export function upsertCustomRegion(regions: CustomRegion[], next: CustomRegion): CustomRegion[] {
+  const existing = regions.findIndex((region) => region.id === next.id);
+  if (existing >= 0) {
+    const copy = regions.slice();
+    copy[existing] = next;
+    return copy;
+  }
+  return [...regions, next].slice(0, CUSTOM_REGION_LIMIT);
+}
+
+export function removeCustomRegion(regions: CustomRegion[], id: string): CustomRegion[] {
+  return regions.filter((region) => region.id !== id);
+}
+
+/**
+ * Bölge programının hareketlerini seçer.
+ *
+ * Birden çok bölgeli bir grupta (ör. "üst vücut") tek bir listeden ilk N
+ * hareketi almak, alfabetik sıra yüzünden seansın tamamını tek bölgeye
+ * (ör. sadece "Göğüs") çevirebiliyordu. Bu yüzden bölgeler arasında SIRAYLA
+ * hareket alınır: her tur her bölgeden bir hareket ekler, böylece kısa bir
+ * seans bile bütün gruba dokunur.
+ */
+export function distributeRegionExercises<T extends { name: string; area: string }>(
+  pool: T[],
+  areas: string[],
+  limit = 6,
+): T[] {
+  const byArea = areas.map((area) => pool.filter((item) => item.area === area).slice().sort((a, b) => a.name.localeCompare(b.name, "tr")));
+  const picked: T[] = [];
+  for (let round = 0; picked.length < limit; round += 1) {
+    let addedThisRound = false;
+    for (const list of byArea) {
+      if (picked.length >= limit) break;
+      const item = list[round];
+      if (!item) continue;
+      picked.push(item);
+      addedThisRound = true;
+    }
+    if (!addedThisRound) break;
+  }
+  return picked;
+}
+
 export function customSlotId(index: number): string {
   return `custom-${index + 1}`;
 }
@@ -164,7 +275,7 @@ export function normalizeCustomPrograms(raw: unknown): CustomProgram[] {
       exercises,
       updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date().toISOString(),
     });
-    if (programs.length >= CUSTOM_PROGRAM_SLOTS) break;
+    if (programs.length >= CUSTOM_PROGRAM_LIMIT) break;
   }
   return programs;
 }
@@ -177,16 +288,20 @@ export function upsertCustomProgram(programs: CustomProgram[], next: CustomProgr
     copy[existing] = next;
     return copy;
   }
-  return [...programs, next].slice(0, CUSTOM_PROGRAM_SLOTS);
+  return [...programs, next].slice(0, CUSTOM_PROGRAM_LIMIT);
 }
 
 export function removeCustomProgram(programs: CustomProgram[], id: string): CustomProgram[] {
   return programs.filter((program) => program.id !== id);
 }
 
-/** Boş olan ilk slotun kimliği; hepsi doluysa null. */
+/**
+ * Yeni programın alacağı kimlik. Aradaki bir program silinirse boşalan
+ * kimlik yeniden kullanılır; üst sınıra ulaşıldıysa null döner ve "yeni
+ * program" kartı hiç gösterilmez.
+ */
 export function nextFreeSlot(programs: CustomProgram[]): string | null {
-  for (let index = 0; index < CUSTOM_PROGRAM_SLOTS; index += 1) {
+  for (let index = 0; index < CUSTOM_PROGRAM_LIMIT; index += 1) {
     const id = customSlotId(index);
     if (!programs.some((program) => program.id === id)) return id;
   }

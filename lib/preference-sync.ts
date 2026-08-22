@@ -17,6 +17,9 @@ export const SYNCED_PREFERENCE_KEYS = [
   "hedefit:custom-programs",
   "hedefit:program-log",
   "hedefit:smart-program-swaps",
+  "hedefit:custom-regions",
+  "hedefit:daily-reminder",
+  "hedefit:guide-seen",
 ] as const;
 
 export type PreferenceBag = Record<string, string>;

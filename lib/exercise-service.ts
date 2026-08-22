@@ -118,6 +118,31 @@ export function getExerciseFilterOptions(filters: ExerciseFilters = {}) {
   };
 }
 
+/**
+ * Bir filtre boyutundaki her seçeneğin kaç harekete karşılık geldiği.
+ *
+ * Kütüphane 873 hareket içeriyor ve seçenekler eskiden isimsiz bir açılır
+ * listede duruyordu: kullanıcı "sırt" seçmeden kaç hareket çıkacağını
+ * bilmiyor, seçtikten sonra boş sonuç ekranıyla karşılaşabiliyordu. Sayı
+ * seçeneğin yanında görünürse seçim körlemesine yapılmaz.
+ *
+ * Sayılar DİĞER filtreler uygulanmış hâlde hesaplanır: "dambıl" seçiliyken
+ * "sırt" rozeti, dambılla yapılan sırt hareketi sayısını gösterir.
+ */
+export function countExercisesByFacet(
+  filters: ExerciseFilters,
+  dimension: "muscle" | "equipment" | "level" | "category",
+): Record<string, number> {
+  const options = getExerciseFilterOptions(filters);
+  const values = dimension === "muscle" ? options.muscles
+    : dimension === "equipment" ? options.equipment
+    : dimension === "level" ? options.levels
+    : options.categories;
+  const counts: Record<string, number> = {};
+  for (const value of values) counts[value] = filterExercises({ ...filters, [dimension]: value }).length;
+  return counts;
+}
+
 // Katalogdaki İngilizce `equipment` etiketlerinin, kullanıcının seçebildiği
 // ekipmanlara karşılığı. Salon dışındaki bir kullanıcıya barbell/cable/machine
 // göndermenin anlamı yok: model onları seçemez, ama tokenini yer.

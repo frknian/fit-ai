@@ -25,7 +25,9 @@ test("profil tarihçesi alanları Türkçe ve anlaşılır etiketlenir", () => {
 
 test("profil yaşam döngüsü özel depolama, RLS ve güçlü silme doğrulaması içerir", async () => {
   const [component, route, progressResetRoute, migration, auth, schema] = await Promise.all([
-    readFile(new URL("../components/ProfileManager.tsx", import.meta.url), "utf8"),
+    // Hesap işlemleri (dondurma, silme, ilerleme sıfırlama) profil ekranından
+    // ayarlar alt sayfasına taşındı; profil yalnız kimlik ve ölçü tutuyor.
+    readFile(new URL("../components/SettingsPanel.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/account/delete/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/account/reset-progress/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/migrations/20260723_profile_lifecycle.sql", import.meta.url), "utf8"),
@@ -37,8 +39,10 @@ test("profil yaşam döngüsü özel depolama, RLS ve güçlü silme doğrulamas
   assert.match(component, /progressResetConfirmPhrase/);
   assert.match(component, /onProgressReset/);
   assert.match(component, /t\.profileManager\.freezeAccount/);
-  assert.match(component, /profile-avatars/);
   assert.doesNotMatch(component, /DEĞİŞİKLİK GEÇMİŞİ|her doğum gününde otomatik güncellenir/);
+  // Avatar yüklemesi profil ekranında kaldı (kimlik bilgisi orada düzenlenir).
+  const profileScreen = await readFile(new URL("../components/ProfileManager.tsx", import.meta.url), "utf8");
+  assert.match(profileScreen, /profile-avatars/);
   assert.match(route, /auth\.admin\.deleteUser/);
   assert.match(route, /SUPABASE_SECRET_KEY/);
   // Bu iki geri alınamaz uç nokta, sunucu tarafı jeton doğrulamasını (e-posta

@@ -82,8 +82,14 @@ test("set kaydı ve süre sayacı kapatılabilir", () => {
   assert.match(app, /\{setLoggingEnabled && <WorkoutSetLogger/);
   assert.match(app, /\{timerEnabled && <div className=\{`timer-card phase-\$\{workoutPhase\}`\}/);
   // Sayaç kapalıyken de seans süresi ve kalori işler; kayıt "1 saniye" düşmez.
+  // Kuralın kendisi artık saf indirgeyicide ve orada test ediliyor
+  // (bkz. tests/workout-session.test.mjs → "süre sayacı kapalıyken geri sayım
+  // yok ama seans süresi işler"). Burada yalnız tercihin sayaca bağlandığı
+  // doğrulanır.
   assert.match(app, /const counting = timerEnabled \? isRunning : workoutPhase !== "done";/);
-  assert.match(app, /if \(timerEnabled\) setTimer\(\(current\) => \{/);
+  assert.match(app, /dispatchSession\(\{ type: "tick", prescription, timerEnabled, caloriesPerSecond \}\)/);
+  // Süre sayacı kapatılınca çalışan geri sayım durur.
+  assert.match(app, /setStoredWorkoutTimerEnabled\(false\); dispatchSession\(\{ type: "stop" \}\)/);
 });
 
 test("set sayısı denetimi oynatıcıdaki set şeridinde durur", () => {

@@ -25,13 +25,18 @@ test("gerçekten birden fazla doğru cevabı olan sorular çoklu seçimde kalır
 });
 
 test("tek seçimli soruda yeni cevap otomatik olarak sonraki soruya geçer", () => {
+  // Test artık bir AKIŞ üzerinden gösterilir (bkz. lib/onboarding-questions.ts
+  // → ONBOARDING_FLOW): questionIndex akıştaki KONUM, currentQuestion o
+  // konumdaki gerçek history index'i (bkz. FitAiApp.tsx).
   const fn = app.slice(app.indexOf("function toggleAnswer(answer: string)"), app.indexOf("function setFreeAnswer"));
-  assert.match(fn, /const isSingleSelect = SINGLE_SELECT_QUESTIONS\.includes\(questionIndex\);/);
-  assert.match(fn, /const wasSelected = \(history\[questionIndex\] \|\| ""\)\.split\(" · "\)\.includes\(answer\);/);
+  assert.match(fn, /const isSingleSelect = SINGLE_SELECT_QUESTIONS\.includes\(currentQuestion\);/);
+  assert.match(fn, /const wasSelected = \(history\[currentQuestion\] \|\| ""\)\.split\(" · "\)\.includes\(answer\);/);
   // Tek seçim bir radyo düğmesi: yeni şık öncekinin yerini alır.
   assert.match(fn, /next = selected\.includes\(answer\) \? \[\] : \[answer\];/);
   // Yalnız YENİ seçimde ilerler; aynı şıkka tekrar basıp geri çekmek ilerletmez.
-  assert.match(fn, /if \(isSingleSelect && !wasSelected && questionIndex < QUESTION_COUNT - 1\)/);
+  // Son slot antrenmandaki son soru VEYA kontrol noktası olabilir; her ikisinde
+  // de otomatik ilerleme sınırı `isLastSlot` ile kontrol edilir.
+  assert.match(fn, /if \(isSingleSelect && !wasSelected && !isLastSlot\)/);
   assert.match(fn, /setTimeout\(\(\) => setQuestionIndex\(\(index\) => index \+ 1\), 350\)/);
 });
 
@@ -49,7 +54,7 @@ test("her soruda geri dönüş her zaman mevcuttur", () => {
 });
 
 test("çoklu seçim ipucu yalnız çoklu seçimli sorularda gösterilir", () => {
-  assert.match(app, /!SINGLE_SELECT_QUESTIONS\.includes\(questionIndex\) && <p className="multi-select-note">/);
+  assert.match(app, /!SINGLE_SELECT_QUESTIONS\.includes\(currentQuestion\) && <p className="multi-select-note">/);
 });
 
 test("ekipman ve sakatlıktaki dışlayıcı 'yok' cevapları diğerleriyle birlikte işaretlenemez", () => {

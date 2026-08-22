@@ -32,6 +32,9 @@ kategorisine girer:
   algılanan zorluk, yorgunluk düzeyi ve bildirdiğiniz ağrı bölgeleri
 - Aktivite kayıtları (yürüyüş, koşu, bisiklet vb.: süre, mesafe, adım)
 - Beslenme kayıtları: yediğiniz besinler, porsiyon, kalori ve makro değerleri
+- Uyku kayıtları: kendi girdiğiniz uyku süresi, yatış/kalkış saati, uyku
+  kalitesi değerlendirmeniz ve notunuz (yalnızca elle girilir; cihazın uyku
+  ölçümü okunmaz)
 - Hedefleriniz ve profil testi cevaplarınız
 
 ### 2.3 Fotoğraflar

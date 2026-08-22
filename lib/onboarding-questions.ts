@@ -128,6 +128,62 @@ export function labelledAnswers(history: string[]): { question: string; answer: 
     .filter((entry) => entry.answer !== "");
 }
 
+// --- Hızlı başlangıç -------------------------------------------------------
+//
+// On beş soruluk test sırayla açılıyordu; kullanıcı plan görmeden önce hepsini
+// geçmek zorundaydı. Testi tamamlamadan hiç plan almayan kullanıcıyı kazanmak,
+// az cevapla üretilen bir planın biraz daha genel kalmasına değer.
+//
+// Çözüm soruları SİLMEK değil, en gerekli beşini öne almak ve aradan sonra bir
+// KONTROL NOKTASI göstermek: kullanıcı orada planı hemen kurabilir ya da
+// kalan sorularla devam edebilir. Veri modeli (history dizisi, index'ler)
+// değişmez — yalnızca GÖSTERİM sırası değişir.
+
+export type OnboardingSlot =
+  | { kind: "question"; index: number }
+  | { kind: "checkpoint" };
+
+/**
+ * Planı üretmeye yeten en küçük soru kümesi: REQUIRED_QUESTIONS'la aynı
+ * dörtlü + sakatlık. Sakatlık dahil çünkü cevapsız kalırsa plan riskli
+ * hareketleri eleyemez — güvenlikle ilgili tek soru budur.
+ */
+export const QUICK_QUESTIONS: number[] = [
+  QUESTION.goal,
+  QUESTION.level,
+  QUESTION.availableDays,
+  QUESTION.sessionMinutes,
+  QUESTION.injuries,
+];
+
+/**
+ * Soru akışı: önce hızlı beşli, sonra kontrol noktası, sonra kalan sorular
+ * ORİJİNAL sıralarında. Her `history` index'i akışta TAM BİR KEZ geçer.
+ */
+export const ONBOARDING_FLOW: OnboardingSlot[] = (() => {
+  const quickSet = new Set(QUICK_QUESTIONS);
+  const rest: number[] = [];
+  for (let index = 0; index < QUESTION_COUNT; index += 1) {
+    if (!quickSet.has(index)) rest.push(index);
+  }
+  return [
+    ...QUICK_QUESTIONS.map((index): OnboardingSlot => ({ kind: "question", index })),
+    { kind: "checkpoint" },
+    ...rest.map((index): OnboardingSlot => ({ kind: "question", index })),
+  ];
+})();
+
+export const CHECKPOINT_POSITION = QUICK_QUESTIONS.length;
+
+/** Konum → o konuma kadar (dahil) gösterilmiş SORU sayısı; ilerleme çubuğu içindir. */
+export const QUESTIONS_SHOWN_BY_POSITION: number[] = (() => {
+  let shown = 0;
+  return ONBOARDING_FLOW.map((slot) => {
+    if (slot.kind === "question") shown += 1;
+    return shown;
+  });
+})();
+
 /** Testin tamamlanmış sayılması için gereken asgari cevaplar. */
 export const REQUIRED_QUESTIONS: number[] = [QUESTION.goal, QUESTION.level, QUESTION.availableDays, QUESTION.sessionMinutes];
 

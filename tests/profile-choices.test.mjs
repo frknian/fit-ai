@@ -40,36 +40,46 @@ test("seçenekler profil testindeki yazımla birebir aynıdır", async () => {
   for (const choice of INJURY_CHOICES) assert.ok(block.includes(`"${choice}"`), `testte olmayan sakatlık: ${choice}`);
 });
 
-test("profil sayfası iki kutuya toplanır ve çıkış en altta durur", async () => {
-  const source = await readFile(new URL("../components/ProfileManager.tsx", import.meta.url), "utf8");
-  assert.match(source, /className="profile-box profile-training"/);
-  assert.match(source, /className="profile-box profile-settings"/);
-  // Tercihler, veriler, test, ilerleme ve hesap yönetimi tek kutuda.
-  const settingsBox = source.slice(source.indexOf('className="profile-box profile-settings"'));
-  for (const part of ["profile-preferences", "retake-test-zone", "progress-reset-zone", "account-danger-zone"]) {
-    assert.ok(settingsBox.includes(part), `ayarlar kutusunda eksik: ${part}`);
+test("profil ekranı kimlik ve ölçüyle sınırlı, ayarlar alt sayfada durur", async () => {
+  const [profile, settings] = await Promise.all([
+    readFile(new URL("../components/ProfileManager.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/SettingsPanel.tsx", import.meta.url), "utf8"),
+  ]);
+  // Ayarlara profilin sağ üstündeki dişliden girilir; alt sekme çubuğuna
+  // yedinci bir sekme eklenmez.
+  assert.match(profile, /className="profile-settings-button"/);
+  assert.match(profile, /if \(settingsOpen\) \{\s*\n\s*return <SettingsPanel/);
+  // Tercihler, veriler, plan ve hesap yönetimi ayarlarda toplanır.
+  for (const part of ["profile-preferences", "retake-test-zone", "progress-reset-zone", "account-danger-zone", "refresh-plan-zone"]) {
+    assert.ok(settings.includes(part), `ayarlar sayfasında eksik: ${part}`);
   }
-  // Çıkış düğmesi hesap kartından alınıp kutunun en altına taşındı.
-  assert.match(source, /className="profile-signout"><button type="button" onClick=\{\(\) => void onSignOut\(\)\}/);
-  const signOutIndex = source.indexOf('className="profile-signout"');
-  assert.ok(signOutIndex > source.indexOf("account-danger-zone"), "çıkış en altta olmalı");
+  // Aynı bölümler profil ekranında ARTIK durmamalı: iki yerde duran ayar,
+  // hangisinin geçerli olduğunu belirsizleştiriyordu.
+  for (const part of ["progress-reset-zone", "account-danger-zone", "profile-preferences"]) {
+    assert.ok(!profile.includes(part), `profil ekranında kalmamalı: ${part}`);
+  }
+  // Çıkış düğmesi ayarların en altında.
+  assert.match(settings, /className="profile-signout"><button type="button" onClick=\{\(\) => void onSignOut\(\)\}/);
+  assert.ok(settings.indexOf('className="profile-signout"') > settings.indexOf("account-danger-zone"), "çıkış en altta olmalı");
 });
 
-test("antrenman alanları şıklı sorulara çevrildi", async () => {
-  const source = await readFile(new URL("../components/ProfileManager.tsx", import.meta.url), "utf8");
-  // Hedef/ekipman/sakatlık artık serbest metin değil.
-  assert.doesNotMatch(source, /t\.profileManager\.goalLabel/, "hedef hâlâ serbest metin");
-  assert.doesNotMatch(source, /t\.profileManager\.equipmentLabel/, "ekipman hâlâ serbest metin");
-  assert.match(source, /GOAL_PRESETS\.map/);
-  assert.match(source, /EQUIPMENT_CHOICES\.map/);
-  assert.match(source, /INJURY_CHOICES\.map/);
-  // Yaş/boy/kilo hedefle birlikte okunur.
-  assert.match(source, /t\.profileChoices\.bodyBody\(/);
+test("profil testinin soruları yalnız testin içinde durur", async () => {
+  const profile = await readFile(new URL("../components/ProfileManager.tsx", import.meta.url), "utf8");
+  // Hedef, ekipman, sakatlık ve ortam soruları profil ekranından kaldırıldı;
+  // aynı cevabın iki düzenleme yeri olması hangisinin geçerli olduğunu
+  // belirsiz bırakıyordu. Tek kaynak profil testidir.
+  for (const marker of ["GOAL_PRESETS", "EQUIPMENT_CHOICES", "INJURY_CHOICES", "TrainingPlaceSwitch"]) {
+    assert.ok(!profile.includes(marker), `profil ekranında test sorusu kalmış: ${marker}`);
+  }
+  // Testi yeniden çözmenin girişi kalır.
+  assert.match(profile, /className="profile-test-link"/);
+  assert.match(profile, /onClick=\{onRetakeTest\}/);
 });
 
-test("sakatlık cevabı profil testiyle aynı yerde tutulur", async () => {
-  // İki ayrı yere yazmak, plan üretiminin hangisini okuyacağını belirsizleştirirdi.
+test("sakatlık cevabı yalnız profil testinde tutulur", async () => {
+  // Profil ekranı artık sakatlık cevabını düzenlemiyor; plan üretimi tek
+  // kaynaktan (profil testi cevapları) okur.
   const app = await readFile(new URL("../components/FitAiApp.tsx", import.meta.url), "utf8");
-  assert.match(app, /injuryAnswer=\{history\[QUESTION\.injuries\] \|\| ""\}/);
-  assert.match(app, /copy\[QUESTION\.injuries\] = next/);
+  assert.ok(!app.includes("injuryAnswer="), "profil ekranına ikinci bir sakatlık girişi bağlanmamalı");
+  assert.match(app, /QUESTION\.injuries/);
 });

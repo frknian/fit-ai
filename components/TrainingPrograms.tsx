@@ -1,25 +1,32 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, RefreshCw, X } from "lucide-react";
+import { Check, Plus, RefreshCw, X } from "lucide-react";
 import { ExerciseAnimation, exerciseLibrary, catalogItemToWorkout, getMotionGuide, movementInstructions, type AiWorkout, type CatalogItem } from "@/components/FitAiApp";
 import { OnboardingIcon } from "@/components/onboarding/OnboardingIcon";
 import { alternativeExercises } from "@/lib/exercise-alternatives";
-import { setStoredSmartProgramSwaps, useStoredSmartProgramSwaps } from "@/lib/preferences";
+import { setStoredCustomRegions, setStoredSmartProgramSwaps, useStoredCustomRegions, useStoredSmartProgramSwaps } from "@/lib/preferences";
 import { buildReadyProgram, matchesProfile } from "@/lib/ready-programs";
 import {
-  CUSTOM_PROGRAM_SLOTS,
+  BODY_REGIONS,
+  CUSTOM_REGION_LIMIT,
   DEFAULT_PROGRAM_EXERCISE,
   PROGRAM_EXERCISE_LIMITS,
-  customSlotId,
+  TRAINING_AREAS,
+  distributeRegionExercises,
   estimateProgramMinutes,
   moveProgramExercise,
   nextFreeSlot,
+  normalizeCustomRegions,
   normalizeProgramExercise,
   placeToProfile,
   programExerciseNames,
   programKey,
+  removeCustomRegion,
+  upsertCustomRegion,
+  type BodyRegion,
   type CustomProgram,
+  type CustomRegion,
   type ProgramExercise,
   type ProgramProgress,
   type TrainingPlace,
@@ -28,18 +35,18 @@ import { useTranslations } from "@/lib/i18n/translate";
 import { useLocale } from "@/lib/i18n/locale";
 import { movementArea, movementName, movementPrescription } from "@/lib/workout-localization";
 
-// Bölgesel programın seçenekleri; katalogdaki gerçek `area` değerleri.
-const BODY_REGIONS = ["Göğüs", "Sırt", "Bacak", "Kalça", "Omuz", "Kol", "Core"] as const;
-
 type Selection =
   | { kind: "smart" }
   | { kind: "fullBody"; place: TrainingPlace }
-  | { kind: "split"; place: TrainingPlace; area: string }
+  // Bölge artık tek bir `area` değil, bir alan LİSTESİDİR: "üst vücut" ya da
+  // "itiş günü" gibi birleşik gruplar da aynı yapıyla çalışır
+  // (bkz. lib/training-programs.ts → BODY_REGIONS).
+  | { kind: "split"; place: TrainingPlace; regionId: string; regionName: string; areas: string[] }
   | { kind: "custom"; id: string };
 
 export function TrainingPrograms({
   equipmentText, isGym, smartWorkouts, customPrograms, progress,
-  onStart, onSaveCustom, onDeleteCustom, smartExtra, smartFallback = false,
+  onStart, onSaveCustom, onDeleteCustom, onOpenLibrary, smartExtra, smartFallback = false,
 }: {
   equipmentText: string;
   /** Profildeki ortam. Sayfadaki salon/ev seçimi kaldırıldı: kullanıcı bunu
@@ -52,6 +59,10 @@ export function TrainingPrograms({
   progress: Record<string, ProgramProgress>;
   onStart: (workouts: AiWorkout[], key: string) => void;
   onSaveCustom: (program: CustomProgram) => void;
+  /** Hareket kütüphanesini açar. Kütüphane bu sekmenin altında durur
+      (bkz. docs/MOBIL_TASARIM_PLANI.md 3.2.1); eskiden başlık çubuğundaki
+      bir ikondu ve antrenmanla ilişkisi görünmüyordu. */
+  onOpenLibrary?: () => void;
   onDeleteCustom: (id: string) => void;
   /** Akıllı programın altında gösterilecek AI raporu / uyarlama kartı. */
   smartExtra?: React.ReactNode;
@@ -62,6 +73,9 @@ export function TrainingPrograms({
   const locale = useLocale();
   const [selection, setSelection] = useState<Selection | null>(null);
   const [builderId, setBuilderId] = useState<string | null>(null);
+  const [regionBuilderOpen, setRegionBuilderOpen] = useState(false);
+  const storedRegionsRaw = useStoredCustomRegions();
+  const customRegions = useMemo(() => normalizeCustomRegions(storedRegionsRaw), [storedRegionsRaw]);
   const place: TrainingPlace = isGym ? "gym" : "home";
 
   // Akıllı program her seansta AYNI hareket havuzunu verir; AI tek bir liste
@@ -121,12 +135,14 @@ export function TrainingPrograms({
     setSwapOpenFor(null);
   }
 
-  function regionLabel(area: string): string {
-    const map: Record<string, string> = {
-      "Göğüs": t.programs.regionChest, "Sırt": t.programs.regionBack, "Bacak": t.programs.regionLegs,
-      "Kalça": t.programs.regionHips, "Omuz": t.programs.regionShoulders, "Kol": t.programs.regionArms, "Core": t.programs.regionCore,
-    };
-    return map[area] ?? area;
+  // Katalogdaki ham alan adının ("Göğüs") ekrandaki karşılığı. Sözlükte
+  // olmayan bir alan gelirse ham ad basılır; ekran boş kalmaz.
+  function areaLabel(area: string): string {
+    return t.programs.areaLabels[area as keyof typeof t.programs.areaLabels] ?? area;
+  }
+
+  function regionLabel(region: BodyRegion): string {
+    return t.programs.regions[region.id as keyof typeof t.programs.regions] ?? region.areas.map(areaLabel).join(" + ");
   }
 
   // Seçili programın hareketleri. Hepsi TEK yerden üretilir; kart ile açılan
@@ -144,16 +160,19 @@ export function TrainingPrograms({
     }
     const profile = placeToProfile(selection.place, equipmentText);
     if (selection.kind === "fullBody") return buildReadyProgram(exerciseLibrary, profile);
-    return exerciseLibrary
-      .filter((item) => item.area === selection.area && matchesProfile(item, profile))
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name, "tr"))
-      .slice(0, 6);
+    // Birleşik bölgelerde hareketler bölgeler arasında sırayla dağıtılır;
+    // yoksa alfabetik sıra yüzünden "üst vücut" seansı baştan sona göğüs
+    // hareketi olabiliyordu (bkz. distributeRegionExercises).
+    const pool = exerciseLibrary.filter((item) => matchesProfile(item, profile));
+    return distributeRegionExercises(pool, selection.areas, selection.areas.length > 1 ? 8 : 6);
   }, [selection, equipmentText, customPrograms]);
 
   const activeKey = selection
     ? selection.kind === "custom" ? programKey("custom", undefined, selection.id)
       : selection.kind === "smart" ? programKey("smart")
+      // Bölgesel programın ilerlemesi bölge bazında sayılır: "bacak günü" ile
+      // "üst vücut" aynı sayaca yazılırsa ikisi de anlamsızlaşır.
+      : selection.kind === "split" ? `${programKey("split", selection.place)}:${selection.regionId}`
       : programKey(selection.kind, selection.place)
     : "";
 
@@ -185,7 +204,7 @@ export function TrainingPrograms({
   if (selection) {
     const title = selection.kind === "smart" ? t.programs.smartTitle
       : selection.kind === "fullBody" ? t.programs.fullBodyTitle
-      : selection.kind === "split" ? regionLabel(selection.area)
+      : selection.kind === "split" ? selection.regionName
       : customPrograms.find((program) => program.id === selection.id)?.name ?? t.programs.customTitle;
     const list: AiWorkout[] = selection.kind === "smart" ? smartListWithSwaps : activeExercises.map(catalogItemToWorkout);
 
@@ -296,36 +315,104 @@ export function TrainingPrograms({
         <OnboardingIcon name="muscle" />
         <h3>{t.programs.splitTitle}</h3>
         <p>{t.programs.splitBody}</p>
-        <div className="program-regions">{BODY_REGIONS.map((area) => (
-          <button type="button" key={area} className="equipment" onClick={() => openSelection({ kind: "split", place, area })}>{regionLabel(area)}</button>
-        ))}</div>
+        {/* Sabit bölgeler: önce tek kaslar, sonra "üst vücut / arka vücut /
+            itiş / çekiş" gibi birleşik gruplar. Ardından kullanıcının kendi
+            kurduğu bölgeler ve bir "bölge oluştur" düğmesi gelir. */}
+        <div className="program-regions">
+          {BODY_REGIONS.map((region) => (
+            <button type="button" key={region.id} className="equipment" onClick={() => openSelection({ kind: "split", place, regionId: region.id, regionName: regionLabel(region), areas: region.areas })}>{regionLabel(region)}</button>
+          ))}
+          {customRegions.map((region) => (
+            <span className="program-region-custom" key={region.id}>
+              <button type="button" className="equipment" onClick={() => openSelection({ kind: "split", place, regionId: region.id, regionName: region.name, areas: region.areas })}>{region.name}</button>
+              <button type="button" className="program-region-remove" aria-label={t.programs.deleteRegion(region.name)} onClick={() => setStoredCustomRegions(removeCustomRegion(customRegions, region.id))}><X size={12} /></button>
+            </span>
+          ))}
+          {customRegions.length < CUSTOM_REGION_LIMIT && <button type="button" className="equipment program-region-add" onClick={() => setRegionBuilderOpen(true)}><Plus size={12} />{t.programs.addRegion}</button>}
+        </div>
       </article>
     </div>
 
-    {/* Kendi programların en altta, üçü yan yana. */}
+    {/* Kendi programların: eskiden her zaman ÜÇ kart (çoğu boş) duruyordu.
+        Artık yalnız kurulmuş programlar ve tek bir "yeni program" kartı
+        görünür; sayı ihtiyaca göre artar, silindikçe azalır. */}
     <div className="program-cards program-custom-row">
-      {Array.from({ length: CUSTOM_PROGRAM_SLOTS }, (_, index) => {
-        const id = customSlotId(index);
-        const program = customPrograms.find((item) => item.id === id);
-        if (!program) {
-          return <article className="program-card program-card-empty" key={id}>
-            <OnboardingIcon name="health" />
-            <h3>{t.programs.createTitle}</h3>
-            <p>{t.programs.createBody}</p>
-            <button type="button" disabled={freeSlot !== id} onClick={() => setBuilderId(id)}>{t.programs.create} <span>+</span></button>
-          </article>;
-        }
-        return <article className="program-card" key={id}>
+      {customPrograms.map((program) => (
+        <article className="program-card" key={program.id}>
           <OnboardingIcon name="health" />
           <h3>{program.name}</h3>
           <p>{t.programs.customCount(program.exercises.length)}</p>
-          <small>{progressLabel(programKey("custom", undefined, id))}</small>
-          <button type="button" onClick={() => openSelection({ kind: "custom", id })}>{t.programs.open} <span>→</span></button>
-        </article>;
-      })}
+          <small>{progressLabel(programKey("custom", undefined, program.id))}</small>
+          <button type="button" onClick={() => openSelection({ kind: "custom", id: program.id })}>{t.programs.open} <span>→</span></button>
+        </article>
+      ))}
+      {freeSlot && <article className="program-card program-card-empty" key={freeSlot}>
+        <OnboardingIcon name="health" />
+        <h3>{t.programs.createTitle}</h3>
+        <p>{customPrograms.length ? t.programs.createMoreBody : t.programs.createBody}</p>
+        <button type="button" onClick={() => setBuilderId(freeSlot)}>{t.programs.create} <span>+</span></button>
+      </article>}
     </div>
 
+    {onOpenLibrary && <button type="button" className="programs-library-row" onClick={onOpenLibrary}>
+      <span><b>{t.nav.library}</b><i>{t.programs.libraryHint}</i></span>
+      <span aria-hidden="true">→</span>
+    </button>}
+
+    {regionBuilderOpen && <RegionBuilder
+      existing={customRegions}
+      areaLabel={areaLabel}
+      onCancel={() => setRegionBuilderOpen(false)}
+      onSave={(region) => { setStoredCustomRegions(upsertCustomRegion(customRegions, region)); setRegionBuilderOpen(false); }}
+    />}
   </section>;
+}
+
+/**
+ * Özel bölge kurucusu: kullanıcı çalıştığı kas gruplarını kendi adlandırdığı
+ * bir grupta toplar (ör. "İtiş günü" = göğüs + omuz + kol). Sabit bölgeler
+ * kalır; bu onların yanına eklenir.
+ */
+function RegionBuilder({ existing, areaLabel, onSave, onCancel }: {
+  existing: CustomRegion[];
+  areaLabel: (area: string) => string;
+  onSave: (region: CustomRegion) => void;
+  onCancel: () => void;
+}) {
+  const t = useTranslations();
+  const [name, setName] = useState("");
+  const [areas, setAreas] = useState<string[]>([]);
+  // Kimlik zamandan üretilir: aynı adı iki kez kullanmak serbest olmalı ama
+  // kayıtlar birbirini ezmemeli. Render sırasında DEĞİL, kaydederken üretilir —
+  // her yeniden render'da değişen bir kimlik kararsız veri demekti.
+  const nextId = () => {
+    const taken = new Set(existing.map((region) => region.id));
+    let id = `region-${Date.now().toString(36)}`;
+    while (taken.has(id)) id = `${id}x`;
+    return id;
+  };
+
+  function toggleArea(area: string) {
+    setAreas((current) => current.includes(area) ? current.filter((item) => item !== area) : [...current, area]);
+  }
+
+  return <div className="account-delete-overlay" role="dialog" aria-modal="true" aria-labelledby="region-builder-title">
+    <div className="account-delete-dialog region-builder">
+      <h2 id="region-builder-title">{t.programs.regionBuilderTitle}</h2>
+      <p>{t.programs.regionBuilderBody}</p>
+      <label>{t.programs.regionNameLabel}
+        <input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder={t.programs.regionNamePlaceholder} maxLength={40} />
+      </label>
+      <div className="answer-grid region-area-grid">{TRAINING_AREAS.map((area) => {
+        const chosen = areas.includes(area);
+        return <button type="button" key={area} aria-pressed={chosen} className={chosen ? "answer selected" : "answer"} onClick={() => toggleArea(area)}>{areaLabel(area)}</button>;
+      })}</div>
+      <div>
+        <button type="button" onClick={onCancel}>{t.programs.cancel}</button>
+        <button type="button" className="primary-btn" disabled={!areas.length || !name.trim()} onClick={() => onSave({ id: nextId(), name: name.trim(), areas })}>{t.programs.saveRegion}</button>
+      </div>
+    </div>
+  </div>;
 }
 
 /** Hareket kütüphanesinden seçerek kendi programını kurma ekranı. */

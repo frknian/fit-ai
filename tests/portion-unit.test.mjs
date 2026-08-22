@@ -197,9 +197,11 @@ test("ev ölçüsü grubunun CSS'i tanımlı", async () => {
 
 test("profilden planı yenilemek panelde kalır", async () => {
   const { readFile } = await import("node:fs/promises");
+  // "Planı yenile" ayarlar alt sayfasına taşındı (bkz. components/SettingsPanel.tsx);
+  // profil ekranı yalnız kimlik ve ölçü tutuyor.
   const [app, manager] = await Promise.all([
     readFile(new URL("../components/FitAiApp.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../components/ProfileManager.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/SettingsPanel.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(app, /await createPlan\(\{ keepOnDashboard: true \}\)/);
   // Yenilemede onboarding ekranlarına geçilmemeli.

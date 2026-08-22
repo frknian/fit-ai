@@ -1,9 +1,9 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import { Bolt, CalendarDays, Dumbbell, Footprints, House, LibraryBig, LineChart, UserRound, Utensils } from "lucide-react";
+import { Bolt, Dumbbell, Footprints, House, LineChart, Sparkles } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { AppShell, type ShellNavItem } from "@/components/layout/AppShell";
 import { AiInsight, StatTile } from "@/components/design";
@@ -29,10 +29,12 @@ import { RouteHistoryCard } from "@/components/RouteHistoryCard";
 import { WorkoutCalendar } from "@/components/WorkoutCalendar";
 import { ActivityStreak } from "@/components/ActivityStreak";
 import { ActivityLogger } from "@/components/ActivityLogger";
+import { SleepLogger } from "@/components/SleepLogger";
 import { WeeklyAiReview } from "@/components/WeeklyAiReview";
 import { WorkoutSetLogger } from "@/components/WorkoutSetLogger";
 import { MobileRuntime } from "@/components/MobileRuntime";
 import { SportyLoader } from "@/components/SportyLoader";
+import { UserGuide } from "@/components/UserGuide";
 import { PreferenceSync } from "@/components/PreferenceSync";
 import { GoalPlanCard } from "@/components/GoalPlanCard";
 import { TrainingPrograms } from "@/components/TrainingPrograms";
@@ -40,6 +42,10 @@ import { normalizeCustomPrograms, removeCustomProgram, summarizeProgramProgress,
 import { QuickActions } from "@/components/QuickActions";
 import { DailyEnergyRing } from "@/components/DailyEnergyRing";
 import { StepCounterCard } from "@/components/StepCounterCard";
+import { OutdoorGoalCard } from "@/components/OutdoorGoalCard";
+import { DailyTasksCard } from "@/components/DailyTasksCard";
+import { HydrationFasting } from "@/components/HydrationFasting";
+import { SleepSummaryCard } from "@/components/SleepSummaryCard";
 import type { AppView } from "@/lib/quick-actions";
 import { FrozenAccountScreen, ProfileManager } from "@/components/ProfileManager";
 import { PremiumPlans } from "@/components/PremiumPlans";
@@ -55,7 +61,7 @@ import { extractSessionMinutes, extractWeeklyDays, planProgressionBlock } from "
 import { alternativeExercises } from "@/lib/exercise-alternatives";
 import { canPerformExercise, hasEquipment, hasEquipmentNamed, usableEquipmentText } from "@/lib/equipment-match";
 import { EQUIPMENT_PROFILES, buildReadyProgram, isReplacementCompatible } from "@/lib/ready-programs";
-import { CURRENT_PROFILE_TEST_VERSION, FREE_TEXT_QUESTIONS, QUESTION, QUESTION_COUNT, SINGLE_SELECT_QUESTIONS, emptyHistory, isHistoryComplete, normalizeHistory } from "@/lib/onboarding-questions";
+import { CURRENT_PROFILE_TEST_VERSION, FREE_TEXT_QUESTIONS, ONBOARDING_FLOW, QUESTION, QUESTION_COUNT, QUESTIONS_SHOWN_BY_POSITION, SINGLE_SELECT_QUESTIONS, emptyHistory, isHistoryComplete, normalizeHistory } from "@/lib/onboarding-questions";
 import { applyPreviousPerformance, applySetDraftPatch, buildCompletedExerciseLog, createWorkoutSetDrafts, exerciseLogKey, resizeWorkoutSetDrafts, type CompletedExerciseLog, type PreviousExercisePerformance, type WorkoutSetDraft } from "@/lib/workout-log";
 import { localTimeKey } from "@/lib/workout-calendar";
 import { localDateKey } from "@/lib/streak";
@@ -66,8 +72,12 @@ import { isVerifiedAuthUser } from "@/lib/auth";
 import { saveProfileWithHistory, signedAvatarUrl } from "@/lib/profile-service";
 import { detectNewPersonalRecords, summarizePersonalRecords, type NewPersonalRecord, type PersonalRecord, type SetLogInput } from "@/lib/personal-records";
 import { formatWeight, unitToKg, type WeightUnit } from "@/lib/units";
-import { appendProgramLog, setStoredCustomPrograms, setStoredGoalPlan, setStoredSetLoggingEnabled, setStoredWorkoutTimerEnabled, useSetLoggingEnabled, useStoredCustomPrograms, useStoredGoalPlan, useStoredProgramLog, useWeightUnit, useWorkoutTimerEnabled } from "@/lib/preferences";
+import { appendProgramLog, setStoredCustomPrograms, setStoredGuideSeen, useGuideSeen, setStoredGoalPlan, setStoredSetLoggingEnabled, setStoredWorkoutTimerEnabled, useSetLoggingEnabled, useStoredCustomPrograms, useStoredGoalPlan, useStoredProgramLog, useWeightUnit, useWorkoutTimerEnabled } from "@/lib/preferences";
 import { authorizedFetch } from "@/lib/api-client";
+import { completedForFinish, initialSessionState, sessionReducer, type WorkoutPhase } from "@/lib/workout-session";
+import { useNavigation } from "@/components/navigation/NavigationProvider";
+import { routeForView, viewForRoute, type ScreenName } from "@/lib/navigation";
+import type { CoachAction } from "@/lib/ai/coach-actions";
 
 // lib/exercise-service.ts, data/exercises.json'ı (873 hareket, ~1 MB ham JSON)
 // modül yüklenirken içe aktarır. ExerciseLibrary bu kataloğun TAMAMINI arayıp
@@ -358,7 +368,6 @@ function createPersonalPlan(gym: string, equipmentText: string, history: string[
 
 export type AiWorkout = { id?: string; name: string; english: string; area: string; sets: string; rest: string; seconds: number; tone: string; icon: string; level: string; instructions: string; images?: string[]; equipment?: string | null; secondaryMuscles?: string[]; category?: string; bodyweight?: boolean };
 type MotionPattern = "floor-press" | "pushup" | "press" | "overhead" | "row" | "pulldown" | "squat" | "lunge" | "hinge" | "bridge" | "plank" | "core" | "cardio" | "mobility" | "curl" | "triceps" | "raise" | "fly" | "calf" | "leg-machine";
-type WorkoutPhase = "work" | "rest" | "done";
 type WorkoutSessionRecord = { id: string; completedAt: string; durationSeconds: number; calories: number; completedExercises: number; totalExercises: number; exerciseNames: string[]; difficulty?: WorkoutDifficulty; fatigue?: number; painAreas?: string[]; feedbackNote?: string };
 type AiPlanAnalysis = { experienceLevel: string; weeklyFrequency: string; sessionMinutes: number; primaryGoal: string; intensity: string; equipmentMode: string; focusAreas: string[]; adaptations: string[] };
 type AiScheduleDay = { day: string; focus: string; durationMinutes: number };
@@ -721,7 +730,7 @@ function AiPlanInsights({ analysis, schedule, progression, fingerprint }: { anal
  * göstermemek için. Ev sahibi bileşen zaten filtreleyip en fazla dört hareket
  * gönderir; "tümünü gör" antrenman sekmesine gider.
  */
-function TodaysWorkoutCard({ exercises, level, fallback, onStart, onSeeAll }: { exercises: AiWorkout[]; level: string; fallback: boolean; onStart: () => void; onSeeAll: () => void }) {
+function TodaysWorkoutCard({ exercises, level, fallback, onStart, onSeeAll, onOpenPlan }: { exercises: AiWorkout[]; level: string; fallback: boolean; onStart: () => void; onSeeAll: () => void; /** Haftalık planı (takvim) açar; takvim başlık ikonundan buraya taşındı. */ onOpenPlan?: () => void }) {
   const t = useTranslations();
   const locale = useLocale();
   if (!exercises.length) return null;
@@ -740,7 +749,10 @@ function TodaysWorkoutCard({ exercises, level, fallback, onStart, onSeeAll }: { 
         </details>
       </article>;
     })}</div>
-    {exercises.length > preview.length && <button type="button" className="today-workout-seeall" onClick={onSeeAll}>{t.nav.workout} →</button>}
+    <div className="today-workout-links">
+      {exercises.length > preview.length && <button type="button" className="today-workout-seeall" onClick={onSeeAll}>{t.nav.workout} →</button>}
+      {onOpenPlan && <button type="button" className="today-workout-seeall" onClick={onOpenPlan}>{t.dashboard.seePlan} →</button>}
+    </div>
     <button type="button" className="start-btn today-workout-start" onClick={onStart}><Bolt className="size-4" aria-hidden />{t.dashboard.startWorkout}</button>
   </section>;
 }
@@ -862,7 +874,15 @@ export default function Home() {
   const t = useTranslations();
   const locale = useLocale();
   const [authStatus, setAuthStatus] = useState<"loading" | "anonymous" | "authenticated" | "unavailable">("loading");
-  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authUser, setAuthUserState] = useState<User | null>(null);
+  // Supabase her token tazelemesinde YENİ bir User nesnesi verir. Doğrudan
+  // state'e yazılınca aynı kullanıcı için referans değişiyor ve authUser'a
+  // bağlı tüm efektler (profil, plan, antrenman geçmişi, günlük kalori)
+  // uygulama arka plandan her dönüşte baştan çalışıyordu. Kimlik aynıysa
+  // önceki nesne korunur; efektler tetiklenmez.
+  const setAuthUser = useCallback((next: User | null) => {
+    setAuthUserState((current) => (current && next && current.id === next.id ? current : next));
+  }, []);
   const [step, setStep] = useState<number>(STEP.profile);
   const [targetWeightDraft, setTargetWeightDraft] = useState("");
   const [planReport, setPlanReport] = useState<{ weeklyDays: number; sessionMinutes: number; exerciseCount: number } | null>(null);
@@ -884,12 +904,25 @@ export default function Home() {
   const [history, setHistory] = useState<string[]>(emptyHistory);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [activeWorkout, setActiveWorkout] = useState<number | null>(null);
+  // Oynatıcının durum makinesi tek bir SAF indirgeyicide (bkz.
+  // lib/workout-session.ts). Eskiden on bir ayrı useState ve iç içe geçmiş
+  // setState çağrılarıyla yazılmıştı; kural hiçbir yerde tek parça durmuyor ve
+  // test edilemiyordu. Okuma noktaları değişmesin diye aynı adlarla açılıyor.
+  const [session, dispatchSession] = useReducer(sessionReducer, initialSessionState);
+  const {
+    activeIndex: activeWorkout,
+    phase: workoutPhase,
+    currentSet,
+    timer,
+    running: isRunning,
+    completed: completedExercises,
+    skipped: skippedExercises,
+    elapsedSeconds: sessionSeconds,
+    calories: sessionCalories,
+  } = session;
+  // Sıradaki hareketlerin kendisi burada kalır: indirgeyici yalnız konumları
+  // bilir, katalog tiplerinden bağımsızdır.
   const [playerQueue, setPlayerQueue] = useState<AiWorkout[]>([]);
-  const [timer, setTimer] = useState(30);
-  const [isRunning, setIsRunning] = useState(false);
-  const [workoutPhase, setWorkoutPhase] = useState<WorkoutPhase>("work");
-  const [currentSet, setCurrentSet] = useState(1);
   const [exerciseSetDrafts, setExerciseSetDrafts] = useState<Record<number, WorkoutSetDraft[]>>({});
   const [newRecords, setNewRecords] = useState<NewPersonalRecord[]>([]);
   // saveWorkoutFeedback ve createPlan'daki profil kaydı sessizce yerel state'e
@@ -899,10 +932,6 @@ export default function Home() {
   const [swapOpen, setSwapOpen] = useState(false);
   const [previousPerformances, setPreviousPerformances] = useState<Record<string, PreviousExercisePerformance | null>>({});
   const requestedPerformanceKeys = useRef(new Set<string>());
-  const [completedExercises, setCompletedExercises] = useState<number[]>([]);
-  const [skippedExercises, setSkippedExercises] = useState<number[]>([]);
-  const [sessionSeconds, setSessionSeconds] = useState(0);
-  const [sessionCalories, setSessionCalories] = useState(0);
   const [sessionHistory, setSessionHistory] = useState<WorkoutSessionRecord[]>([]);
   // Bugün Hedefit Rota/aktivite günlüğünden (sport_activity_entries) yakılan
   // tahmini kalori. Kalori çemberi eskiden yalnız güç antrenmanlarını
@@ -924,21 +953,41 @@ export default function Home() {
   const [aiProgression, setAiProgression] = useState<string[]>([]);
   const [aiFingerprint, setAiFingerprint] = useState("");
   const [aiStage, setAiStage] = useState<AiStage>("profile");
-  const [chosenView, setChosenView] = useState<AppView | null>(null);
-  const activeView = chosenView ?? "plan";
-  const setActiveView = setChosenView;
+  // Görünüm artık kendi state'i değil, ROTADAN türetiliyor. Bunun tek amacı
+  // gezinmeyi tarayıcı geçmişine bağlamak: Android geri tuşu çalışsın, derin
+  // bağlantı ve yenileme yerini korusun, kaydırma konumu geri gelsin.
+  // Görünüm adları geçiş dönemi eşlemesiyle çevriliyor (bkz. lib/navigation.ts
+  // → GEÇİŞ DÖNEMİ); beş sekmeye geçişte o eşleme silinecek.
+  const nav = useNavigation();
+  const openScreens = useMemo(() => nav.state.stacks[nav.tab].map((entry) => entry.screen), [nav.state, nav.tab]);
+  const activeView: AppView = viewForRoute(nav.tab, openScreens);
+  /** Kaplamalar da rota yığınında: geri tuşu onları kapatır, uygulamayı değil. */
+  const overlayOpen = useCallback((name: ScreenName) => openScreens.some((screen) => screen.name === name), [openScreens]);
+  const closeOverlay = useCallback(() => { nav.goBack(); }, [nav]);
+  const setActiveView = useCallback((view: AppView) => {
+    const route = routeForView(view);
+    nav.selectTab(route.tab);
+    if (route.screen) nav.push(route.screen);
+  }, [nav]);
   const [, setAiStatus] = useState<"idle" | "scanning" | "complete" | "fallback">("idle");
-  const [goalPlanOpen, setGoalPlanOpen] = useState(false);
+  // Kaplamaların açık/kapalı durumu artık ROTA YIĞININDA (bkz. overlayOpen):
+  // ayrı boolean'lar geri tuşuna görünmüyordu ve kullanıcı kaplamadayken geri
+  // tuşuna bastığında uygulama kapanıyordu.
+  const goalPlanOpen = overlayOpen("goalPlan");
+  const setGoalPlanOpen = useCallback((open: boolean) => { if (open) nav.push({ name: "goalPlan" }); else closeOverlay(); }, [nav, closeOverlay]);
   // Ekran kapanıp WebView süreci öldürüldüğünde bütün React state'i (bu
   // boolean dahil) sıfırlanır. Rota diske yazılmış olsa bile (bkz.
   // lib/gps-session-store.ts) kaplama kapalı başlarsa GpsActivityTracker hiç
   // mount olmaz ve kurtarma mantığı tetiklenmez — kullanıcı "Aktiviteyi
   // başlat"a yeniden basana kadar rotası varmış gibi görünmez. Diskte
   // yarım kalan bir oturum varsa kaplama doğrudan açık başlar.
-  const [gpsTrackerOpen, setGpsTrackerOpen] = useState(hasPersistedGpsSession);
-  const [activityLogOpen, setActivityLogOpen] = useState(false);
+  const gpsTrackerOpen = overlayOpen("gpsTracker");
+  const setGpsTrackerOpen = useCallback((open: boolean) => { if (open) nav.push({ name: "gpsTracker" }); else closeOverlay(); }, [nav, closeOverlay]);
+  const activityLogOpen = overlayOpen("routeLog");
+  const setActivityLogOpen = useCallback((open: boolean) => { if (open) nav.push({ name: "routeLog" }); else closeOverlay(); }, [nav, closeOverlay]);
   const [isPremium, setIsPremium] = useState(false);
-  const [paywallOpen, setPaywallOpen] = useState(false);
+  const paywallOpen = overlayOpen("paywall");
+  const setPaywallOpen = useCallback((open: boolean) => { if (open) nav.push({ name: "paywall" }); else closeOverlay(); }, [nav, closeOverlay]);
   const weightUnit = useWeightUnit();
   // Set kaydı ve süre sayacı isteğe bağlı (bkz. lib/preferences.ts): ikisi de
   // varsayılan açık, kapatan kullanıcı yalnız hareket listesini takip eder.
@@ -959,6 +1008,27 @@ export default function Home() {
   const [avatarPath, setAvatarPath] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [accountStatus, setAccountStatus] = useState<AccountStatus | "loading">("loading");
+  // Profili HANGİ kullanıcı için yüklediğimiz. Uygulama arka plandan dönünce
+  // Supabase oturumu tazeler ve onAuthStateChange (TOKEN_REFRESHED / SIGNED_IN)
+  // yeniden tetiklenir; eskiden bu her seferinde accountStatus'ü "loading"
+  // yapıp tam ekran "Antrenmana hazırlanıyoruz" ekranını geri getiriyordu.
+  // Aynı kullanıcı zaten yüklüyse hiçbir şey sıfırlanmaz.
+  const loadedProfileUserId = useRef<string | null>(null);
+  // Ekran kapanıp WebView süreci öldürüldüğünde bütün React state'i sıfırlanır.
+  // Rota diske yazılmış olsa bile (bkz. lib/gps-session-store.ts) takip ekranı
+  // kapalı başlarsa GpsActivityTracker hiç mount olmaz ve kurtarma mantığı
+  // tetiklenmez — kullanıcı "Aktiviteyi başlat"a yeniden basana kadar rotası
+  // yokmuş gibi görünür. Yarım kalan oturum varsa ekran doğrudan açılır.
+  const navPush = nav.push;
+  useEffect(() => {
+    if (hasPersistedGpsSession()) navPush({ name: "gpsTracker" });
+  }, [navPush]);
+
+  // Kullanma kılavuzu: ilk kez panele giren kullanıcıya kendiliğinden açılır,
+  // sonrasında Ayarlar'dan istendiği zaman (bkz. components/UserGuide.tsx).
+  const guideOpen = overlayOpen("guide");
+  const setGuideOpen = useCallback((open: boolean) => { if (open) nav.push({ name: "guide" }); else closeOverlay(); }, [nav, closeOverlay]);
+  const guideSeen = useGuideSeen();
   // PERFORMANS: aşağıdaki hesaplar YALNIZ gösterge panelinde kullanılır ama
   // bağımlılıkları arasında `history` var. Gate olmadan, profil testinde her
   // tuş vuruşu 181 hareketlik katalogda ekipman eşleşmesi (regex + normalize),
@@ -1089,11 +1159,20 @@ export default function Home() {
   // hemen sonra beklenmedik biçimde ileri fırlatılabilirdi.
   useEffect(() => () => { if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current); }, [questionIndex]);
 
+  // Test artık sıralı bir AKIŞ üzerinden gösterilir: önce planı üretmeye
+  // yeten hızlı beşli, sonra bir kontrol noktası, sonra kalan sorular
+  // (bkz. lib/onboarding-questions.ts → ONBOARDING_FLOW). `questionIndex` bu
+  // akıştaki KONUMDUR; `history` dizisindeki gerçek soru index'i değildir.
+  const currentSlot = ONBOARDING_FLOW[questionIndex] ?? ONBOARDING_FLOW[0];
+  const currentQuestion = currentSlot.kind === "question" ? currentSlot.index : -1;
+  const isLastSlot = questionIndex >= ONBOARDING_FLOW.length - 1;
+
   function toggleAnswer(answer: string) {
-    const isSingleSelect = SINGLE_SELECT_QUESTIONS.includes(questionIndex);
-    const wasSelected = (history[questionIndex] || "").split(" · ").includes(answer);
+    if (currentQuestion < 0) return;
+    const isSingleSelect = SINGLE_SELECT_QUESTIONS.includes(currentQuestion);
+    const wasSelected = (history[currentQuestion] || "").split(" · ").includes(answer);
     setHistory((current) => {
-      const selected = current[questionIndex] ? current[questionIndex].split(" · ").filter(Boolean) : [];
+      const selected = current[currentQuestion] ? current[currentQuestion].split(" · ").filter(Boolean) : [];
       let next: string[];
       if (isSingleSelect) {
         // Tek seçim bir radyo düğmesi gibi davranır: aynı şıkka tekrar
@@ -1107,18 +1186,19 @@ export default function Home() {
       } else {
         next = [...selected.filter((value) => !EXCLUSIVE_ANSWERS.has(value)), answer];
       }
-      return current.map((value, index) => index === questionIndex ? next.join(" · ") : value);
+      return current.map((value, index) => index === currentQuestion ? next.join(" · ") : value);
     });
     // Yalnız YENİ bir seçimde ilerle: cevabı geri çekmek (aynı şıkka tekrar
     // basmak) kullanıcının yeniden düşünmek istediği anlamına gelir.
-    if (isSingleSelect && !wasSelected && questionIndex < QUESTION_COUNT - 1) {
+    if (isSingleSelect && !wasSelected && !isLastSlot) {
       if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
       autoAdvanceTimer.current = setTimeout(() => setQuestionIndex((index) => index + 1), 350);
     }
   }
 
   function setFreeAnswer(answer: string) {
-    setHistory((current) => current.map((value, index) => index === questionIndex ? answer : value));
+    if (currentQuestion < 0) return;
+    setHistory((current) => current.map((value, index) => index === currentQuestion ? answer : value));
   }
 
 
@@ -1136,14 +1216,21 @@ export default function Home() {
       if (data.user && !verifiedUser) await supabase.auth.signOut({ scope: "local" });
       if (cancelled) return;
       setAuthUser(verifiedUser);
-      setAccountStatus(verifiedUser ? "loading" : "active");
+      setAccountStatus(verifiedUser && verifiedUser.id !== loadedProfileUserId.current ? "loading" : "active");
       setAuthStatus(verifiedUser ? "authenticated" : "anonymous");
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (cancelled) return;
       const verifiedUser = isVerifiedAuthUser(session?.user) ? session.user : null;
       setAuthUser(verifiedUser);
-      setAccountStatus(verifiedUser ? "loading" : "active");
+      // Profili zaten yüklenmiş kullanıcı için "loading"e DÖNÜLMEZ: token
+      // tazeleme ve uygulamanın arka plandan dönmesi de bu olayı tetikler ve
+      // ekranda duran veri yerine yükleme ekranı gösterilirdi.
+      setAccountStatus((current) => {
+        if (!verifiedUser) return "active";
+        if (verifiedUser.id === loadedProfileUserId.current) return current === "loading" ? "active" : current;
+        return "loading";
+      });
       setAuthStatus(verifiedUser ? "authenticated" : "anonymous");
       if (session?.user && !verifiedUser) {
         window.setTimeout(() => void supabase.auth.signOut({ scope: "local" }), 0);
@@ -1153,7 +1240,9 @@ export default function Home() {
       cancelled = true;
       subscription.unsubscribe();
     };
-  }, []);
+    // setAuthUser useCallback ile sabittir (kimlik aynıysa önceki nesneyi
+    // korur); listede olması efekti yeniden çalıştırmaz.
+  }, [setAuthUser]);
 
   useEffect(() => {
     if (!authUser) return;
@@ -1165,6 +1254,9 @@ export default function Home() {
       if (!supabase) return;
       const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
       if (cancelled) return;
+      // Bu kullanıcının profili artık ekranda: sonraki oturum tazelemeleri
+      // tam ekran yükleme durumuna geri dönmesin (bkz. loadedProfileUserId).
+      loadedProfileUserId.current = userId;
       if (!profile) {
         const metadataBirthDate = typeof currentUser.user_metadata?.birth_date === "string" ? currentUser.user_metadata.birth_date : "";
         setBirthDate(metadataBirthDate);
@@ -1327,9 +1419,13 @@ export default function Home() {
     };
   }, [activeWorkout, authUser, currentWorkout, currentWorkoutKey]);
 
+  // Görünüm değişiminde kaydırmayı SIFIRLAMAK buradan kalktı: konum artık
+  // rota yığınında taşınıyor ve geri dönüldüğünde kaldığı yere sarılıyor
+  // (bkz. NavigationProvider). Kalan iki durum rotanın parçası değil, o yüzden
+  // hâlâ burada: oynatıcıda hareket değişimi ve testte soru değişimi.
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-  }, [activeView, activeWorkout, questionIndex, step]);
+  }, [activeWorkout, questionIndex, step]);
 
   // Not: telefonda yatay kayan bağlantı şeridini aktif sekmeye kaydıran efekt
   // kaldırıldı. Gezinme artık alt sekme çubuğunda sabit beş sütun (bkz.
@@ -1339,37 +1435,20 @@ export default function Home() {
   // birikimi. Süre sayacı kapalıyken geri sayım YOK, ama antrenman ekranı
   // açık olduğu sürece seans süresi ve kalori işlemeye devam eder — aksi
   // hâlde kaydedilen antrenman "1 saniye" olarak düşerdi.
+  // Bağımlılıklar bilerek `session` DEĞİL, onun tek tek alanları: durumun
+  // tamamına bağlanmak her saniye aralığı yıkıp yeniden kurardı ve o sırada
+  // olan her render (ör. set kaydına yazı yazmak) geri sayımı baştan
+  // başlatırdı. Sayaç yalnız faz/set/çalışma durumu değişince yeniden kurulur.
   useEffect(() => {
-    if (!currentWorkout) return;
+    if (!currentWorkout || activeWorkout === null) return;
     const counting = timerEnabled ? isRunning : workoutPhase !== "done";
     if (!counting) return;
+    const prescription = workoutPrescription(currentWorkout);
+    const userWeight = Math.max(40, Number(weight) || 70);
+    const met = workoutMet(currentWorkout, workoutPhase, aiAnalysis?.intensity || "Orta");
+    const caloriesPerSecond = ((met * 3.5 * userWeight) / 200) / 60;
     const interval = window.setInterval(() => {
-      if (timerEnabled) setTimer((current) => {
-        if (current > 1) return current - 1;
-        const prescription = workoutPrescription(currentWorkout);
-        if (workoutPhase === "work" && currentSet < prescription.totalSets) {
-          setWorkoutPhase("rest");
-          return prescription.restSeconds;
-        }
-        if (workoutPhase === "rest") {
-          setCurrentSet((set) => set + 1);
-          setWorkoutPhase("work");
-          setIsRunning(false);
-          return prescription.workSeconds;
-        }
-        setWorkoutPhase("done");
-        if (activeWorkout !== null) setCompletedExercises((completed) => completed.includes(activeWorkout) ? completed : [...completed, activeWorkout]);
-        setIsRunning(false);
-        return 0;
-      });
-      setSessionSeconds((current) => {
-        const next = current + 1;
-        const userWeight = Math.max(40, Number(weight) || 70);
-        const met = workoutMet(currentWorkout, workoutPhase, aiAnalysis?.intensity || "Orta");
-        const caloriesPerSecond = ((met * 3.5 * userWeight) / 200) / 60;
-        setSessionCalories((calories) => calories + caloriesPerSecond);
-        return next;
-      });
+      dispatchSession({ type: "tick", prescription, timerEnabled, caloriesPerSecond });
     }, 1000);
     return () => window.clearInterval(interval);
   }, [activeWorkout, aiAnalysis?.intensity, currentSet, currentWorkout, isRunning, timerEnabled, weight, workoutPhase]);
@@ -1415,7 +1494,7 @@ export default function Home() {
       [activeWorkout]: resizeWorkoutSetDrafts(current[activeWorkout] || [], nextTotal, prescription.target),
     }));
     // Silinen setlerin ötesinde kalan aktif set geri çekilir.
-    setCurrentSet((set) => Math.min(set, nextTotal));
+    dispatchSession({ type: "clampSet", totalSets: nextTotal });
   }
 
   // Kısayoldan gelen gezinme: önce görünüm değişir, sonra hedef bölüm görünür
@@ -1426,7 +1505,9 @@ export default function Home() {
     // "Aktiviteyi başlat" bir sayfa değil, canlı takip diyaloğu: arkasına
     // aktivite günlüğü sayfası açılır ki kapatınca kullanıcı boşlukta kalmasın.
     if (overlay === "gpsTracker") { setGpsTrackerOpen(true); return; }
-    if (!anchorId) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    // Çıpa yoksa kaydırmaya dokunulmaz: rota katmanı zaten o görünümün saklı
+    // konumunu geri yüklüyor.
+    if (!anchorId) return;
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       document.getElementById(anchorId)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }));
@@ -1441,15 +1522,7 @@ export default function Home() {
       const prescription = workoutPrescription(exercise);
       return [exerciseIndex, createWorkoutSetDrafts(prescription.totalSets, prescription.target)];
     })));
-    setActiveWorkout(index);
-    setTimer(workoutPrescription(nextWorkout).workSeconds);
-    setIsRunning(false);
-    setWorkoutPhase("work");
-    setCurrentSet(1);
-    setCompletedExercises([]);
-    setSkippedExercises([]);
-    setSessionSeconds(0);
-    setSessionCalories(0);
+    dispatchSession({ type: "open", index, queueLength: queue.length, prescription: workoutPrescription(nextWorkout) });
   }
 
   function updateExerciseSetDraft(exerciseIndex: number, setNumber: number, patch: Partial<Omit<WorkoutSetDraft, "setNumber">>) {
@@ -1464,58 +1537,27 @@ export default function Home() {
   function goToWorkout(index: number) {
     const nextWorkout = playerQueue[index];
     if (!nextWorkout) return;
-    setActiveWorkout(index);
-    setTimer(workoutPrescription(nextWorkout).workSeconds);
-    setIsRunning(false);
-    setWorkoutPhase("work");
-    setCurrentSet(1);
+    dispatchSession({ type: "goTo", index, prescription: workoutPrescription(nextWorkout) });
   }
 
   function completeCurrentPhase() {
     if (!currentWorkout || activeWorkout === null) return;
-    const prescription = workoutPrescription(currentWorkout);
-    setIsRunning(false);
-    if (workoutPhase === "rest") {
-      setCurrentSet((set) => set + 1);
-      setWorkoutPhase("work");
-      setTimer(prescription.workSeconds);
-      return;
-    }
-    // Set "tamamlandı" diye işaretlenmez: kayda giren şey kullanıcının
-    // gerçekten yazdığı değerdir (bkz. applySetDraftPatch). Boş bırakılan set
-    // antrenmanı tamamlamayı engellemez, yalnızca kaydedilmez.
-    if (currentSet < prescription.totalSets) {
-      // Süre sayacı kapalıyken beklenecek bir geri sayım yok; doğrudan
-      // sonraki sete geçilir.
-      if (!timerEnabled) {
-        setCurrentSet((set) => set + 1);
-        setTimer(0);
-        return;
-      }
-      setWorkoutPhase("rest");
-      setTimer(prescription.restSeconds);
-      return;
-    }
-    setWorkoutPhase("done");
-    setTimer(0);
-    setCompletedExercises((current) => current.includes(activeWorkout) ? current : [...current, activeWorkout]);
+    dispatchSession({ type: "completePhase", prescription: workoutPrescription(currentWorkout), timerEnabled });
   }
 
   function skipExercise() {
     if (activeWorkout === null) return;
-    setSkippedExercises((current) => current.includes(activeWorkout) ? current : [...current, activeWorkout]);
-    if (activeWorkout < playerQueue.length - 1) goToWorkout(activeWorkout + 1);
-    else {
-      setWorkoutPhase("done");
-      setTimer(0);
-      setIsRunning(false);
-    }
+    // Atlanınca sıradaki harekete geçilir; reçete o hareketten okunur.
+    const next = playerQueue[activeWorkout + 1] ?? currentWorkout ?? playerQueue[activeWorkout];
+    if (!next) return;
+    dispatchSession({ type: "skip", prescription: workoutPrescription(next) });
   }
 
   function finishWorkout() {
     if (!playerQueue.length) return;
-    setIsRunning(false);
-    const completed = activeWorkout !== null && workoutPhase === "done" && !skippedExercises.includes(activeWorkout) && !completedExercises.includes(activeWorkout) ? [...completedExercises, activeWorkout] : completedExercises;
+    // Son hareket "bitti" fazındaysa ama listeye girmemişse o da sayılır
+    // (bkz. lib/workout-session.ts → completedForFinish).
+    const completed = completedForFinish(session);
     const record: WorkoutSessionRecord = { id: crypto.randomUUID(), completedAt: new Date().toISOString(), durationSeconds: Math.max(1, sessionSeconds), calories: Math.max(1, Math.round(sessionCalories)), completedExercises: completed.length, totalExercises: playerQueue.length, exerciseNames: playerQueue.map((exercise) => exercise.name) };
     const exerciseLogs = playerQueue.map((exercise, exerciseIndex) => skippedExercises.includes(exerciseIndex) ? null : buildCompletedExerciseLog({
       exerciseId: exercise.id,
@@ -1524,7 +1566,7 @@ export default function Home() {
       isBodyweight: isBodyweightWorkout(exercise),
       drafts: exerciseSetDrafts[exerciseIndex] || [],
     })).filter((log): log is CompletedExerciseLog => Boolean(log));
-    setActiveWorkout(null);
+    dispatchSession({ type: "close" });
     setFeedbackDifficulty("Uygun");
     setFeedbackFatigue(3);
     setFeedbackPainAreas(["Yok"]);
@@ -1811,9 +1853,12 @@ export default function Home() {
   // yeniden açılır; antrenman ve beslenme kayıtlarına dokunulmaz.
   function retakeProfileTest() {
     setQuestionIndex(0);
-    setStep(STEP.test);
+    // STEP.test değil STEP.place: antrenman ortamı, ekipman, hedef ve istenen
+    // hareketler de testin parçası. Bunlar bir dönem profil ekranından ayrıca
+    // düzenlenebiliyordu; o ikinci giriş kaldırıldığı için testi yeniden çözmek
+    // artık gerçekten TÜM cevapları kapsamalı.
+    setStep(STEP.place);
     setActiveView("plan");
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function resetSavedProgress() {
@@ -1845,6 +1890,8 @@ export default function Home() {
   async function handleSignOut() {
     const supabase = createClient();
     if (supabase) await supabase.auth.signOut();
+    // Bir sonraki giriş profili baştan yüklesin.
+    loadedProfileUserId.current = null;
     setAuthUser(null);
     setAuthStatus("anonymous");
     setStep(STEP.profile);
@@ -1864,6 +1911,9 @@ export default function Home() {
     requestedPerformanceKeys.current.clear();
     setPendingExerciseLogs([]);
     setAiWorkouts([]);
+    // Oynatıcı da kapanır: eskiden açık kalıyordu ve çıkış yapan kullanıcının
+    // yarım antrenmanı bir sonraki oturumda ekranda duruyordu.
+    dispatchSession({ type: "close" });
     setActiveView("plan");
     setAvatarPath(null);
     setAvatarUrl(null);
@@ -1885,6 +1935,7 @@ export default function Home() {
   }
 
   function clearDeletedAccount() {
+    loadedProfileUserId.current = null;
     setAuthUser(null);
     setAuthStatus("anonymous");
     setAccountStatus("active");
@@ -1906,20 +1957,28 @@ export default function Home() {
   // Gezinme kabuğu (masaüstünde sol sütun, telefonda alt sekme çubuğu).
   // Sekmelerde beş ana görünüm durur; takvim ve kütüphane başlık çubuğunda
   // ikon olarak kalır — hiçbir ekran erişilemez hâle gelmez.
+  // Alt çubukta BEŞ sütun ve her biri bir eylem: gör / çalış / dışarı çık /
+  // yardım al / sonucu gör (bkz. docs/MOBIL_TASARIM_PLANI.md 3.1). Ortada
+  // yükseltilmiş düğme yok — beşi eşit ağırlıkta.
+  //
+  // Profil çubuktan indi: bir eylem değil ve günlük kullanılmıyor. Başlıktaki
+  // avatardan açılıyor.
+  //
+  // Takvim, kütüphane ve beslenme de çubukta değil — her biri ilgili ekranın
+  // İÇİNDEN açılıyor: Bugün → "Planı gör" (takvim), Bugün → kalori kartı
+  // (beslenme), Antrenman → Kütüphane. Başlıktaki ikonlar bu girişlerin
+  // yerini aldığı için kaldırıldı.
   const navItems: ShellNavItem[] = [
-    { id: "plan", label: t.nav.home, icon: House, primary: true },
-    { id: "activity", label: t.nav.activity, icon: Footprints, primary: true },
+    { id: "today", label: t.nav.home, icon: House, primary: true },
     { id: "workout", label: t.nav.workout, icon: Dumbbell, primary: true },
-    { id: "nutrition", label: t.nav.nutrition, icon: Utensils, primary: true },
+    { id: "activity", label: t.nav.activity, icon: Footprints, primary: true },
+    { id: "coach", label: t.nav.coach, icon: Sparkles, primary: true },
     { id: "progress", label: t.nav.progress, icon: LineChart, primary: true },
-    { id: "profile", label: t.nav.profile, icon: UserRound, primary: true },
-    { id: "calendar", label: t.nav.calendar, icon: CalendarDays },
-    { id: "library", label: t.nav.library, icon: LibraryBig },
   ];
 
   // Logo ana ekrana döner: her uygulamada beklenen davranış, burada yoktu ve
   // kullanıcı alt sekmeden geri gelmek zorunda kalıyordu.
-  const brand = <button type="button" className="brand" aria-label={t.nav.home} onClick={() => { setActiveView("plan"); setActiveWorkout(null); window.scrollTo({ top: 0, behavior: "smooth" }); }}><span className="brand-mark" aria-hidden="true" /><span>Hede<span className="brand-letter-gradient">f</span><span className="brand-dot">it</span></span></button>;
+  const brand = <button type="button" className="brand" aria-label={t.nav.home} onClick={() => { setActiveView("plan"); dispatchSession({ type: "close" }); }}><span className="brand-mark" aria-hidden="true" /><span>Hede<span className="brand-letter-gradient">f</span><span className="brand-dot">it</span></span></button>;
 
   // Genel aramanın ekran kaynağı: gezinme etiketleri + arama anahtar
   // kelimeleri. Sözlükten burada okunur; arama modülü saf kalır.
@@ -1935,8 +1994,26 @@ export default function Home() {
   function openSearchResult(result: GlobalSearchResult) {
     setLibraryExerciseId(result.exerciseId ?? "");
     setActiveView(result.view);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
+  /**
+   * Koçun önerdiği eylemi uygular.
+   *
+   * Buradaki her çağrı KULLANICI düğmeye bastıktan sonra çalışır; koç kendi
+   * başına hiçbir şey değiştirmez (bkz. lib/ai/coach-actions.ts). Eylemler
+   * yalnız GEZİNME yapar — plan yazmak, hedef değiştirmek gibi kalıcı
+   * değişiklikler kullanıcının o ekranda vereceği ikinci bir karara bağlı.
+   */
+  function applyCoachAction(action: CoachAction) {
+    switch (action.type) {
+      case "openWorkout": setActiveView("workout"); break;
+      case "createWorkout": setActiveView("workout"); break;
+      case "startOutdoor": setActiveView("activity"); setGpsTrackerOpen(true); break;
+      case "suggestMeal": setActiveView("nutrition"); break;
+      case "remind": setActiveView("profile"); break;
+      case "changeGoal": setGoalPlanOpen(true); break;
+    }
+  }
+
   const shellFooter = <footer><span>{t.common.footerTagline}</span><span>© 2026</span></footer>;
 
   return (
@@ -1982,10 +2059,37 @@ export default function Home() {
 
           {step === STEP.test && <div className="step-content history-step">
             {/* Sayaç ve çubuk doğrudan sorunun üstünde: uzun başlık ve lead
-                arada kalınca kullanıcı kaçıncı soruda olduğunu göremiyordu. */}
-            <div className="question-progress"><div className="question-counter"><b>{questionIndex + 1}</b><span>/{QUESTION_COUNT}</span></div><div className="question-progress-bar" role="progressbar" aria-valuenow={questionIndex + 1} aria-valuemin={1} aria-valuemax={QUESTION_COUNT}><i style={{ width: `${((questionIndex + 1) / QUESTION_COUNT) * 100}%` }} /></div></div>
-            <div className="question-card"><h2>{t.onboarding.historyQuestions[questionIndex]}</h2>{(answerOptions[questionIndex] ?? []).length > 0 && !SINGLE_SELECT_QUESTIONS.includes(questionIndex) && <p className="multi-select-note">{t.onboarding.multiSelectNote}</p>}<div className="answer-grid">{(answerOptions[questionIndex] ?? []).map((answer, answerIndex) => { const label = (t.onboarding.answerOptions[questionIndex] ?? [])[answerIndex] ?? answer; const selected = (history[questionIndex] || "").split(" · ").includes(answer); return <button type="button" key={answer} aria-pressed={selected} className={selected ? "answer selected" : "answer"} onClick={() => toggleAnswer(answer)}>{label}</button>; })}</div>{FREE_TEXT_QUESTIONS.includes(questionIndex) && <textarea className="question-note" aria-label={t.onboarding.historyQuestions[questionIndex]} value={history[questionIndex]} onChange={(e) => setFreeAnswer(e.target.value)} rows={4} />}</div>
-            <div className="action-row"><button className="back-btn" type="button" onClick={() => questionIndex ? setQuestionIndex(questionIndex - 1) : setStep(STEP.photo)}>{t.common.back}</button>{questionIndex < QUESTION_COUNT - 1 ? <button className="primary-btn" type="button" onClick={() => setQuestionIndex(questionIndex + 1)}>{t.onboarding.next} <span>→</span></button> : <button className="primary-btn" type="button" onClick={() => void createPlan()} disabled={saving}>{t.onboarding.buildPlan} <span>→</span></button>}</div>
+                arada kalınca kullanıcı kaçıncı soruda olduğunu göremiyordu.
+                Sayaç GÖSTERİLEN soru sayısını sayar (bkz. QUESTIONS_SHOWN_BY_POSITION);
+                kontrol noktası bir soru değildir, sayacı artırmaz. */}
+            <div className="question-progress"><div className="question-counter"><b>{QUESTIONS_SHOWN_BY_POSITION[questionIndex]}</b><span>/{QUESTION_COUNT}</span></div><div className="question-progress-bar" role="progressbar" aria-valuenow={QUESTIONS_SHOWN_BY_POSITION[questionIndex]} aria-valuemin={1} aria-valuemax={QUESTION_COUNT}><i style={{ width: `${(QUESTIONS_SHOWN_BY_POSITION[questionIndex] / QUESTION_COUNT) * 100}%` }} /></div></div>
+
+            {currentSlot.kind === "checkpoint" ? (
+              // Kontrol noktası: planı üretmeye yeten beş soru cevaplandı.
+              // Kullanıcı burada durup planını hemen kurabilir ya da kalan on
+              // soruyla planı daha da kişiselleştirebilir. Testi tamamlamadan
+              // hiç plan almayan kullanıcıyı kazanmak, az cevapla üretilen bir
+              // planın biraz daha genel kalmasına değer.
+              <div className="question-card checkpoint-card">
+                <div className="eyebrow">{t.onboarding.checkpointEyebrow}</div>
+                <h2>{t.onboarding.checkpointTitle}</h2>
+                <p className="lead">{t.onboarding.checkpointLead}</p>
+              </div>
+            ) : (
+              <div className="question-card"><h2>{t.onboarding.historyQuestions[currentQuestion]}</h2>{(answerOptions[currentQuestion] ?? []).length > 0 && !SINGLE_SELECT_QUESTIONS.includes(currentQuestion) && <p className="multi-select-note">{t.onboarding.multiSelectNote}</p>}<div className="answer-grid">{(answerOptions[currentQuestion] ?? []).map((answer, answerIndex) => { const label = (t.onboarding.answerOptions[currentQuestion] ?? [])[answerIndex] ?? answer; const selected = (history[currentQuestion] || "").split(" · ").includes(answer); return <button type="button" key={answer} aria-pressed={selected} className={selected ? "answer selected" : "answer"} onClick={() => toggleAnswer(answer)}>{label}</button>; })}</div>{FREE_TEXT_QUESTIONS.includes(currentQuestion) && <textarea className="question-note" aria-label={t.onboarding.historyQuestions[currentQuestion]} value={history[currentQuestion]} onChange={(e) => setFreeAnswer(e.target.value)} rows={4} />}</div>
+            )}
+
+            {currentSlot.kind === "checkpoint" ? (
+              <div className="action-row checkpoint-actions">
+                <button className="back-btn" type="button" onClick={() => setQuestionIndex(questionIndex - 1)}>{t.common.back}</button>
+                <div className="checkpoint-actions-right">
+                  <button className="secondary-btn" type="button" onClick={() => setQuestionIndex(questionIndex + 1)}>{t.onboarding.checkpointContinue}</button>
+                  <button className="primary-btn" type="button" onClick={() => void createPlan()} disabled={saving}>{t.onboarding.checkpointBuildNow} <span>→</span></button>
+                </div>
+              </div>
+            ) : (
+              <div className="action-row"><button className="back-btn" type="button" onClick={() => questionIndex ? setQuestionIndex(questionIndex - 1) : setStep(STEP.photo)}>{t.common.back}</button>{!isLastSlot ? <button className="primary-btn" type="button" onClick={() => setQuestionIndex(questionIndex + 1)}>{t.onboarding.next} <span>→</span></button> : <button className="primary-btn" type="button" onClick={() => void createPlan()} disabled={saving}>{t.onboarding.buildPlan} <span>→</span></button>}</div>
+            )}
           </div>}
 
           {step === STEP.building && <div className="step-content building-step">
@@ -2015,18 +2119,18 @@ export default function Home() {
       ) : (
         <AppShell
           items={navItems}
-          activeId={activeView}
-          onSelect={(id) => setActiveView(id as AppView)}
+          activeId={nav.tab === "coach" ? "coach" : activeView === "plan" ? "today" : activeView}
+          onSelect={(id) => id === "today" ? nav.selectTab("today") : id === "coach" ? nav.selectTab("coach") : setActiveView(id as AppView)}
           brand={brand}
           profile={<><span className="mini-avatar">{avatarUrl ? <Image src={avatarUrl} alt="" width={40} height={40} unoptimized /> : name ? name.charAt(0).toUpperCase() : "E"}</span><span className="hf-sidenav-identity"><strong>{name || t.dashboard.defaultName}</strong><small>{isPremium ? t.premium.premiumLabel : t.premium.freeLabel}</small></span></>}
           search={<GlobalSearch programs={customPrograms} views={searchViews} onSelect={openSearchResult} />}
-          headerActions={<><NotificationBell onOpenSettings={() => setActiveView("calendar")} /><LanguageToggle /><ThemeToggle /></>}
-          cta={<button type="button" className="start-btn" onClick={() => { setActiveView("workout"); window.scrollTo({ top: 0, behavior: "smooth" }); }}>{t.quickActions.startWorkout} <span>→</span></button>}
+          headerActions={<><NotificationBell onOpenSettings={() => setActiveView("calendar")} /><LanguageToggle /><ThemeToggle /><button type="button" className="topbar-avatar" aria-label={t.nav.profile} aria-pressed={activeView === "profile"} onClick={() => setActiveView("profile")}>{avatarUrl ? <Image src={avatarUrl} alt="" width={32} height={32} unoptimized /> : <span>{(name || "S").charAt(0).toLocaleUpperCase("tr-TR")}</span>}</button></>}
+          cta={<button type="button" className="start-btn" onClick={() => setActiveView("workout")}>{t.quickActions.startWorkout} <span>→</span></button>}
           footer={shellFooter}
         >
         <section className="dashboard">
 {syncNotice ? <div role="alert" style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "12px 16px", margin: "0 0 16px", borderRadius: 12, background: "var(--hf-error-container)", color: "var(--hf-on-error-container)", fontSize: 14 }}><span>{syncNotice}</span><button type="button" onClick={() => setSyncNotice("")} aria-label={t.common.dismiss} style={{ border: "none", background: "transparent", color: "inherit", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>{t.common.dismiss}</button></div> : null}
-<WorkoutCalendar active={activeView === "calendar"} userId={authUser?.id} onStartWorkout={() => setActiveView("workout")} />{activeView === "calendar" ? null : activeView === "profile" ? <ProfileManager user={authUser} profile={{ displayName: name, birthDate, gender, heightCm: Number(height) || null, weightKg: Number(weight) || null, goalText, environment: gym === "Salon" ? "Salon" : "Evde", equipmentText, requestedExercises, avatarPath }} avatarUrl={avatarUrl} onSaved={applySavedProfile} onFrozen={() => setAccountStatus("frozen")} onDeleted={clearDeletedAccount} onProgressReset={resetSavedProgress} onRetakeTest={retakeProfileTest} onRefreshPlan={refreshPlanFromProfile} onSignOut={handleSignOut} injuryAnswer={history[QUESTION.injuries] || ""} onInjuryChange={(next) => setHistory((current) => { const copy = current.slice(); copy[QUESTION.injuries] = next; return copy; })} isPremium={isPremium} onUpgradeRequest={() => setPaywallOpen(true)} /> : activeView === "progress" ? <><PersonalRecordCelebration records={newRecords} unit={weightUnit} onDismiss={() => setNewRecords([])} /><ProgressView name={name} sessions={sessionHistory} referenceTime={progressReferenceTime} energyMetrics={energyMetrics} userId={authUser?.id} goalText={goalText || planGoal} onOpenActivityLog={() => setActivityLogOpen(true)} /></> : activeView === "nutrition" ? <CalorieTracker userId={authUser?.id} bmr={energyMetrics?.bmr} tdee={energyMetrics?.tdee} weightKg={Number(weight) || undefined} activityFactor={energyMetrics?.activityFactor} workoutDays={inferWorkoutDays(history[QUESTION.availableDays] || history[QUESTION.recentFrequency])} profileGoal={goalText || planGoal} burnedKcal={burnedTodayCalories} onUpgradeRequest={() => setPaywallOpen(true)} /> : activeView === "library" ? <LibraryView initialExerciseId={libraryExerciseId} onOpenWorkout={(exercise) => openWorkout(0, [exercise])} onAddWorkout={(exercise) => setAiWorkouts((current) => current.some((item) => item.id === exercise.id) ? current : [...current, exercise])} /> : activeView === "activity" ? <>
+<WorkoutCalendar active={activeView === "calendar"} userId={authUser?.id} onStartWorkout={() => setActiveView("workout")} />{nav.tab === "coach" ? <AiCoachChat embedded context={coachContext} signals={coachSignals} onUpgradeRequest={() => setPaywallOpen(true)} onAction={applyCoachAction} /> : activeView === "calendar" ? null : activeView === "profile" ? <ProfileManager user={authUser} profile={{ displayName: name, birthDate, gender, heightCm: Number(height) || null, weightKg: Number(weight) || null, goalText, environment: gym === "Salon" ? "Salon" : "Evde", equipmentText, requestedExercises, avatarPath }} avatarUrl={avatarUrl} onSaved={applySavedProfile} onFrozen={() => setAccountStatus("frozen")} onDeleted={clearDeletedAccount} onProgressReset={resetSavedProgress} onRetakeTest={retakeProfileTest} onRefreshPlan={refreshPlanFromProfile} onSignOut={handleSignOut} isPremium={isPremium} onUpgradeRequest={() => setPaywallOpen(true)} onOpenGuide={() => setGuideOpen(true)} /> : activeView === "progress" ? <><PersonalRecordCelebration records={newRecords} unit={weightUnit} onDismiss={() => setNewRecords([])} /><ProgressView name={name} sessions={sessionHistory} referenceTime={progressReferenceTime} energyMetrics={energyMetrics} userId={authUser?.id} goalText={goalText || planGoal} onOpenActivityLog={() => setActivityLogOpen(true)} /></> : activeView === "nutrition" ? <CalorieTracker userId={authUser?.id} bmr={energyMetrics?.bmr} tdee={energyMetrics?.tdee} weightKg={Number(weight) || undefined} activityFactor={energyMetrics?.activityFactor} workoutDays={inferWorkoutDays(history[QUESTION.availableDays] || history[QUESTION.recentFrequency])} profileGoal={goalText || planGoal} burnedKcal={burnedTodayCalories} onUpgradeRequest={() => setPaywallOpen(true)} /> : activeView === "library" ? <LibraryView initialExerciseId={libraryExerciseId} onOpenWorkout={(exercise) => openWorkout(0, [exercise])} onAddWorkout={(exercise) => setAiWorkouts((current) => current.some((item) => item.id === exercise.id) ? current : [...current, exercise])} /> : activeView === "activity" ? <>
           {/* Aktivite günlüğü kendi sekmesinde: üstte Hedefit Rota (canlı GPS
               takibi), altında spor ekleme ve geçmiş. Eskiden spor ekleme
               antrenman sekmesindeki bir düğmenin arkasındaydı ve program
@@ -2041,9 +2145,12 @@ export default function Home() {
             </div>
           </section>
           <ActivityLogger userId={authUser.id} weightKg={Number(weight) || 70} />
+          {/* Uyku, aktivite sekmesinde: kullanıcının "dün ne yaptım" diye
+              baktığı yer burası (bkz. components/SleepLogger.tsx). */}
+          <SleepLogger userId={authUser.id} />
           </> : <>
           {activeView === "workout" && activeWorkout !== null && currentWorkout && currentGuide && currentPrescription ? <div className="workout-player">
-            <button className="back-btn" type="button" onClick={() => { setIsRunning(false); setActiveWorkout(null); }}>{t.workoutPlayer.backToPlan}</button>
+            <button className="back-btn" type="button" onClick={() => dispatchSession({ type: "close" })}>{t.workoutPlayer.backToPlan}</button>
             <div className="workout-session-progress" aria-label={t.workoutPlayer.progressLabel}>{playerQueue.map((exercise, index) => <span key={`${exercise.name}-${index}`} className={completedExercises.includes(index) ? "complete" : skippedExercises.includes(index) ? "skipped" : index === activeWorkout ? "active" : ""} />)}</div>
             <ExerciseAnimation exercise={currentWorkout} />
             <div className="player-title-row"><div><div className="eyebrow">{t.workoutPlayer.movementLabel(activeWorkout + 1, playerQueue.length)}</div><h1>{movementName(currentWorkout)}</h1></div><span className={`phase-badge ${workoutPhase}`}>{workoutPhase === "rest" ? t.workoutPlayer.phaseRest : workoutPhase === "done" ? t.workoutPlayer.phaseDone : t.workoutPlayer.phaseSet(currentSet, currentPrescription.totalSets)}</span><button type="button" className="swap-trigger" onClick={() => setSwapOpen((open) => !open)} aria-expanded={swapOpen}>{t.exerciseSwap.trigger}</button></div>
@@ -2063,7 +2170,7 @@ export default function Home() {
                 <div><strong>{t.workoutPlayer.timerToggle}</strong><small>{t.workoutPlayer.timerToggleHint}</small></div>
                 <div className="segmented">
                   <button type="button" aria-pressed={timerEnabled} className={timerEnabled ? "selected" : ""} onClick={() => setStoredWorkoutTimerEnabled(true)}>{t.workoutPlayer.optionOn}</button>
-                  <button type="button" aria-pressed={!timerEnabled} className={timerEnabled ? "" : "selected"} onClick={() => { setStoredWorkoutTimerEnabled(false); setIsRunning(false); }}>{t.workoutPlayer.optionOff}</button>
+                  <button type="button" aria-pressed={!timerEnabled} className={timerEnabled ? "" : "selected"} onClick={() => { setStoredWorkoutTimerEnabled(false); dispatchSession({ type: "stop" }); }}>{t.workoutPlayer.optionOff}</button>
                 </div>
               </div>
             </div>
@@ -2075,7 +2182,7 @@ export default function Home() {
             <div className="player-tools"><button type="button" onClick={() => activeWorkout > 0 && goToWorkout(activeWorkout - 1)} disabled={activeWorkout === 0}>{t.workoutPlayer.previousLabel}</button>{workoutPhase !== "done" && <button type="button" onClick={completeCurrentPhase}>{workoutPhase === "rest" ? t.workoutPlayer.skipRest : t.workoutPlayer.completeSet}</button>}<button type="button" onClick={skipExercise}>{t.workoutPlayer.skipExercise}</button></div>
             {/* Süre sayacı kapalıyken başlat/duraklat anlamsız: ana eylem
                 doğrudan seti tamamlamak olur. */}
-            <div className="player-actions"><button className="start-btn" type="button" onClick={() => workoutPhase === "done" ? activeWorkout < playerQueue.length - 1 ? goToWorkout(activeWorkout + 1) : void finishWorkout() : timerEnabled ? setIsRunning((running) => !running) : completeCurrentPhase()}>{workoutPhase === "done" ? activeWorkout < playerQueue.length - 1 ? t.workoutPlayer.nextExercise : t.workoutPlayer.saveWorkout : !timerEnabled ? t.workoutPlayer.completeSet : isRunning ? t.workoutPlayer.pause : workoutPhase === "rest" ? t.workoutPlayer.startRest : t.workoutPlayer.startSet} <span>→</span></button></div>
+            <div className="player-actions"><button className="start-btn" type="button" onClick={() => workoutPhase === "done" ? activeWorkout < playerQueue.length - 1 ? goToWorkout(activeWorkout + 1) : void finishWorkout() : timerEnabled ? dispatchSession({ type: "toggleRunning" }) : completeCurrentPhase()}>{workoutPhase === "done" ? activeWorkout < playerQueue.length - 1 ? t.workoutPlayer.nextExercise : t.workoutPlayer.saveWorkout : !timerEnabled ? t.workoutPlayer.completeSet : isRunning ? t.workoutPlayer.pause : workoutPhase === "rest" ? t.workoutPlayer.startRest : t.workoutPlayer.startSet} <span>→</span></button></div>
             <button className="finish-btn" type="button" onClick={() => void finishWorkout()}>{t.workoutPlayer.finishAndSave}</button>
           </div> : activeView === "workout" ? <>
           {/* Antrenman sekmesi tek kavram üzerine kuruldu: PROGRAM. Eskiden
@@ -2087,6 +2194,7 @@ export default function Home() {
               bitirmiş kullanıcı hiç program alamıyordu. localPlan profile göre
               yerel olarak üretilir ve her zaman vardır; yedek odur. */}
           <TrainingPrograms
+            onOpenLibrary={() => setActiveView("library")}
             smartWorkouts={aiWorkouts.length ? aiWorkouts : localPlan}
             smartFallback={!aiWorkouts.length && localPlan.length > 0}
             smartExtra={<>
@@ -2126,11 +2234,30 @@ export default function Home() {
           <div className="home-column">
           <div className="dashboard-head"><div><h1 className="dashboard-greeting"><span>{t.dashboard.greeting(name || t.dashboard.defaultName)}<em>{t.dashboard.greetingEm}</em></span><ActivityStreak userId={authUser.id} compact /></h1></div></div>
           <GoalPlanCard compact bmi={bmi} onOpen={() => setGoalPlanOpen(true)} userId={authUser?.id} currentWeightKg={Number(weight) || null} profileBmr={energyMetrics?.bmr ?? null} />
+          {/* "Bugün ne yapmam gerekiyor?" — ana ekranın asıl işi bu. Görevler
+              kayıtlardan türetilir (bkz. lib/daily-tasks.ts). */}
+          <DailyTasksCard userId={authUser.id} onOpenTask={(task) => {
+            if (task === "workout") setActiveView("workout");
+            else if (task === "outdoor") { setActiveView("activity"); setGpsTrackerOpen(true); }
+            else if (task === "weighIn") setActiveView("progress");
+            else setActiveView("activity");
+          }} />
           <QuickActions onNavigate={navigateFromQuickAction} />
           <div className="home-top-row">
             <DailyEnergyRing compact userId={authUser?.id} burnedKcal={burnedTodayCalories} fallbackTargetKcal={energyMetrics?.tdee ?? null} onOpen={() => navigateFromQuickAction("nutrition")} />
             <StepCounterCard userId={authUser?.id} />
           </div>
+          {/* Su ve uyku mini kartları: tam deneyimleri sırasıyla Beslenme ve
+              Aktivite sekmesinde kalır (bkz. HydrationFasting compact,
+              SleepSummaryCard). Dokununca yalnız GEZİNİR, veri girmez —
+              ana ekranda yanlışlıkla su eklemek/uyku kaydetmek istemiyoruz. */}
+          <div className="home-top-row">
+            <HydrationFasting compact userId={authUser?.id} weightKg={Number(weight) || null} onOpen={() => setActiveView("nutrition")} />
+            <SleepSummaryCard userId={authUser.id} onOpen={() => setActiveView("activity")} />
+          </div>
+          {/* Doğada spor teşviki: haftalık açık hava süresi, rozet ve tek
+              dokunuşla Hedefit Rota (bkz. components/OutdoorGoalCard.tsx). */}
+          <OutdoorGoalCard userId={authUser.id} onStartRoute={() => { setActiveView("activity"); setGpsTrackerOpen(true); }} />
           {/* Antrenman sekmesindekiyle AYNI liste (aiWorkouts ya da localPlan):
               kullanıcı bugün ne yapacağını sekme değiştirmeden görür. */}
           <TodaysWorkoutCard
@@ -2139,6 +2266,7 @@ export default function Home() {
             fallback={!aiWorkouts.length && localPlan.length > 0}
             onStart={() => startProgram(aiWorkouts.length ? aiWorkouts : localPlan, "smart")}
             onSeeAll={() => setActiveView("workout")}
+            onOpenPlan={() => setActiveView("calendar")}
           />
           {sessionHistory.length > 0 && <AdaptivePlanCard adaptation={adaptation} sessionCount={sessionHistory.length} />}
           </div>
@@ -2166,8 +2294,17 @@ export default function Home() {
         </div>
         {sessionAreas.length > 0 && <div className="session-areas"><span>{t.feedback.summaryAreas}</span><div>{sessionAreas.map((area) => <b key={area}>{area}</b>)}</div></div>}
         <p>{t.feedback.body}</p><fieldset><legend>{t.feedback.difficultyLegend}</legend><div className="feedback-options">{(["Kolay", "Uygun", "Zor"] as WorkoutDifficulty[]).map((option) => <button type="button" aria-pressed={feedbackDifficulty === option} className={feedbackDifficulty === option ? "selected" : ""} onClick={() => setFeedbackDifficulty(option)} key={option}>{option === "Kolay" ? t.feedback.difficultyEasy : option === "Uygun" ? t.feedback.difficultySuitable : t.feedback.difficultyHard}</button>)}</div></fieldset><fieldset><legend>{t.feedback.fatigueLegend}</legend><div className="fatigue-scale">{[1, 2, 3, 4, 5].map((value) => <button type="button" aria-pressed={feedbackFatigue === value} className={feedbackFatigue === value ? "selected" : ""} onClick={() => setFeedbackFatigue(value)} key={value}><strong>{value}</strong><small>{value === 1 ? t.feedback.fatigueVeryLow : value === 3 ? t.feedback.fatigueMedium : value === 5 ? t.feedback.fatigueVeryHigh : ""}</small></button>)}</div></fieldset><fieldset><legend>{t.feedback.painLegend}</legend><div className="feedback-options pain-options">{["Yok", "Bel", "Diz", "Omuz", "Diğer"].map((area) => <button type="button" aria-pressed={feedbackPainAreas.includes(area)} className={feedbackPainAreas.includes(area) ? "selected" : ""} onClick={() => toggleFeedbackPain(area)} key={area}>{area === "Yok" ? t.feedback.painNone : area === "Bel" ? t.feedback.painLowerBack : area === "Diz" ? t.feedback.painKnee : area === "Omuz" ? t.feedback.painShoulder : t.feedback.painOther}</button>)}</div></fieldset><label className="feedback-note">{t.feedback.noteLabel} <small>{t.onboarding.optionalHint}</small><textarea value={feedbackNote} onChange={(event) => setFeedbackNote(event.target.value)} placeholder={t.feedback.notePlaceholder} /></label><div className="feedback-summary"><span>{t.feedback.nextStepLabel}</span><strong>{feedbackPainAreas.some((area) => area !== "Yok") || feedbackDifficulty === "Zor" || feedbackFatigue >= 4 ? t.feedback.nextStepRecovery : feedbackDifficulty === "Kolay" && feedbackFatigue <= 2 ? t.feedback.nextStepIncrease : t.feedback.nextStepBalanced}</strong></div><button className="primary-btn feedback-save" type="button" onClick={() => void saveWorkoutFeedback()}>{t.feedback.save} <span>→</span></button></div></div>}
-      {step === STEP.dashboard && <AiCoachChat context={coachContext} signals={coachSignals} onUpgradeRequest={() => setPaywallOpen(true)} />}
+      {/* Yüzen başlatıcı yalnız Koç sekmesi DIŞINDA: sekmedeyken panel zaten
+          tam sayfa açık, ikinci bir kopya gerekmez. */}
+      {step === STEP.dashboard && nav.tab !== "coach" && <AiCoachChat context={coachContext} signals={coachSignals} onUpgradeRequest={() => setPaywallOpen(true)} onAction={applyCoachAction} />}
       <PremiumPlans open={paywallOpen} onClose={() => setPaywallOpen(false)} isPremium={isPremium} />
+      {/* Kılavuz kapatıldığında "görüldü" olarak işaretlenir; atlayan kullanıcı
+          da aynı sayılır — zorla tekrar göstermek değil, Ayarlar'dan
+          erişilebilir kılmak doğru davranış. */}
+      {/* Panele İLK girişte kendiliğinden açılır; sonrasında yalnız Ayarlar'dan.
+          Efektle değil türetilerek: "henüz görülmedi" zaten bir durum, onu
+          ikinci bir state'e kopyalamak fazladan bir render turu demekti. */}
+      {(guideOpen || (step === STEP.dashboard && !guideSeen)) && <UserGuide onClose={() => { setGuideOpen(false); setStoredGuideSeen(true); }} />}
       {/* Panelde alt bilgi kabuğun içinde (sekme çubuğunun üstünde) durur;
           burada yalnız onboarding akışı için render edilir. */}
       {step < STEP.dashboard && shellFooter}

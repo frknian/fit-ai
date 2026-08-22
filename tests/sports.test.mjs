@@ -6,7 +6,10 @@ import { coreActivityCatalog, estimateActivityCalories, sportCatalog, sportByKey
 test("spor kılavuzu en yaygın 15 benzersiz sporu içerir", () => {
   assert.equal(sportCatalog.length, 15);
   assert.equal(new Set(sportCatalog.map((sport) => sport.key)).size, 15);
-  assert.ok(sportCatalog.every((sport) => sport.name && sport.guide && sport.icon));
+  // `icon` alanı kaldırıldı: baş harf yerine gerçek çizgi simgesi kullanılıyor
+  // (bkz. components/ActivityIcon.tsx).
+  assert.ok(sportCatalog.every((sport) => sport.name && sport.guide));
+  assert.ok(sportCatalog.every((sport) => !("icon" in sport)), "spor kataloğunda baş harf simgesi kalmamalı");
   assert.equal(sportByKey("swimming")?.name, "Yüzme");
   assert.equal(sportByKey("boxing")?.metrics[0]?.key, "rounds");
   assert.equal(sportByKey("cycling")?.metrics.some((metric) => metric.key === "elevationM"), true);
