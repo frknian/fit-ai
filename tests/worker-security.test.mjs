@@ -106,32 +106,3 @@ test("supabase-proxy: hatalı input — bilinmeyen proje referansı her zaman re
   }));
   assert.equal(response.status, 403);
 });
-
-// worker/index.ts: /_vinext/image dönüşümü başarısız olunca (bu test ortamında
-// env.IMAGES hiç bağlı değil) orijinal dosyayı servis eden yedek yol.
-//
-// BULGU: vinext'in handleImageOptimization() fonksiyonu "url" parametresini
-// KENDİSİ doğruluyor ve protokol-göreli/eksik değerleri 400 ile doğrudan
-// reddediyor — worker/index.ts'teki catch bloğuna (ve oradaki
-// source.startsWith("//") kontrolüne) hiç ulaşılmıyor. Yani bu istismar yolu
-// zaten üst kütüphane tarafından kapatılmış; worker/index.ts'teki kontrol şu an
-// için erişilemeyen ama zararsız bir ikinci savunma katmanı.
-test("image fallback: normal durum — aynı kaynaklı (/ ile başlayan) yol, dönüşüm başarısız olunca yedek yoldan servis edilir", async () => {
-  const response = await dispatch(new Request("http://localhost/_vinext/image?url=%2Flogo.png&w=64&q=75"));
-  // env.ASSETS.fetch stub'ı 404 döndürüyor; önemli olan isteğin reddedilmeden
-  // (400 almadan) fetchAsset'e kadar ulaşması.
-  assert.equal(response.status, 404);
-});
-
-test("image fallback: hatalı input — protokol-göreli (//host/...) url parametresi reddedilir", async () => {
-  const response = await dispatch(new Request("http://localhost/_vinext/image?url=%2F%2Fevil.example.com%2Fx.png&w=64&q=75"));
-  // 400: vinext'in kendi doğrulaması. Kritik olan davranış — yabancı bir
-  // origin'e ASLA proxy yapılmaması — her iki durumda da (400 ya da
-  // worker/index.ts'teki 404) korunuyor.
-  assert.equal(response.status, 400);
-});
-
-test("image fallback: edge case — kaynak parametresi hiç yoksa da güvenle reddedilir", async () => {
-  const response = await dispatch(new Request("http://localhost/_vinext/image?w=64&q=75"));
-  assert.equal(response.status, 400);
-});

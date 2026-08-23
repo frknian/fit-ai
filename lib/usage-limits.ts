@@ -5,8 +5,7 @@ import { bearerToken } from "./api-auth.ts";
 export type UsageFeature = "chat" | "photo" | "text_nutrition" | "weekly_review" | "nutrition_advice" | "plan";
 
 // Premium'da sınır YOK — bkz. db/migrations/20260821_premium_unlimited_ai_usage.sql
-// gerekçesi: AI maliyetinin büyük kısmı artık cihaz üstü çıkarımla (Android +
-// LiteRT-LM) karşılanıyor. `null`, SQL fonksiyonuna "bu özellik için sınır
+// `null`, SQL fonksiyonuna "bu özellik için sınır
 // kontrolü yapma" der; TS tarafında `Number.POSITIVE_INFINITY`'e çevrilir
 // (bkz. checkAndConsumeUsage). Ücretsiz plan DEĞİŞMEDİ.
 const DAILY_LIMITS = {

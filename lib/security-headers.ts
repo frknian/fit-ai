@@ -1,31 +1,10 @@
-// OWASP A05 – Security Misconfiguration: tüm yanıtlara eklenen tarayıcı savunma başlıkları.
-// Tek kaynak: hem Cloudflare Worker girişinde hem de Next `headers()` yapılandırmasında kullanılır.
-
-import { MAP_TILE_CSP_ORIGINS } from "./map-tiles.ts";
-
-// CSP, tema betiği satır içi olduğu için script-src'de 'unsafe-inline' gerektirir;
-// bu betik statik bir sabittir ve kullanıcı girdisi içermez.
+// OWASP A05 – Security Misconfiguration: backend yanıtlarına eklenen savunma başlıkları.
 export const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
-  "form-action 'self'",
-  "script-src 'self' 'unsafe-inline' https://accounts.google.com",
-  // Google Identity Services kendi düğmesini çizerken bir stil sayfası
-  // yükler (accounts.google.com/gsi/style); bu olmadan düğme markasız/çıplak
-  // görünüyordu. script/frame/connect zaten bu kaynağa izin veriyordu, yalnız
-  // style-src unutulmuştu.
-  "style-src 'self' 'unsafe-inline' https://accounts.google.com",
-  "img-src 'self' data: blob: https:",
-  "font-src 'self' data:",
-  "frame-src https://accounts.google.com",
-  // Harita döşemeleri: MapLibre bunları bir worker'dan fetch ile çeker, yani
-  // img-src değil connect-src izni gerekir (bkz. lib/map-tiles.ts).
-  `connect-src 'self' https://*.supabase.co https://*.supabase.in https://accounts.google.com ${MAP_TILE_CSP_ORIGINS.join(" ")}`,
-  "media-src 'self' data: blob:",
-  "worker-src 'self' blob:",
-  "manifest-src 'self'",
+  "form-action 'none'",
   "upgrade-insecure-requests",
 ].join("; ");
 
@@ -34,15 +13,9 @@ export const securityHeaders: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "strict-origin-when-cross-origin",
-  // geolocation=(self): Hedefit Rota'nın canlı GPS takibi, native cihazlarda
-  // Capacitor plugin köprüsünden geçse de, plugin'in web-fallback yolu ve
-  // masaüstü tarayıcı testleri tarayıcının navigator.geolocation API'sini
-  // kullanır; bu başlık kapalıyken o çağrı sessizce reddedilir.
-  "Permissions-Policy": "camera=(self), microphone=(), geolocation=(self), interest-cohort=()",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), interest-cohort=()",
   "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
-  // Google Identity Services popup'ı kimlik bilgisini ana pencereye postMessage ile iletir.
-  // İzolasyonu korurken yalnızca bu popup iletişimine izin ver.
-  "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
+  "Cross-Origin-Opener-Policy": "same-origin",
   "X-DNS-Prefetch-Control": "off",
 };
 

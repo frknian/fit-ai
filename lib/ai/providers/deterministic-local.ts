@@ -1,8 +1,7 @@
 // Cihazda çalışan, ağ gerektirmeyen sağlayıcı.
 //
-// NEDEN "deterministic"? Hedefit'in çalıştığı platformlarda (Cloudflare Worker
-// + Capacitor WebView) bugün gerçek bir cihaz-üstü LLM çalışma zamanı YOK
-// (bkz. lib/ai/capability.ts ve docs/AI_MODEL_DECISION.md). Ama "yerel" olmak
+// NEDEN "deterministic"? Bu sağlayıcı gerçek bir cihaz-üstü LLM değildir.
+// Ancak "yerel" olmak
 // için LLM şart değil: sorulan soruların önemli bir kısmı ("bugün spor yapmalı
 // mıyım?", "kaç kalorim kaldı?") deterministik motorun ürettiği sayılarla,
 // şablonlanmış ve tıbben güvenli cümlelerle TAM olarak yanıtlanabilir.
@@ -12,9 +11,7 @@
 //   · yalnızca cevaplayabildiği kategorileri kabul eder → uyduramaz
 //   · emin değilse `AiUnsupportedRequestError` fırlatır → router uzağa geçer
 //
-// Cihaz-üstü LLM çalışma zamanı ileride eklendiğinde (native köprü), aynı
-// AIProvider arayüzünü uygulayan ikinci bir "local" sağlayıcı olarak
-// registry'ye eklenir; bu dosya son yerel savunma hattı olarak kalır.
+// Bu dosya son yerel savunma hattı olarak kalır.
 
 import { localCoachReply } from "../../ai-coach.ts";
 import { AiUnsupportedRequestError } from "../errors.ts";

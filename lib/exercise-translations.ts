@@ -1,5 +1,5 @@
 import type { Exercise } from "@/types/exercise";
-import type { Locale } from "@/lib/i18n/locale";
+import type { Locale } from "@/lib/i18n/server";
 
 const labelsTr: Record<string, string> = {
   abdominals: "Karın",

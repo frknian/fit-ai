@@ -95,7 +95,7 @@ export async function POST(request: Request) {
       return Response.json({
         text: parsed.text,
         // Her eylem bir ÖNERİdir: uygulanması için kullanıcının düğmeye
-        // basması gerekir (bkz. components/AiCoachChat.tsx).
+        // basması gerekir.
         ...(parsed.actions.length ? { actions: parsed.actions } : {}),
         // Göç öncesindeki source sözleşmesi korunur: "ai" = gerçek model,
         // "fallback" = güvenli yerel öneri.

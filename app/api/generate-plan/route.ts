@@ -8,7 +8,7 @@ import { hasRemoteProvider, parseImageDataUrl } from "../../../lib/ai/providers/
 import { generateCoachObject } from "../../../lib/ai/coach.ts";
 import { loadMemories } from "../../../lib/ai/memory.ts";
 import { checkAndConsumeUsage, refundUsage, usageLimitExceeded } from "../../../lib/usage-limits.ts";
-import { PROMPT_CATALOG_LIMIT } from "../../../lib/exercise-service.ts";
+import { PROMPT_CATALOG_LIMIT, getExercisesForProfile } from "../../../lib/exercise-service.ts";
 
 // İstek gövdesinin tamamı için kaba bir üst sınır (bkz. photoDataUrl zaten
 // parseImageDataUrl içinde ~7 MB base64 ile sınırlı; bu, geri kalan JSON
@@ -195,7 +195,14 @@ export async function POST(request: Request) {
   // doğrulamıyordu. Sınırı burada da uygulamak, hazırlanmış bir istekle
   // kataloğun tamamının (873 hareket) veya uydurma bir dizinin gönderilip
   // istemi/maliyeti şişirmesini engeller.
-  const exerciseCatalog = (Array.isArray(payload.exerciseCatalog) ? payload.exerciseCatalog : []).slice(0, PROMPT_CATALOG_LIMIT);
+  // İstemci katalog GÖNDERMEZSE sunucu kendi kurar. Filtreleme kuralları
+  // (bodyweight etiketleri, ekipman eş anlamlıları, kas grubu dengesi) yalnız burada yaşamalı, her
+  // istemcide ikinci kez uygulanmamalı. Yedek olmadan katalogsuz bir istemci
+  // modele boş liste gönderip uydurma hareket kimlikleri alırdı.
+  const clientCatalog = Array.isArray(payload.exerciseCatalog) ? payload.exerciseCatalog : [];
+  const exerciseCatalog = clientCatalog.length
+    ? clientCatalog.slice(0, PROMPT_CATALOG_LIMIT)
+    : getExercisesForProfile(text(payload.environment) === "Salon", text(payload.equipment));
   const locale = payload.locale === "en" ? "en" : "tr";
   const profile = { ...payload };
   delete profile.photoDataUrl;

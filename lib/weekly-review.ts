@@ -1,7 +1,6 @@
 import { localWeek } from "./workout-calendar.ts";
 import { localDateKey } from "./streak.ts";
-import { translatePainArea, type Dictionary } from "./i18n/translate.ts";
-import type { Locale } from "./i18n/locale.ts";
+import { translatePainArea, type Dictionary, type Locale } from "./i18n/server.ts";
 
 export interface WeeklyReviewSummary {
   weekStart: string;

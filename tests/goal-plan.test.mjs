@@ -173,11 +173,6 @@ test("hedef planı taahhüdü AI programına aynen taşınır", async () => {
   assert.match(route, /HEDEF PLANI TAAHHÜDÜ/, "istem hedef planından söz etmeli");
 });
 
-test("hedef planı cihazlar arası eşitlenen tercihler arasında", async () => {
-  const sync = await readFile(new URL("../lib/preference-sync.ts", import.meta.url), "utf8");
-  assert.match(sync, /"hedefit:goal-plan"/, "plan telefonda kurulup web'de görünmeli");
-});
-
 // --- Uç nokta: yetki, doğrulama ve AI yokken güvenli yerel analiz ------------
 
 test("kimliği doğrulanmamış hedef planı isteği reddedilir", { concurrency: false }, async () => {

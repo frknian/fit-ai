@@ -40,13 +40,6 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-# .env.production is committed on purpose: it holds only NEXT_PUBLIC_* values,
-# which are inlined into the client bundle at build time and are visible to
-# anyone via view-source regardless. Cloudflare's CI build container has no
-# .env file (that stays gitignored, for local dev only), so without this file
-# committed, every production build silently ships a client with no Supabase
-# config — see vite.config.ts and vinext's dotenv precedence.
-!.env.production
 
 # vercel
 .vercel
@@ -62,8 +55,6 @@ next-env.d.ts
 # Yerel model eğitim/dönüştürme çalışma alanı (repoya girmez)
 .hedefit-ml/
 
-# Android Studio / IntelliJ proje ayarları (kişiye ve makineye özel)
-android/.idea/
 .idea/
 
 # Yerel model benchmark çıktıları
