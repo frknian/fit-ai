@@ -9,6 +9,8 @@ import { generateCoachObject } from "../../../lib/ai/coach.ts";
 import { loadMemories } from "../../../lib/ai/memory.ts";
 import { checkAndConsumeUsage, refundUsage, usageLimitExceeded } from "../../../lib/usage-limits.ts";
 import { PROMPT_CATALOG_LIMIT, getExercisesForProfile } from "../../../lib/exercise-service.ts";
+import { normalizeExercise } from "../../../lib/exercise-service.ts";
+import { translateExerciseLabel, translateExerciseName, turkishExerciseInstructions } from "../../../lib/exercise-translations.ts";
 
 // İstek gövdesinin tamamı için kaba bir üst sınır (bkz. photoDataUrl zaten
 // parseImageDataUrl içinde ~7 MB base64 ile sınırlı; bu, geri kalan JSON
@@ -157,13 +159,80 @@ export function profileSignals(payload: Record<string, unknown>) {
   };
 }
 
+function buildLocalPlan(signals: ReturnType<typeof profileSignals>, catalog: unknown[], locale: "tr" | "en"): GeneratedPlan {
+  const normalized = catalog.map(normalizeExercise).filter((item) => item !== null);
+  const pain = signals.painAreas.toLocaleLowerCase("tr-TR");
+  const unsafeForPain = (name: string) => {
+    const folded = name.toLocaleLowerCase("en-US");
+    if (/diz|knee/.test(pain) && /jump|squat|lunge|leg press|pistol|step-up/.test(folded)) return true;
+    if (/omuz|shoulder/.test(pain) && /overhead|shoulder press|military press|dip|upright row/.test(folded)) return true;
+    if (/bel|sırt|back/.test(pain) && /deadlift|good morning|hyperextension|heavy/.test(folded)) return true;
+    return false;
+  };
+  const painFiltered = normalized.filter((exercise) => !unsafeForPain(exercise.name));
+  const pool = painFiltered.length >= signals.exerciseCount ? painFiltered : normalized;
+  const selected: typeof pool = [];
+  const usedMuscles = new Set<string>();
+  for (const exercise of pool) {
+    const muscle = exercise.primaryMuscles[0] || "other";
+    if (!usedMuscles.has(muscle)) {
+      selected.push(exercise);
+      usedMuscles.add(muscle);
+    }
+    if (selected.length >= signals.exerciseCount) break;
+  }
+  for (const exercise of pool) {
+    if (selected.length >= signals.exerciseCount) break;
+    if (!selected.some((item) => item.id === exercise.id)) selected.push(exercise);
+  }
+
+  const beginner = signals.detrained || /yeni|başlangıç/i.test(signals.experience);
+  const sets = beginner ? 2 : signals.sessionMinutes >= 45 ? 4 : 3;
+  const reps = signals.primaryGoal === "Kondisyon" || signals.primaryGoal === "Kilo verme" ? "12–15" : "8–12";
+  const restSeconds = signals.primaryGoal === "Kondisyon" || signals.primaryGoal === "Kilo verme" ? 45 : beginner ? 75 : 90;
+  const daysTr = ["Pazartesi", "Çarşamba", "Cuma", "Cumartesi", "Pazar"];
+  const daysEn = ["Monday", "Wednesday", "Friday", "Saturday", "Sunday"];
+  const scheduleDays = (locale === "en" ? daysEn : daysTr).slice(0, signals.weeklyDays);
+
+  return {
+    title: locale === "en" ? "Your personal starter plan" : "Kişisel başlangıç programın",
+    profileSummary: locale === "en" ? `A ${signals.sessionMinutes}-minute plan for ${signals.primaryGoal.toLocaleLowerCase("en-US")}.` : `${signals.primaryGoal} hedefin için ${signals.sessionMinutes} dakikalık program.`,
+    rationale: locale === "en" ? "Movements were selected from the verified catalog for your environment, equipment, experience, and reported pain areas." : "Hareketler doğrulanmış katalogdan; ortamına, ekipmanına, deneyimine ve belirttiğin ağrı bölgelerine göre seçildi.",
+    safetyNote: locale === "en" ? "Stop if you feel sharp pain and use controlled form." : "Keskin ağrı hissedersen dur ve hareketleri kontrollü uygula.",
+    analysis: {
+      experienceLevel: signals.experience,
+      weeklyFrequency: `${signals.weeklyDays} ${locale === "en" ? "days" : "gün"}`,
+      sessionMinutes: signals.sessionMinutes,
+      primaryGoal: signals.primaryGoal,
+      intensity: signals.intensity,
+      equipmentMode: signals.equipmentAccess,
+      focusAreas: selected.map((exercise) => translateExerciseLabel(exercise.primaryMuscles[0], locale)).filter(Boolean),
+      adaptations: locale === "en"
+        ? ["Matched to the available session time.", "Limited to available equipment.", "Reported pain areas were excluded from risky patterns."]
+        : ["Ayırabildiğin süreye uyarlandı.", "Erişebildiğin ekipmanlarla sınırlandı.", "Belirttiğin ağrı bölgeleri için riskli hareket kalıpları elendi."],
+    },
+    weeklySchedule: scheduleDays.map((day) => ({ day, focus: locale === "en" ? "Full body" : "Tüm vücut", durationMinutes: signals.sessionMinutes })),
+    progression: locale === "en"
+      ? ["Week 1: learn the movement paths.", "Week 2: complete every planned set.", "Week 3: add repetitions with good form.", "Week 4: increase load only if technique stays stable."]
+      : ["1. hafta: hareket yollarını öğren.", "2. hafta: planlanan tüm setleri tamamla.", "3. hafta: formu koruyarak tekrar ekle.", "4. hafta: teknik bozulmuyorsa yükü artır."],
+    workouts: selected.map((exercise) => ({
+      id: exercise.id,
+      name: translateExerciseName(exercise.name, locale),
+      english: exercise.name,
+      area: translateExerciseLabel(exercise.primaryMuscles[0], locale),
+      sets,
+      reps,
+      restSeconds,
+      instructions: turkishExerciseInstructions(exercise, locale).join(" "),
+    })),
+  };
+}
+
 export async function POST(request: Request) {
   const auth = await authenticateRequest(request);
   if ("error" in auth) return auth.error;
   const rateLimitResult = rateLimit(`generate-plan:${auth.user.id}`, 5, 300000);
   if (!rateLimitResult.ok) return tooManyRequests(rateLimitResult.retryAfterSeconds);
-
-  if (!hasRemoteProvider()) return Response.json({ error: "AI_API_KEY tanımlı değil" }, { status: 503 });
 
   let bodyText: string;
   try {
@@ -185,10 +254,6 @@ export async function POST(request: Request) {
     return Response.json({ error: "Profil verileri okunamadı" }, { status: 400 });
   }
 
-  const usage = await checkAndConsumeUsage(request, "plan", auth.user.id);
-  if ("error" in usage) return usage.error;
-  if (!usage.allowed) return usageLimitExceeded("plan", usage.used, usage.limit);
-
   const photoDataUrl = typeof payload.photoDataUrl === "string" ? payload.photoDataUrl : null;
   // Meşru istemci kataloğu zaten PROMPT_CATALOG_LIMIT ile kırpıyor (bkz.
   // lib/exercise-service.ts getExercisesForProfile); sunucu bunu asla
@@ -209,6 +274,12 @@ export async function POST(request: Request) {
   delete profile.exerciseCatalog;
   delete profile.locale;
   const signals = profileSignals(payload);
+  if (!hasRemoteProvider()) {
+    return Response.json({ ...buildLocalPlan(signals, exerciseCatalog, locale), profileFingerprint: signals.fingerprint, model: "hedefit-deterministic-v1", fallback: true });
+  }
+  const usage = await checkAndConsumeUsage(request, "plan", auth.user.id);
+  if ("error" in usage) return usage.error;
+  if (!usage.allowed) return usageLimitExceeded("plan", usage.used, usage.limit);
   const trainingHistory = Array.isArray(payload.trainingHistory) ? payload.trainingHistory.slice(0, 8) : [];
   const adaptation = payload.adaptation && typeof payload.adaptation === "object" ? payload.adaptation : null;
   // Modele giden veriler <facts> içinde toplanır: hepsi uygulamada zaten
@@ -283,11 +354,10 @@ Tam olarak ${signals.exerciseCount} farklı hareket seç. Her workout için kata
     // yani plan hiç üretilemiyordu. 8.000'de düşünme 1.212'de kalıyor ve
     // plan tamamlanıyor.
     maxOutputTokens: 8_000,
-    // ÖLÇÜM: bu sağlayıcının akıl yürüten modellerinde tam plan üretimi tek
-    // denemede bile 100 sn'yi aşıyor. Daha uzun beklemek kullanıcıyı boşuna
-    // oyalar; yerel plan zaten anında hazır ve profile göre üretiliyor.
-    // Bu yüzden AI'a makul bir pencere verilir, yetişmezse yedeğe düşülür.
-    abortSignal: AbortSignal.timeout(60_000),
+    // Kullanıcı profil testinden sonra boş bir yükleme ekranında beklememeli.
+    // Uzak model 15 saniyede tamamlamazsa doğrulanmış katalogdan yerel plan
+    // devreye girer; profil kaydı ve program oluşturma yine tamamlanır.
+    abortSignal: AbortSignal.timeout(15_000),
     policy,
   });
 
@@ -306,17 +376,13 @@ Tam olarak ${signals.exerciseCount} farklı hareket seç. Her workout için kata
       plan = result.object;
     }
     if (plan.workouts.length < 3) {
-      // Kullanıcı gerçekte kullanılabilir bir plan ALMADI; günlük hakkı iade edilir.
       if (Number.isFinite(usage.limit)) await refundUsage(request, "plan");
-      return Response.json({ error: "Model yeterli hareket üretmedi" }, { status: 502 });
+      return Response.json({ ...buildLocalPlan(signals, exerciseCatalog, locale), profileFingerprint: signals.fingerprint, model: "hedefit-deterministic-v1", fallback: true });
     }
     return Response.json({ ...plan, profileFingerprint: signals.fingerprint, model: result.model });
   } catch (error) {
     console.error("AI plan generation error", error);
     if (Number.isFinite(usage.limit)) await refundUsage(request, "plan");
-    return Response.json({
-      error: "Program üretimi başarısız",
-      detail: process.env.NODE_ENV === "development" ? String(error) : undefined,
-    }, { status: 502 });
+    return Response.json({ ...buildLocalPlan(signals, exerciseCatalog, locale), profileFingerprint: signals.fingerprint, model: "hedefit-deterministic-v1", fallback: true });
   }
 }

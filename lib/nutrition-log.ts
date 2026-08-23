@@ -4,7 +4,7 @@ import { normalizeSupabaseUrl } from "./supabase/url.ts";
 import { validateManualNutrition } from "./nutrition-calculation.ts";
 
 export const MEAL_TYPES = ["Kahvaltı", "Öğle yemeği", "Akşam yemeği", "Atıştırmalık"] as const;
-export const INPUT_METHODS = ["natural_language", "photo"] as const;
+export const INPUT_METHODS = ["natural_language", "photo", "search", "favorite", "recent", "manual", "barcode"] as const;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -114,6 +114,7 @@ export function nutritionUserClient(request: Request) {
 
 export function sourceForInputMethod(inputMethod: NutritionLogInput["inputMethod"]) {
   if (inputMethod === "photo") return "Fotoğraf";
+  if (inputMethod === "barcode") return "Barkod";
   // Üretimdeki eski food_entries kısıtı yalnızca "Manuel" değerini kabul
   // ediyor. Gerçek kaynak input_method=natural_language alanında tutulur;
   // arayüz bu eski teknik etiketi kullanıcıya daima "AI analizi" gösterir.

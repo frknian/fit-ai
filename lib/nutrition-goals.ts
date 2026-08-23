@@ -1,4 +1,4 @@
-import type { Dictionary } from "./i18n/translate.ts";
+import type { Dictionary } from "./i18n/server.ts";
 
 /**
  * "lose" ile "fatLoss" bilerek ayrı: tartıdaki sayıyı düşürmek ile yağ kütlesini

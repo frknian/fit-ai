@@ -147,7 +147,7 @@ test("AI sağlayıcısı başarıyla plan üretir", { concurrency: false }, asyn
   }
 });
 
-test("anahtar veya ağ yokken anlaşılır ve güvenli hata döndürür", { concurrency: false }, async () => {
+test("anahtar veya ağ yokken doğrulanmış katalogdan güvenli yerel plan döndürür", { concurrency: false }, async () => {
   const previousKey = process.env.AI_API_KEY;
   const previousFetch = globalThis.fetch;
   const restoreAuthEnv = withSupabaseAuthEnv();
@@ -155,8 +155,10 @@ test("anahtar veya ağ yokken anlaşılır ve güvenli hata döndürür", { conc
   delete process.env.AI_API_KEY;
   try {
     const missingKey = await POST(authorizedRequest("http://localhost/api/generate-plan", { method: "POST", body: "{}" }));
-    assert.equal(missingKey.status, 503);
-    assert.match((await missingKey.json()).error, /AI_API_KEY/);
+    assert.equal(missingKey.status, 200);
+    const missingKeyPlan = await missingKey.json();
+    assert.equal(missingKeyPlan.fallback, true);
+    assert.ok(missingKeyPlan.workouts.length >= 3);
 
     process.env.AI_API_KEY = "test-key";
     // Kota kontrolü başarıyla geçmeli; ağ hatası özellikle AI model çağrısını
@@ -166,7 +168,10 @@ test("anahtar veya ağ yokken anlaşılır ve güvenli hata döndürür", { conc
       throw new TypeError("network unavailable");
     });
     const networkFailure = await POST(authorizedRequest("http://localhost/api/generate-plan", { method: "POST", body: JSON.stringify(scenarios[1].payload) }));
-    assert.equal(networkFailure.status, 502);
+    assert.equal(networkFailure.status, 200);
+    const networkPlan = await networkFailure.json();
+    assert.equal(networkPlan.fallback, true);
+    assert.equal(networkPlan.workouts.length, scenarios[1].expected.exerciseCount);
   } finally {
     globalThis.fetch = previousFetch;
     restoreAuthEnv();

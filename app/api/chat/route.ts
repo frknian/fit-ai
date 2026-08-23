@@ -76,7 +76,7 @@ export async function POST(request: Request) {
       // 20 sn, sağlayıcının akıl yürüten modelinde (42 sn ölçüldü) hiç
       // yetişmiyordu; koç neredeyse her soruda güvenli yerel yanıta düşüyordu.
       // Varsayılan model hızlıya alındı (~5 sn), pencere yine de paylı.
-      abortSignal: AbortSignal.timeout(35_000),
+      abortSignal: AbortSignal.timeout(15_000),
     });
     if (result.text.trim()) {
       // Yanıtı YEREL (deterministik) sağlayıcı ürettiyse kullanıcı ücretli AI

@@ -104,6 +104,196 @@ export function translateExerciseList(values: string[], locale: Locale = "tr") {
   return values.map((value) => translateExerciseLabel(value, locale)).join(" · ");
 }
 
+const exerciseNameTerms: Array<[RegExp, string]> = [
+  [/\ball fours\b/gi, "Dört ayak"], [/\bworld'?s greatest stretch\b/gi, "Tüm vücut esnetme"],
+  [/\bab crunch machine\b/gi, "Karın sıkıştırma makinesi"], [/\bparallel bar dips?\b/gi, "Paralel bar itişi"],
+  [/\bpushups?\b/gi, "Şınav"], [/\bpullups?\b/gi, "Barfiks"], [/\bwindmills?\b/gi, "Yel değirmeni"],
+  [/\bair bike\b/gi, "Hava bisikleti"], [/\brecumbent bike\b/gi, "Yatay kondisyon bisikleti"],
+  [/\b(?:ab|abs)\b/gi, "Karın"], [/\badductors?\b/gi, "İç bacak"], [/\babductors?\b/gi, "Dış kalça"],
+  [/\bpulleys?\b/gi, "Makara"], [/\bleverage\b/gi, "Kaldıraçlı"], [/\bhammer\b/gi, "Çekiç"],
+  [/\b(?:delt|deltoids?)\b/gi, "Omuz"], [/\bupright\b/gi, "Dik"], [/\bchains?\b/gi, "Zincir"],
+  [/\bcrossover\b/gi, "Çapraz çekiş"], [/\blong\b/gi, "Uzun"], [/\blat\b/gi, "Kanat"],
+  [/\bbridge\b/gi, "Köprü"], [/\bcross\b/gi, "Çapraz"], [/\bblocks?\b/gi, "Blok"],
+  [/\boblique\b/gi, "Yan karın"], [/\belevated\b/gi, "Yükseltilmiş"], [/\bexternal\b/gi, "Dış"],
+  [/\bhack\b/gi, "Hack"], [/\bbends?\b/gi, "Eğilme"], [/\bstep\b/gi, "Adım"],
+  [/\battachment\b/gi, "Aparat"], [/\bconcentration\b/gi, "Konsantrasyon"], [/\bdepth\b/gi, "Derinlik"],
+  [/\bdrags?\b/gi, "Sürükleme"], [/\bham\b/gi, "Arka bacak"], [/\bcone\b/gi, "Koni"],
+  [/\bbalance\b/gi, "Denge"], [/\blifts?\b/gi, "Kaldırış"], [/\bhyperextensions?\b/gi, "Hiperekstansiyon"],
+  [/\bmuscle\b/gi, "Kas"], [/\bdrill\b/gi, "Çalışması"], [/\blinear\b/gi, "Doğrusal"],
+  [/\bresistance\b/gi, "Direnç"], [/\bspeed\b/gi, "Hız"], [/\bbackward\b/gi, "Geriye"],
+  [/\bmid\b/gi, "Orta"], [/\bposition\b/gi, "Pozisyon"], [/\binternal\b/gi, "İç"],
+  [/\brussian\b/gi, "Rus"], [/\bhandle\b/gi, "Tutacak"], [/\bdeficit\b/gi, "Yükselti"],
+  [/\bversion\b/gi, "Sürümü"], [/\bbutt\b/gi, "Kalça"], [/\bkicks?\b/gi, "Tekme"],
+  [/\bpronated\b/gi, "Pronasyon tutuşlu"], [/\bsupinated\b/gi, "Supinasyon tutuşlu"],
+  [/\bfrog\b/gi, "Kurbağa"], [/\bhurdle\b/gi, "Engel"], [/\bbelow\b/gi, "Aşağıda"],
+  [/\bhug\b/gi, "Sarılma"], [/\binverted\b/gi, "Ters"], [/\bexercise\b/gi, "Egzersiz"],
+  [/\bjackknife\b/gi, "Çakı"], [/\btuck\b/gi, "Toparlanma"], [/\bolympic\b/gi, "Olimpik"],
+  [/\bslam\b/gi, "Yere vurma"], [/\blaterals?\b/gi, "Yana açış"], [/\bplyo\b/gi, "Pliyometrik"],
+  [/\bfeet\b/gi, "Ayaklar"], [/\bromanian\b/gi, "Romen"], [/\bharness\b/gi, "Koşum"],
+  [/\bstride\b/gi, "Uzun adım"], [/\bstiff\b/gi, "Düz"], [/\bforward\b/gi, "İleri"],
+  [/\bfarmer'?s?\b/gi, "Çiftçi"], [/\bhandstand\b/gi, "El duruşu"], [/\bpike\b/gi, "Çakı"],
+  [/\bflexion\b/gi, "Bükme"], [/\bextension\b/gi, "Uzatma"], [/\bposterior\b/gi, "Arka"],
+  [/\bdiagonal\b/gi, "Çapraz"], [/\bbear\b/gi, "Ayı"], [/\bcrawl\b/gi, "Yürüyüş"],
+  [/\bgood morning\b/gi, "Günaydın"], [/\bmountain climbers?\b/gi, "Dağ tırmanışı"],
+  [/\bskull crushers?\b/gi, "Alına indiriş"], [/\bbench press\b/gi, "Sehpa itişi"],
+  [/\bchest press\b/gi, "Göğüs itişi"], [/\bshoulder press\b/gi, "Omuz itişi"],
+  [/\bleg press\b/gi, "Bacak itişi"], [/\bmilitary press\b/gi, "Askeri itiş"],
+  [/\bsit[- ]ups?\b/gi, "Mekik"], [/\bpull[- ]ups?\b/gi, "Barfiks"],
+  [/\bchin[- ]ups?\b/gi, "Ters tutuş barfiks"], [/\bpush[- ]ups?\b/gi, "Şınav"],
+  [/\bpushdowns?\b/gi, "Aşağı itiş"], [/\bpulldowns?\b/gi, "Aşağı çekiş"],
+  [/\bkickbacks?\b/gi, "Geri açış"], [/\brollouts?\b/gi, "İleri yuvarlanma"],
+  [/\bbodyweight\b/gi, "Vücut ağırlığı"], [/\bone[- ]arm\b/gi, "Tek kol"],
+  [/\bsingle[- ]arm\b/gi, "Tek kol"], [/\btwo[- ]arm\b/gi, "Çift kol"],
+  [/\bone[- ]legged\b/gi, "Tek bacak"], [/\bsingle[- ]leg\b/gi, "Tek bacak"],
+  [/\bstiff[- ]legged\b/gi, "Düz bacak"], [/\bstraight[- ]arm\b/gi, "Düz kol"],
+  [/\bbent[- ]arm\b/gi, "Bükülü kol"], [/\bbent[- ]over\b/gi, "Öne eğilerek"],
+  [/\bclose[- ]grip\b/gi, "Dar tutuş"], [/\bwide[- ]grip\b/gi, "Geniş tutuş"],
+  [/\bmedium[- ]grip\b/gi, "Orta tutuş"], [/\bneutral[- ]grip\b/gi, "Nötr tutuş"],
+  [/\boverhead\b/gi, "Baş üstü"], [/\bbehind the neck\b/gi, "Ense arkasına"],
+  [/\bdumbbells?\b/gi, "Dambıl"], [/\bbarbells?\b/gi, "Halter"], [/\bkettlebells?\b/gi, "Girya"],
+  [/\bmedicine ball\b/gi, "Sağlık topu"], [/\bexercise ball\b/gi, "Egzersiz topu"],
+  [/\bresistance bands?\b/gi, "Direnç bandı"], [/\bcables?\b/gi, "Kablo"],
+  [/\bsmith machine\b/gi, "Smith makinesi"], [/\bmachine\b/gi, "Makine"],
+  [/\bpreacher\b/gi, "Scott sehpası"], [/\bbench\b/gi, "Sehpa"],
+  [/\bcrunch(?:es)?\b/gi, "Karın sıkıştırma"], [/\bplank\b/gi, "Düz duruş"],
+  [/\bsquats?\b/gi, "Çömelme"], [/\blunges?\b/gi, "Hamle"], [/\bdeadlifts?\b/gi, "Yerden kaldırış"],
+  [/\brows?\b/gi, "Kürek çekiş"], [/\bcurls?\b/gi, "Büküş"], [/\bextensions?\b/gi, "Uzatış"],
+  [/\braises?\b/gi, "Kaldırış"], [/\bpress(?:es)?\b/gi, "İtiş"], [/\bflyes?\b/gi, "Yana açış"],
+  [/\bpullovers?\b/gi, "Baş üstü çekiş"], [/\bshrugs?\b/gi, "Omuz silkme"],
+  [/\bstretch(?:es)?\b/gi, "Esnetme"], [/\bclean\b/gi, "Omuza alış"], [/\bsnatch\b/gi, "Koparma"], [/\bjerk\b/gi, "Silkme"],
+  [/\bhip thrust\b/gi, "Kalça itişi"], [/\bhip\b/gi, "Kalça"], [/\bglutes?\b/gi, "Kalça"],
+  [/\bhamstrings?\b/gi, "Arka bacak"], [/\bquadriceps?\b/gi, "Ön bacak"], [/\bquads?\b/gi, "Ön bacak"],
+  [/\b(?:calf|calves)\b/gi, "Baldır"], [/\bchest\b/gi, "Göğüs"], [/\bshoulders?\b/gi, "Omuz"],
+  [/\btriceps?\b/gi, "Arka kol"], [/\bbiceps?\b/gi, "Biseps"], [/\bforearms?\b/gi, "Ön kol"],
+  [/\bwrists?\b/gi, "Bilek"], [/\bneck\b/gi, "Boyun"], [/\bback\b/gi, "Sırt"],
+  [/\blegs?\b/gi, "Bacak"], [/\barms?\b/gi, "Kol"], [/\bknees?\b/gi, "Diz"], [/\bankles?\b/gi, "Ayak bileği"],
+  [/\bstanding\b/gi, "Ayakta"], [/\bseated\b/gi, "Oturarak"], [/\blying\b/gi, "Yatarak"],
+  [/\bkneeling\b/gi, "Diz çökerek"], [/\bprone\b/gi, "Yüzüstü"], [/\bsupine\b/gi, "Sırtüstü"],
+  [/\bhanging\b/gi, "Asılı"], [/\bsuspended\b/gi, "Askıda"], [/\bwalking\b/gi, "Yürüyerek"],
+  [/\balternating\b/gi, "Dönüşümlü"], [/\balternate\b/gi, "Dönüşümlü"], [/\breverse\b/gi, "Ters"],
+  [/\bincline\b/gi, "Eğimli"], [/\bdecline\b/gi, "Ters eğimli"], [/\blateral\b/gi, "Yana"],
+  [/\bfront\b/gi, "Ön"], [/\brear\b/gi, "Arka"], [/\binner\b/gi, "İç"], [/\bouter\b/gi, "Dış"],
+  [/\bupper\b/gi, "Üst"], [/\blower\b/gi, "Alt"], [/\bhigh\b/gi, "Yüksek"], [/\blow\b/gi, "Alçak"],
+  [/\bwide\b/gi, "Geniş"], [/\bnarrow\b/gi, "Dar"], [/\bclose\b/gi, "Yakın"], [/\bgrip\b/gi, "Tutuş"],
+  [/\bstraight\b/gi, "Düz"], [/\bbent\b/gi, "Bükülü"], [/\bweighted\b/gi, "Ağırlıklı"],
+  [/\bassisted\b/gi, "Destekli"], [/\bisometric\b/gi, "İzometrik"], [/\bpower\b/gi, "Güç"],
+  [/\bjump(?:s)?\b/gi, "Sıçrama"], [/\bhops?\b/gi, "Sıçrayış"], [/\bbounds?\b/gi, "Atlamalı ilerleme"],
+  [/\bsprints?\b/gi, "Sürat koşusu"], [/\bthrows?\b/gi, "Atış"], [/\brotation\b/gi, "Dönüş"],
+  [/\bcircles?\b/gi, "Daire"], [/\btwists?\b/gi, "Burgu"], [/\bwalk\b/gi, "Yürüyüş"],
+  [/\bfloor\b/gi, "Yerde"], [/\bwall\b/gi, "Duvar"], [/\bchair\b/gi, "Sandalye"],
+  [/\bbox\b/gi, "Kutu"], [/\brope\b/gi, "Halat"], [/\bplate\b/gi, "Ağırlık plakası"],
+  [/\bsled\b/gi, "Kızak"], [/\bball\b/gi, "Top"], [/\bband(?:s)?\b/gi, "Bant"],
+  [/\bpalms?\b/gi, "Avuçlar"], [/\bhead\b/gi, "Baş"], [/\bside\b/gi, "Yan"],
+  [/\bsplit\b/gi, "Ayrık"], [/\bsingle\b/gi, "Tek"], [/\bdouble\b/gi, "Çift"],
+  [/\bpull\b/gi, "Çekiş"], [/\bpush\b/gi, "İtiş"], [/\bskip\b/gi, "Atlama"],
+  [/\badvanced\b/gi, "İleri"], [/\bintermediate\b/gi, "Orta"], [/\bbeginner\b/gi, "Başlangıç"],
+  [/\bdynamic\b/gi, "Dinamik"], [/\bextended\b/gi, "Uzatılmış"], [/\brange\b/gi, "Hareket aralığı"],
+  [/\bbehind\b/gi, "Arkasında"], [/\bbetween\b/gi, "Arasında"], [/\bmiddle\b/gi, "Orta"],
+  [/\bbody\b/gi, "Gövde"], [/\bgroin\b/gi, "Kasık"], [/\bflexors?\b/gi, "Bükücü"],
+  [/\bface\b/gi, "Yüze"], [/\bpalms?\b/gi, "Avuç"], [/\bopen\b/gi, "Açık"],
+  [/\belbows?\b/gi, "Dirsekler"], [/\bhands?\b/gi, "Eller"], [/\bchin\b/gi, "Çene"],
+  [/\bcat\b/gi, "Kedi"], [/\bdancer'?s\b/gi, "Dansçı"], [/\bdonkey\b/gi, "Eşek"],
+  [/\bstability\b/gi, "Denge"], [/\bpoint\b/gi, "Nokta"], [/\bstance\b/gi, "Duruş"],
+  [/\bmultiple\b/gi, "Çoklu"], [/\bresponse\b/gi, "Tepki"], [/\brelease\b/gi, "Bırakma"],
+  [/\brun\b/gi, "Koşu"], [/\bfigure\b/gi, "Şekil"], [/\bhang\b/gi, "Asılı"],
+  [/\bpass\b/gi, "Geçiriş"], [/\bpistol\b/gi, "Tabanca"], [/\bseesaw\b/gi, "Tahterevalli"],
+  [/\bthruster\b/gi, "İtişli çömelme"], [/\bturkish get[- ]up\b/gi, "Türk kalkışı"], [/\bstyle\b/gi, "biçimi"],
+  [/\bdead\b/gi, "Yerden"], [/\bflat\b/gi, "Düz"], [/\biron crosses?\b/gi, "Haç açışı"],
+  [/\bone\b/gi, "Tek"], [/\btwo\b/gi, "Çift"], [/\bfull\b/gi, "Tam"], [/\bpartial\b/gi, "Kısmi"],
+  [/\band\b/gi, "ve"], [/\bwith\b/gi, "ile"], [/\bwithout\b/gi, "olmadan"], [/\bfrom\b/gi, "başlangıçlı"],
+  [/\bon\b/gi, "üzerinde"], [/\bin\b/gi, "içinde"], [/\bover\b/gi, "üzerinden"], [/\bup\b/gi, "yukarı"], [/\bdown\b/gi, "aşağı"],
+  [/\bagainst\b/gi, "karşı"], [/\bthrough\b/gi, "içinden"], [/\bto\b/gi, "doğru"],
+  [/\bthe\b/gi, ""], [/\ban?\b/gi, ""], [/\bof\b/gi, ""],
+];
+
+const exactExerciseNamesTr: Record<string, string> = {
+  "Ab Roller": "Karın Tekerleği",
+  Adductor: "İç Bacak Makinesi",
+  "Air Bike": "Hava Bisikleti",
+  "Anterior Tibialis-SMR": "Ön Kaval Kası SMR",
+  "Atlas Stone Trainer": "Atlas Taşı Antrenmanı",
+  "Atlas Stones": "Atlas Taşları",
+  "Backward Drag": "Geriye Kızak Çekişi",
+  "Balance Board": "Denge Tahtası",
+  "Battling Ropes": "Savaş Halatları",
+  Bicycling: "Bisiklet Sürüşü",
+  "Bicycling, Stationary": "Sabit Bisiklet",
+  "Brachialis-SMR": "Brakiyalis SMR",
+  "Butt-Ups": "Kalça Yukarı Kaldırış",
+  "Butt Lift (Bridge)": "Kalça Kaldırma (Köprü)",
+  Butterfly: "Kelebek Göğüs Açışı",
+  "Car Drivers": "Direksiyon Çevirme",
+  "Carioca Quick Step": "Carioca Hızlı Adım",
+  "Child's Pose": "Çocuk Duruşu",
+  "Circus Bell": "Sirk Dambılı Kaldırışı",
+  Cocoons: "Koza Karın Sıkıştırma",
+  "Conan's Wheel": "Conan Çarkı",
+  Crucifix: "Haç Duruşu",
+  "Downward Facing Balance": "Aşağı Bakan Denge Duruşu",
+  "EZ-Bar Skullcrusher": "EZ Bar Alına İndiriş",
+  "Elliptical Trainer": "Eliptik Bisiklet",
+  "Fast Skipping": "Hızlı İp Atlama",
+  "Flutter Kicks": "Çırpma Tekmeleri",
+  "Foot-SMR": "Ayak Tabanı SMR",
+  "Gironda Sternum Chins": "Gironda Göğüse Barfiks",
+  Groiners: "Dinamik Kasık Esnetme",
+  "Heavy Bag Thrust": "Ağır Çuval İtişi",
+  "Iliotibial Tract-SMR": "İliotibial Bant SMR",
+  Inchworm: "Tırtıl Yürüyüşü",
+  "Iron Cross": "Demir Haç",
+  "Jogging, Treadmill": "Koşu Bandında Hafif Koşu",
+  "Keg Load": "Fıçı Yükleme",
+  "Landmine 180's": "Landmine 180 Derece Dönüş",
+  "Landmine Linear Jammer": "Landmine Doğrusal İtiş",
+  "Latissimus Dorsi-SMR": "Kanat Kası SMR",
+  "Linear 3-Part Start Technique": "Doğrusal Üç Aşamalı Çıkış Tekniği",
+  "Log Lift": "Kütük Kaldırma",
+  "London Bridges": "Londra Köprüsü",
+  "Looking At Ceiling": "Tavana Bakış Esnetmesi",
+  "Moving Claw Series": "Hareketli Pençe Serisi",
+  "Parallel Bar Dip": "Paralel Bar Dips",
+  "Pelvic Tilt Into Bridge": "Pelvik Eğişten Köprüye Geçiş",
+  "Peroneals-SMR": "Peroneal Kas SMR",
+  "Piriformis-SMR": "Piriformis Kası SMR",
+  Pullups: "Barfiks",
+  Pushups: "Şınav",
+  Pyramid: "Piramit Koşusu",
+  "Quick Leap": "Hızlı Sıçrayış",
+  "Rack Delivery": "Raf Pozisyonuna Alış",
+  "Rack Pulls": "Raf Yüksekliğinden Çekiş",
+  "Recumbent Bike": "Yatay Kondisyon Bisikleti",
+  "Rhomboids-SMR": "Romboid Kasları SMR",
+  "Rickshaw Carry": "Rickshaw Ağırlık Taşıma",
+  "Ring Dips": "Halka Dips",
+  "Rowing, Stationary": "Sabit Kürek Ergometresi",
+  "Running, Treadmill": "Koşu Bandında Koşu",
+  "Sandbag Load": "Kum Torbası Yükleme",
+  "Scissor Kick": "Makas Tekmesi",
+  Skating: "Paten Adımı",
+  "Sledgehammer Swings": "Balyoz Savurma",
+  "Spell Caster": "Çapraz Ağırlık Savurma",
+  "Spider Crawl": "Örümcek Yürüyüşü",
+  Stairmaster: "Merdiven Tırmanma Makinesi",
+  "Step Mill": "Basamak Makinesi",
+  "Stomach Vacuum": "Karın Vakumu",
+  Superman: "Süpermen Duruşu",
+  "Thigh Abductor": "Kalça Dışa Açış Makinesi",
+  "Thigh Adductor": "İç Bacak Kapama Makinesi",
+  "Tire Flip": "Lastik Çevirme",
+  "Toe Touchers": "Ayak Ucuna Dokunma",
+  "V-Bar Pullup": "V Bar Barfiks",
+  "Vertical Swing": "Dikey Savurma",
+  Windmills: "Yel Değirmeni",
+};
+
+export function translateExerciseName(value: string, locale: Locale = "tr") {
+  if (locale === "en") return value;
+  const exact = exactExerciseNamesTr[value];
+  if (exact) return exact;
+  return exerciseNameTerms.reduce((name, [pattern, replacement]) => name.replace(pattern, replacement), value)
+    .replace(/\s+/g, " ").replace(/\s+-\s+/g, " - ").trim();
+}
+
 export function turkishExerciseInstructions(exercise: Pick<Exercise, "name" | "force" | "category" | "primaryMuscles">, locale: Locale = "tr") {
   const name = exercise.name.toLocaleLowerCase("en-US");
 
@@ -144,6 +334,13 @@ export function turkishExerciseInstructions(exercise: Pick<Exercise, "name" | "f
         "Lower back down slowly without over-arching your lower back.",
       ];
     }
+    if (/sit-up|sit up|crunch|leg lift|leg raise|plank/.test(name) || exercise.primaryMuscles.includes("abdominals")) {
+      return [
+        "Keep your lower back supported and draw your belly in.",
+        "Start the movement from your abs, not your neck or momentum.",
+        "Exhale as you squeeze, then return slowly without losing control of your lower back.",
+      ];
+    }
     if (/curl/.test(name) && !/leg curl/.test(name)) {
       return [
         "Keep your elbows close to your torso and your shoulders down.",
@@ -163,13 +360,6 @@ export function turkishExerciseInstructions(exercise: Pick<Exercise, "name" | "f
         "Get into a stable starting position and brace your shoulder blades and core.",
         "Lower the weight under control, then press it back up firmly but smoothly on the exhale.",
         "Return to the start without locking your elbows, keeping the same movement path.",
-      ];
-    }
-    if (/crunch|leg lift|leg raise/.test(name) || exercise.primaryMuscles.includes("abdominals")) {
-      return [
-        "Keep your lower back supported and draw your belly in.",
-        "Start the movement from your abs, not your neck or momentum.",
-        "Exhale as you squeeze, then return slowly without losing control of your lower back.",
       ];
     }
     if (/calf/.test(name)) {
@@ -223,6 +413,13 @@ export function turkishExerciseInstructions(exercise: Pick<Exercise, "name" | "f
       "Belini aşırı kavislendirmeden yavaşça başlangıç pozisyonuna dön.",
     ];
   }
+  if (/sit-up|sit up|crunch|leg lift|leg raise|plank/.test(name) || exercise.primaryMuscles.includes("abdominals")) {
+    return [
+      "Belini destekli konumda tut ve karnını içeri doğru sık.",
+      "Hareketi boyundan veya momentumdan değil karın kaslarından başlat.",
+      "Nefes vererek sıkış, ardından bel kontrolünü kaybetmeden yavaşça dön.",
+    ];
+  }
   if (/curl/.test(name) && !/leg curl/.test(name)) {
     return [
       "Dirseklerini gövdene yakın ve omuzlarını aşağıda sabitle.",
@@ -242,13 +439,6 @@ export function turkishExerciseInstructions(exercise: Pick<Exercise, "name" | "f
       "Dengeli bir başlangıç pozisyonu al, kürek kemiklerini ve merkez bölgeni sabitle.",
       "Ağırlığı kontrollü indir, ardından nefes vererek güçlü ama sarsıntısız biçimde it.",
       "Dirseklerini kilitlemeden başlangıç pozisyonuna dön ve hareket çizgisini koru.",
-    ];
-  }
-  if (/crunch|leg lift|leg raise/.test(name) || exercise.primaryMuscles.includes("abdominals")) {
-    return [
-      "Belini destekli konumda tut ve karnını içeri doğru sık.",
-      "Hareketi boyundan veya momentumdan değil karın kaslarından başlat.",
-      "Nefes vererek sıkış, ardından bel kontrolünü kaybetmeden yavaşça dön.",
     ];
   }
   if (/calf/.test(name)) {

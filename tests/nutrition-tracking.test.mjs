@@ -62,10 +62,12 @@ test("öğün kaydı eski veritabanı şemasında gramaj ve lifi metadata içind
   assert.deepEqual(row.metadata, { micros: { sodium: 20 }, portionGrams: 250, fiber: 8 });
 });
 
-test("kalori kaydı yalnızca AI metin ve fotoğraf kaynaklarını kabul eder", () => {
-  assert.deepEqual(INPUT_METHODS, ["natural_language", "photo"]);
+test("kalori kaydı tüm mobil öğün giriş kaynaklarını kabul eder", () => {
+  assert.deepEqual(INPUT_METHODS, ["natural_language", "photo", "search", "favorite", "recent", "manual", "barcode"]);
   assert.equal(sourceForInputMethod("natural_language"), "Manuel");
   assert.equal(sourceForInputMethod("photo"), "Fotoğraf");
+  assert.equal(sourceForInputMethod("barcode"), "Barkod");
+  assert.equal(sourceForInputMethod("favorite"), "Manuel");
 });
 
 test("makro dışındaki kısmi güncelleme metadata alanını ezmez", () => {
