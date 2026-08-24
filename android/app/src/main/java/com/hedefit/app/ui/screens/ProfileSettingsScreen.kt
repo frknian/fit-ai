@@ -10,6 +10,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,6 +31,10 @@ import com.hedefit.app.ui.components.*
 import com.hedefit.app.ui.settings.AppPreferences
 import com.hedefit.app.ui.settings.MeasurementUnits
 import com.hedefit.app.ui.theme.HedefitColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import android.graphics.BitmapFactory
+import java.net.URL
 
 @Composable
 fun ProfileSettingsScreen(
@@ -31,6 +42,7 @@ fun ProfileSettingsScreen(
     email: String,
     preferences: AppPreferences,
     saving: Boolean,
+    avatarUploading: Boolean,
     accountBusy: Boolean,
     healthConnected: Boolean,
     healthBusy: Boolean,
@@ -41,6 +53,7 @@ fun ProfileSettingsScreen(
     onAddShortcut: (String) -> Unit,
     onConnectHealth: () -> Unit,
     onSave: (ProfileUpdateData) -> Unit,
+    onUploadAvatar: (ByteArray, String) -> Unit,
     onResetProgress: () -> Unit,
     onFreeze: () -> Unit,
     onDelete: (String) -> Unit,
@@ -57,6 +70,19 @@ fun ProfileSettingsScreen(
     var showDelete by remember { mutableStateOf(false) }
     var showShortcut by remember { mutableStateOf(false) }
     var showUnits by remember { mutableStateOf(false) }
+    var avatarError by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+        val bytes = runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+        if (bytes == null || bytes.size > 5 * 1024 * 1024 || mime !in setOf("image/jpeg", "image/png", "image/webp")) {
+            avatarError = if (en) "Choose a JPG, PNG, or WebP image up to 5 MB." else "En fazla 5 MB boyutunda JPG, PNG veya WebP görsel seç."
+        } else {
+            avatarError = null
+            onUploadAvatar(bytes, mime)
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(HedefitColors.Background).statusBarsPadding()) {
         UtilityHeader(if (en) "Profile and Settings" else "Profil ve Ayarlar", onBack)
@@ -66,15 +92,17 @@ fun ProfileSettingsScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Box(Modifier.size(64.dp).background(HedefitColors.Lime, CircleShape), contentAlignment = Alignment.Center) {
-                        Text(name.take(2).uppercase(), color = HedefitColors.OnLime, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        AvatarImage(profile.avatarUrl, name, Modifier.size(64.dp))
+                        Column {
+                            Text(name.ifBlank { "Sporcu" }, style = MaterialTheme.typography.headlineSmall)
+                            Text(email, color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                            Text(if (en) "Google account verified" else "Google hesabı doğrulandı", color = HedefitColors.LimeDark, style = MaterialTheme.typography.labelMedium)
+                            TextButton(enabled = !avatarUploading, onClick = { avatarPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, contentPadding = PaddingValues(0.dp)) { Icon(Icons.Default.AddAPhoto, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(5.dp)); Text(if (avatarUploading) (if (en) "Uploading…" else "Yükleniyor…") else if (en) "Change profile photo" else "Profil fotoğrafını değiştir") }
+                        }
                     }
-                    Column {
-                        Text(name.ifBlank { "Sporcu" }, style = MaterialTheme.typography.headlineSmall)
-                        Text(email, color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
-                        Text(if (en) "Google account verified" else "Google hesabı doğrulandı", color = HedefitColors.LimeDark, style = MaterialTheme.typography.labelMedium)
-                    }
+                    avatarError?.let { Text(it, color = HedefitColors.Coral, style = MaterialTheme.typography.bodySmall) }
                 }
             }
             item { SettingsSectionTitle(if (en) "Body and profile" else "Vücut ve profil") }
@@ -148,6 +176,18 @@ fun ProfileSettingsScreen(
     if (showDelete) DeleteAccountDialog(email, accountBusy, { showDelete = false }) { confirmedEmail -> showDelete = false; onDelete(confirmedEmail) }
     if (showShortcut) ShortcutSettingsDialog(en, { showShortcut = false }) { onAddShortcut(it); showShortcut = false }
     if (showUnits) MeasurementUnitsDialog(preferences.unitSystem, en, { showUnits = false }) { system -> onPreferencesChange(preferences.copy(unitSystem = system)); showUnits = false }
+}
+
+@Composable
+private fun AvatarImage(url: String?, name: String, modifier: Modifier = Modifier) {
+    var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(url) {
+        bitmap = url?.let { address -> withContext(Dispatchers.IO) { runCatching { URL(address).openStream().use(BitmapFactory::decodeStream) }.getOrNull() } }
+    }
+    Box(modifier.background(HedefitColors.Lime, CircleShape), contentAlignment = Alignment.Center) {
+        bitmap?.let { Image(it.asImageBitmap(), contentDescription = "Profil fotoğrafı", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+            ?: Text(name.take(2).uppercase(), color = HedefitColors.OnLime, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge)
+    }
 }
 
 @Composable

@@ -69,7 +69,12 @@ class RouteTrackingStore(context: Context) {
         )
     }.getOrDefault(RouteSnapshot())
 
-    fun start() = write(RouteSnapshot(id = UUID.randomUUID().toString(), tracking = true, startedAt = System.currentTimeMillis()))
+    fun start(startedAt: Long = System.currentTimeMillis()): RouteSnapshot =
+        RouteSnapshot(
+            id = UUID.randomUUID().toString(),
+            tracking = true,
+            startedAt = startedAt,
+        ).also(::write)
     fun stop(): RouteSnapshot = (activeCache?.takeIf { it.tracking } ?: read()).let { stopped -> stopped.copy(tracking = false, stoppedAt = System.currentTimeMillis()) }.also(::write)
     fun append(location: Location): RouteSnapshot {
         val current = activeCache?.takeIf { it.tracking } ?: read()

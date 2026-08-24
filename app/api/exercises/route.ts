@@ -1,4 +1,4 @@
-import { filterExercises } from "@/lib/exercise-service";
+import { expandMuscleFilter, filterExercises } from "@/lib/exercise-service";
 import { clientKey, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { translateExerciseLabel, translateExerciseName, turkishExerciseInstructions } from "@/lib/exercise-translations";
 
@@ -18,7 +18,7 @@ export function GET(request: Request) {
   const muscleRole = safeParam(searchParams.get("muscleRole"));
   const force = safeParam(searchParams.get("force"));
   const mechanic = safeParam(searchParams.get("mechanic"));
-  const muscleTargets = muscle === "back" ? ["middle back", "lower back", "lats", "traps"] : muscle ? [muscle] : [];
+  const muscleTargets = expandMuscleFilter(muscle);
   const filtered = filterExercises({ search: safeParam(searchParams.get("search")), equipment: safeParam(searchParams.get("equipment")), level: safeParam(searchParams.get("level")), category: safeParam(searchParams.get("category")) });
   const byMuscle = muscleTargets.length
     ? filtered.filter((item) => [...item.primaryMuscles, ...item.secondaryMuscles].some((value) => muscleTargets.includes(value)))

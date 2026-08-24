@@ -142,6 +142,7 @@ class MainActivity : ComponentActivity() {
                             email = signedIn.session.user.email,
                             preferences = preferences,
                             saving = uiState.profileSaving,
+                            avatarUploading = uiState.avatarUploading,
                             accountBusy = uiState.accountBusy,
                             healthConnected = uiState.healthConnected,
                             healthBusy = uiState.healthBusy,
@@ -155,6 +156,7 @@ class MainActivity : ComponentActivity() {
                                 else healthPermissionLauncher.launch(healthConnectManager.permissions)
                             },
                             onSave = { mainViewModel.saveProfile(it) },
+                            onUploadAvatar = mainViewModel::uploadAvatar,
                             onResetProgress = mainViewModel::resetProgress,
                             onFreeze = mainViewModel::freezeAccount,
                             onDelete = mainViewModel::deleteAccount,
@@ -211,6 +213,11 @@ class MainActivity : ComponentActivity() {
                                         thighCm = latest?.thighCm,
                                     ),
                                 )
+                            },
+                            onCreateRegionalProgram = { muscle, label ->
+                                mainViewModel.generateRegionalPlan(muscle, label, preferences.language)
+                                utilityPage = UtilityPage.Main
+                                selected = AppDestination.Workout
                             },
                             onSetGoalWeight = { targetWeight ->
                                 val profile = dashboard.profile
@@ -270,6 +277,12 @@ class MainActivity : ComponentActivity() {
                                 padding, expanded, uiState.dashboard, uiState.nutritionBusy, uiState.foodSearchBusy, uiState.foodSearchResults,
                                 mainViewModel::addNutritionWithAi, mainViewModel::searchFoods, mainViewModel::addCatalogFood,
                                 mainViewModel::addFavorite, mainViewModel::removeFavorite, mainViewModel::repeatFavorite, mainViewModel::addWater, preferences.language,
+                                selectedDate = uiState.nutritionViewingDate,
+                                selectedLogs = uiState.nutritionViewingLogs,
+                                historyLogs = uiState.nutritionHistory,
+                                dateLoading = uiState.nutritionDateLoading,
+                                onSelectDate = mainViewModel::loadNutritionDate,
+                                onLoadHistory = mainViewModel::loadNutritionHistory,
                             )
                             AppDestination.Progress -> ProgressScreen(
                                 padding, expanded, uiState.dashboard, preferences.language,
@@ -279,7 +292,23 @@ class MainActivity : ComponentActivity() {
                                 measurementSaving = uiState.measurementSaving,
                                 onSaveMeasurement = mainViewModel::saveBodyMeasurement,
                             )
-                            AppDestination.Coach -> CoachScreen(padding, expanded, uiState.chatMessages, uiState.chatBusy, { message -> mainViewModel.sendChat(message, preferences.language) }, uiState.dashboard, onOpenPlan = { selected = AppDestination.Workout }, language = preferences.language, coachName = coachDisplayName, onCoachNameChange = { updatePreferences(preferences.copy(coachName = it)) })
+                            AppDestination.Coach -> CoachScreen(
+                                padding, expanded, uiState.chatMessages, uiState.chatBusy,
+                                { message -> mainViewModel.sendChat(message, preferences.language, preferences.localCoachEnabled && uiState.localCoach?.ready == true) },
+                                uiState.dashboard,
+                                onOpenPlan = { selected = AppDestination.Workout },
+                                language = preferences.language,
+                                coachName = coachDisplayName,
+                                onCoachNameChange = { updatePreferences(preferences.copy(coachName = it)) },
+                                localCoach = uiState.localCoach,
+                                localCoachEnabled = preferences.localCoachEnabled,
+                                onLocalCoachEnabledChange = { enabled -> updatePreferences(preferences.copy(localCoachEnabled = enabled)) },
+                                onPrepareLocalCoach = { mainViewModel.prepareLocalCoach(preferences.language) },
+                                onRemoveLocalCoach = {
+                                    updatePreferences(preferences.copy(localCoachEnabled = false))
+                                    mainViewModel.removeLocalCoach()
+                                },
+                            )
                         }
                     }
                 }

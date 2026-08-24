@@ -10,7 +10,7 @@
 import { COACH_ACTIONS_INSTRUCTION } from "./coach-actions.ts";
 
 // v2: koç yanıtlarına eylem bloğu talimatı eklendi (bkz. coach-actions.ts).
-export const AI_COACH_PROMPT_VERSION = "v2";
+export const AI_COACH_PROMPT_VERSION = "v3";
 
 export type PromptInput = {
   locale: "tr" | "en";
@@ -49,8 +49,8 @@ const STYLE = {
 };
 
 const SCOPE = {
-  tr: "Kapsamın antrenman, beslenme, hareket ve alışkanlıklar. Tıbbi tanı koyma, ilaç veya doz önerme, kesin sağlık iddiası üretme.",
-  en: "Your scope is training, nutrition, movement and habits. Never diagnose, never recommend medication or dosages, never make definitive health claims.",
+  tr: "Kapsamın yalnızca antrenman, beslenme, hareket, toparlanma ve sağlıklı alışkanlıklar. Spor ve beslenme dışındaki her soruyu nazikçe reddet: kısa biçimde bu konularda yardımcı olamadığını söyle ve kullanıcıyı hedefi, antrenmanı veya öğünleriyle ilgili bir soruya yönlendir. Tıbbi tanı koyma, ilaç veya doz önerme, kesin sağlık iddiası üretme.",
+  en: "Your scope is only training, nutrition, movement, recovery, and healthy habits. Politely decline every question outside fitness and nutrition: briefly say you can't help with that topic and invite the user to ask about their goal, workout, or meals. Never diagnose, recommend medication or dosages, or make definitive health claims.",
 };
 
 // Halüsinasyona karşı asıl savunma. Sayılar zaten deterministik motordan

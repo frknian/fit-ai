@@ -3,7 +3,7 @@ import test from "node:test";
 import { checkAndConsumeUsage, refundUsage, usageLimitExceeded, daysBetweenWeekStarts, lastAiWeeklyReviewWeekStart } from "../lib/usage-limits.ts";
 import { authorizedRequest, withAuthenticatedFetch, withUsageMock, withSupabaseAuthEnv, TEST_TOKEN, TEST_USER_ID } from "./helpers/auth.mjs";
 
-test("ücretsiz kullanıcı için doğru günlük limit uygulanır", async () => {
+test("ücretsiz kullanıcı için Fit Koç sohbeti sınırsızdır", async () => {
   const restoreEnv = withSupabaseAuthEnv();
   const previousFetch = globalThis.fetch;
   globalThis.fetch = withUsageMock({ isPremium: false, allowed: true, currentCount: 3 });
@@ -11,7 +11,7 @@ test("ücretsiz kullanıcı için doğru günlük limit uygulanır", async () =>
     const request = authorizedRequest("http://localhost/x", { headers: { Authorization: `Bearer ${TEST_TOKEN}` } });
     const result = await checkAndConsumeUsage(request, "chat", TEST_USER_ID);
     assert.ok(!("error" in result));
-    assert.deepEqual(result, { allowed: true, used: 3, limit: 5, isPremium: false });
+    assert.deepEqual(result, { allowed: true, used: 3, limit: Number.POSITIVE_INFINITY, isPremium: false });
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
@@ -75,7 +75,7 @@ test("birleşik RPC bulunamazsa eski iki adımlı yola (profil + increment_usage
   });
   try {
     const result = await checkAndConsumeUsage(authorizedRequest("http://localhost/x"), "chat", TEST_USER_ID);
-    assert.deepEqual(result, { allowed: true, used: 3, limit: 5, isPremium: false });
+    assert.deepEqual(result, { allowed: true, used: 3, limit: Number.POSITIVE_INFINITY, isPremium: false });
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
@@ -152,7 +152,7 @@ test("eksik altyapı: normal durum — üretimde geçici önbellek gecikmesi TEK
   try {
     const result = await checkAndConsumeUsage(authorizedRequest("http://localhost/x"), "chat", TEST_USER_ID);
     assert.ok(!("error" in result), "önbellek kendini düzelttiğinde 503 dönmemeli");
-    assert.deepEqual(result, { allowed: true, used: 1, limit: 5, isPremium: false });
+    assert.deepEqual(result, { allowed: true, used: 1, limit: Number.POSITIVE_INFINITY, isPremium: false });
     assert.equal(rpcCalls, 2, "tam olarak bir yeniden deneme yapılmalı");
   } finally {
     globalThis.fetch = previousFetch;
@@ -215,13 +215,13 @@ test("eski veritabanında yazılı besin sayacı geçici olarak chat sayacına d
   }
 });
 
-test("sunucu limiti aştığını bildirdiğinde sayaç artırılmadığı gibi işaretlenir", async () => {
+test("sınırlı bir AI özelliğinde sunucu limit aşımını bildirebilir", async () => {
   const restoreEnv = withSupabaseAuthEnv();
   const previousFetch = globalThis.fetch;
   globalThis.fetch = withUsageMock({ isPremium: false, allowed: false, currentCount: 5 });
   try {
     const request = authorizedRequest("http://localhost/x");
-    const result = await checkAndConsumeUsage(request, "chat", TEST_USER_ID);
+    const result = await checkAndConsumeUsage(request, "nutrition_advice", TEST_USER_ID);
     assert.ok(!("error" in result));
     assert.equal(result.allowed, false);
     const response = usageLimitExceeded("chat", result.used, result.limit);
@@ -301,19 +301,24 @@ test("jetonsuz istek Supabase'e hiç gitmeden reddedilir", async () => {
   }
 });
 
-test("sohbet günlük soru sınırına ulaşınca AI'ya hiç gitmeden 429 döner", { concurrency: false }, async () => {
+test("sohbet beşinci sorudan sonra da yanıt vermeye devam eder", { concurrency: false }, async () => {
   const previousKey = process.env.AI_API_KEY;
   const previousFetch = globalThis.fetch;
   const restoreAuthEnv = withSupabaseAuthEnv();
   process.env.AI_API_KEY = "test-key";
-  globalThis.fetch = withUsageMock({ allowed: false, currentCount: 5 });
+  globalThis.fetch = withUsageMock({ allowed: false, currentCount: 6 }, (url) => {
+    if (String(url).includes("/chat/completions")) {
+      return Response.json({ choices: [{ message: { role: "assistant", content: "Sohbet sınırı olmadan devam edebiliriz." } }] });
+    }
+    throw new TypeError(`beklenmeyen ağ isteği: ${url}`);
+  });
   try {
     const { POST } = await import(`../app/api/chat/route.ts?test=${Date.now()}`);
     const response = await POST(authorizedRequest("http://localhost/api/chat", { method: "POST", body: JSON.stringify({ messages: [{ role: "user", text: "Bugün ne yapmalıyım?" }] }) }));
-    assert.equal(response.status, 429);
+    assert.equal(response.status, 200);
     const payload = await response.json();
-    assert.equal(payload.limitReached, true);
-    assert.match(payload.error, /5\/5/);
+    assert.equal(payload.source, "ai");
+    assert.equal(payload.usage, undefined);
   } finally {
     globalThis.fetch = previousFetch;
     restoreAuthEnv();
@@ -321,7 +326,7 @@ test("sohbet günlük soru sınırına ulaşınca AI'ya hiç gitmeden 429 döner
   }
 });
 
-test("sınır altındayken sohbet yanıtı kullanım bilgisiyle birlikte döner", { concurrency: false }, async () => {
+test("sınırsız sohbet yanıtında günlük kota bilgisi gösterilmez", { concurrency: false }, async () => {
   const previousKey = process.env.AI_API_KEY;
   const previousFetch = globalThis.fetch;
   const restoreAuthEnv = withSupabaseAuthEnv();
@@ -337,7 +342,7 @@ test("sınır altındayken sohbet yanıtı kullanım bilgisiyle birlikte döner"
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.source, "ai");
-    assert.deepEqual(payload.usage, { used: 2, limit: 5 });
+    assert.equal(payload.usage, undefined);
   } finally {
     globalThis.fetch = previousFetch;
     restoreAuthEnv();
@@ -420,7 +425,7 @@ test("sohbet: normal durum — AI başarıyla yanıt verince hak iade edilMEZ", 
   }
 });
 
-test("sohbet: hatalı input — AI çağrısı ağ hatasıyla başarısız olunca hak iade edilir", { concurrency: false }, async () => {
+test("sohbet: AI çağrısı başarısız olsa da sınırsız kotada iade çağrısı gerekmez", { concurrency: false }, async () => {
   const previousKey = process.env.AI_API_KEY;
   const previousFetch = globalThis.fetch;
   const restoreAuthEnv = withSupabaseAuthEnv();
@@ -437,13 +442,12 @@ test("sohbet: hatalı input — AI çağrısı ağ hatasıyla başarısız olunc
   try {
     const { POST } = await import(`../app/api/chat/route.ts?test=${Date.now()}`);
     const response = await POST(authorizedRequest("http://localhost/api/chat", { method: "POST", body: JSON.stringify({ messages: [{ role: "user", text: "Bugün ne yapmalıyım?" }] }) }));
-    // AI başarısız olduğunda route güvenli yerel yanıta düşer, yine 200 döner —
-    // ama kullanıcı gerçekte AI hizmeti almadı, bu yüzden iade edilmeli.
+    // AI başarısız olduğunda route güvenli yerel yanıta düşer ve yine 200 döner.
+    // Sohbet artık sınırsız olduğu için geri verilecek bir günlük hak yoktur.
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.source, "fallback");
-    assert.equal(refundCalls.length, 1);
-    assert.deepEqual(refundCalls[0], { p_feature: "chat", p_amount: 1 });
+    assert.equal(refundCalls.length, 0);
   } finally {
     globalThis.fetch = previousFetch;
     restoreAuthEnv();

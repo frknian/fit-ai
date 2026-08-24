@@ -4,8 +4,10 @@ import com.hedefit.app.BuildConfig
 import com.hedefit.app.data.network.JsonHttpClient
 import com.hedefit.app.data.network.requireSuccess
 import com.hedefit.app.data.network.stringOrNull
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 data class AuthUser(val id: String, val email: String, val emailVerified: Boolean)
@@ -62,7 +64,9 @@ class AuthRepository(
 
     suspend fun bootstrap(): AuthState {
         configurationError()?.let { return AuthState.ConfigurationError(it) }
-        val saved = store.read() ?: return AuthState.SignedOut
+        // Android Keystore may take hundreds of milliseconds on a cold start.
+        // Never block Compose's first frame while decrypting the saved session.
+        val saved = withContext(Dispatchers.IO) { store.read() } ?: return AuthState.SignedOut
         current = saved
         return runCatching {
             val token = validAccessToken()

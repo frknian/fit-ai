@@ -9,6 +9,12 @@ export type AiTextNutrition = {
   carbohydrates: number;
   fat: number;
   fiber: number;
+  sugar: number;
+  sodiumMg: number;
+  potassiumMg: number;
+  calciumMg: number;
+  ironMg: number;
+  vitaminCMg: number;
   confidence: number;
 };
 
@@ -22,9 +28,15 @@ const textSchema = jsonSchema<AiTextNutrition>({
     carbohydrates: { type: "number", minimum: 0, maximum: 5000 },
     fat: { type: "number", minimum: 0, maximum: 2000 },
     fiber: { type: "number", minimum: 0, maximum: 1000 },
+    sugar: { type: "number", minimum: 0, maximum: 2000 },
+    sodiumMg: { type: "number", minimum: 0, maximum: 50000 },
+    potassiumMg: { type: "number", minimum: 0, maximum: 50000 },
+    calciumMg: { type: "number", minimum: 0, maximum: 50000 },
+    ironMg: { type: "number", minimum: 0, maximum: 1000 },
+    vitaminCMg: { type: "number", minimum: 0, maximum: 10000 },
     confidence: { type: "number", minimum: 0, maximum: 1 },
   },
-  required: ["name", "grams", "calories", "protein", "carbohydrates", "fat", "fiber", "confidence"],
+  required: ["name", "grams", "calories", "protein", "carbohydrates", "fat", "fiber", "sugar", "sodiumMg", "potassiumMg", "calciumMg", "ironMg", "vitaminCMg", "confidence"],
   additionalProperties: false,
 });
 
@@ -47,10 +59,16 @@ export function validateAiTextNutrition(value: unknown, requestedGrams: number):
   const carbohydrates = finite(item.carbohydrates, 5000);
   const fat = finite(item.fat, 2000);
   const fiber = finite(item.fiber, 1000);
+  const sugar = finite(item.sugar, 2000);
+  const sodiumMg = finite(item.sodiumMg, 50000);
+  const potassiumMg = finite(item.potassiumMg, 50000);
+  const calciumMg = finite(item.calciumMg, 50000);
+  const ironMg = finite(item.ironMg, 1000);
+  const vitaminCMg = finite(item.vitaminCMg, 10000);
   const confidence = finite(item.confidence, 1);
   if (!name || !Number.isFinite(requestedGrams) || requestedGrams <= 0 || requestedGrams > 5000
     || calories === null || calories <= 0 || protein === null || carbohydrates === null
-    || fat === null || fiber === null || confidence === null) return null;
+    || fat === null || fiber === null || sugar === null || sodiumMg === null || potassiumMg === null || calciumMg === null || ironMg === null || vitaminCMg === null || confidence === null) return null;
   return {
     name,
     // Kullanıcının tarttığı gramaj tek doğruluk kaynağıdır; modelin bu alanı
@@ -61,6 +79,12 @@ export function validateAiTextNutrition(value: unknown, requestedGrams: number):
     carbohydrates: rounded(carbohydrates),
     fat: rounded(fat),
     fiber: rounded(fiber),
+    sugar: rounded(sugar),
+    sodiumMg: rounded(sodiumMg),
+    potassiumMg: rounded(potassiumMg),
+    calciumMg: rounded(calciumMg),
+    ironMg: rounded(ironMg, 2),
+    vitaminCMg: rounded(vitaminCMg),
     confidence: rounded(confidence, 2),
   };
 }
@@ -74,7 +98,7 @@ export function validateAiTextNutrition(value: unknown, requestedGrams: number):
  */
 const NUTRITION_SYSTEM_PROMPT = `Sen bir beslenme ve kalori analizi uzmanısın.
 Verilen yemeğin belirtilen yenebilir porsiyonu için kalori, protein,
-karbonhidrat, yağ ve lif tahmini yap.
+karbonhidrat, yağ, lif, şeker, sodyum, potasyum, kalsiyum, demir ve C vitamini tahmini yap.
 
 ÖĞÜNÜ BİLEŞENLERİNE AYIR
 Tabağı tek bir bütün olarak değil, onu oluşturan malzemeler olarak düşün

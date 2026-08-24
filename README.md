@@ -13,6 +13,21 @@ istemcisini içerir. Önceki web arayüzü ve Capacitor kabukları kaldırılmı
 - `public/exercise-images`: mobil istemciye sunulan egzersiz görselleri
 - `android`: Kotlin ve Jetpack Compose ile geliştirilen native Android uygulaması
 
+## Canlı ortam
+
+Backend Cloudflare Workers üzerinde yayınlanır:
+
+- Production API: `https://hedefit.frknian.workers.dev`
+- Fit Koç sohbeti, giriş yapmış ücretsiz ve premium kullanıcılar için günlük
+  soru sınırı olmadan çalışır. Kötüye kullanım koruması olarak kullanıcı başına
+  dakikada 20 istek sınırı korunur.
+
+Canlı dağıtım:
+
+```bash
+npm run deploy
+```
+
 ## Geliştirme
 
 ```bash

@@ -15,6 +15,12 @@ const validAiTextNutrition = {
   carbohydrates: 34,
   fat: 5,
   fiber: 8,
+  sugar: 4,
+  sodiumMg: 620,
+  potassiumMg: 540,
+  calciumMg: 55,
+  ironMg: 3.2,
+  vitaminCMg: 7,
   confidence: 0.78,
 };
 
@@ -187,6 +193,12 @@ test("yemek adı ve gramaj AI ile kalori ve makrolara çevrilir", { concurrency:
       carbohydrates: 34,
       fat: 5,
       fiber: 8,
+      sugar: 4,
+      sodiumMg: 620,
+      potassiumMg: 540,
+      calciumMg: 55,
+      ironMg: 3.2,
+      vitaminCMg: 7,
     });
     assert.equal(payload.isEstimated, true);
   } finally {

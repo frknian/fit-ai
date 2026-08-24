@@ -18,6 +18,7 @@ import com.hedefit.app.data.model.FavoriteMealData
 import com.hedefit.app.data.model.ExerciseCatalogData
 import com.hedefit.app.data.model.PreviousSetData
 import com.hedefit.app.data.model.WorkoutProgramData
+import com.hedefit.app.data.model.RouteActivityData
 import com.hedefit.app.data.offline.OfflineQueueStore
 import com.hedefit.app.data.offline.OfflineSyncScheduler
 import com.hedefit.app.data.offline.workoutOfflinePayload
@@ -27,11 +28,16 @@ import com.hedefit.app.data.network.HedefitApiClient
 import com.hedefit.app.data.network.JsonHttpClient
 import com.hedefit.app.data.network.SupabaseRestClient
 import com.hedefit.app.data.repository.HedefitRepository
+import com.hedefit.app.coach.LocalCoach
+import com.hedefit.app.coach.LocalCoachState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.LocalDate
 
 data class ChatMessageState(val text: String, val user: Boolean, val pending: Boolean = false)
 
@@ -45,10 +51,16 @@ data class MainUiState(
     val workoutSaving: Boolean = false,
     val planGenerating: Boolean = false,
     val nutritionBusy: Boolean = false,
+    val nutritionDateLoading: Boolean = false,
+    val nutritionViewingDate: LocalDate = LocalDate.now(),
+    val nutritionViewingLogs: List<com.hedefit.app.data.model.NutritionLogData> = emptyList(),
+    val nutritionHistory: List<com.hedefit.app.data.model.NutritionLogData> = emptyList(),
     val chatBusy: Boolean = false,
     val chatMessages: List<ChatMessageState> = emptyList(),
+    val localCoach: LocalCoachState? = null,
     val transientMessage: String? = null,
     val profileSaving: Boolean = false,
+    val avatarUploading: Boolean = false,
     val measurementSaving: Boolean = false,
     val accountBusy: Boolean = false,
     val accountFrozen: Boolean = false,
@@ -72,11 +84,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     private val healthConnect = HealthConnectManager(application)
     private val offlineQueue = OfflineQueueStore(application)
+    private val localCoach = LocalCoach(application)
 
     private val _state = MutableStateFlow(MainUiState())
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
     init {
+        viewModelScope.launch { localCoach.state.collect { status -> _state.update { it.copy(localCoach = status) } } }
         viewModelScope.launch {
             val auth = authRepository.bootstrap()
             _state.update { it.copy(auth = auth) }
@@ -122,6 +136,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _state.update { current ->
                         current.copy(
                             dashboard = dashboard,
+                            nutritionViewingDate = LocalDate.now(),
+                            nutritionViewingLogs = dashboard.nutritionLogs,
                             dataLoading = false,
                             dataError = null,
                             chatMessages = current.chatMessages.ifEmpty {
@@ -132,6 +148,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 .onFailure { error -> _state.update { it.copy(dataLoading = false, dataError = friendlyError(error)) } }
         }
+    }
+
+    fun loadNutritionDate(date: LocalDate) = viewModelScope.launch {
+        if (_state.value.nutritionDateLoading || _state.value.nutritionViewingDate == date && _state.value.nutritionViewingLogs.isNotEmpty()) return@launch
+        _state.update { it.copy(nutritionDateLoading = true, nutritionViewingDate = date) }
+        runCatching { repository.loadNutritionLogs(date) }
+            .onSuccess { logs -> _state.update { it.copy(nutritionDateLoading = false, nutritionViewingLogs = logs) } }
+            .onFailure { error -> _state.update { it.copy(nutritionDateLoading = false, transientMessage = friendlyError(error)) } }
+    }
+
+    fun loadNutritionHistory() = viewModelScope.launch {
+        if (_state.value.nutritionHistory.isNotEmpty()) return@launch
+        runCatching { repository.loadNutritionHistory() }
+            .onSuccess { history -> _state.update { it.copy(nutritionHistory = history) } }
+            .onFailure { error -> _state.update { it.copy(transientMessage = friendlyError(error)) } }
     }
 
     fun completeDetailedWorkout(durationSeconds: Int, calories: Int, sets: List<WorkoutSetInput>, feedback: WorkoutFeedbackData) {
@@ -197,7 +228,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _state.update { it.copy(nutritionBusy = true) }
             runCatching { repository.addCatalogFood(food, grams, meal) }
-                .onSuccess { log -> _state.update { current -> current.copy(nutritionBusy = false, dashboard = current.dashboard?.copy(nutritionLogs = listOf(log) + current.dashboard.nutritionLogs), transientMessage = "${log.name} eklendi.") } }
+                .onSuccess { log -> _state.update { current -> current.copy(nutritionBusy = false, dashboard = current.dashboard?.copy(nutritionLogs = listOf(log) + current.dashboard.nutritionLogs), nutritionViewingLogs = if (current.nutritionViewingDate == LocalDate.now()) listOf(log) + current.nutritionViewingLogs else current.nutritionViewingLogs, nutritionHistory = listOf(log) + current.nutritionHistory, transientMessage = "${log.name} eklendi.") } }
                 .onFailure { error ->
                     val payload = repository.catalogFoodPayload(food, grams, meal)
                     val networkLike = error.message.orEmpty().contains("network", true) || error.message.orEmpty().contains("host", true) || error is java.io.IOException
@@ -205,7 +236,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         offlineQueue.enqueue("nutrition", payload); OfflineSyncScheduler.enqueue(getApplication())
                         val ratio = grams / 100.0
                         val local = com.hedefit.app.data.model.NutritionLogData("offline-${System.currentTimeMillis()}", java.time.LocalDate.now().toString(), meal, food.name, (food.calories * ratio).toInt(), food.protein * ratio, food.carbs * ratio, food.fat * ratio, grams, food.fiber * ratio, food.sugar * ratio, food.sodiumMg * ratio, food.potassiumMg * ratio, food.calciumMg * ratio, food.ironMg * ratio, food.vitaminCMg * ratio)
-                        _state.update { current -> current.copy(nutritionBusy = false, offlinePendingCount = offlineQueue.count(), dashboard = current.dashboard?.copy(nutritionLogs = listOf(local) + current.dashboard.nutritionLogs), transientMessage = "Öğün çevrimdışı kaydedildi; bağlantı gelince eşitlenecek.") }
+                        _state.update { current -> current.copy(nutritionBusy = false, offlinePendingCount = offlineQueue.count(), dashboard = current.dashboard?.copy(nutritionLogs = listOf(local) + current.dashboard.nutritionLogs), nutritionViewingLogs = if (current.nutritionViewingDate == LocalDate.now()) listOf(local) + current.nutritionViewingLogs else current.nutritionViewingLogs, nutritionHistory = listOf(local) + current.nutritionHistory, transientMessage = "Öğün çevrimdışı kaydedildi; bağlantı gelince eşitlenecek.") }
                     } else _state.update { it.copy(nutritionBusy = false, transientMessage = friendlyError(error)) }
                 }
         }
@@ -222,7 +253,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun repeatFavorite(favorite: FavoriteMealData) = viewModelScope.launch {
         _state.update { it.copy(nutritionBusy = true) }
-        runCatching { repository.repeatFavorite(favorite) }.onSuccess { log -> _state.update { current -> current.copy(nutritionBusy = false, dashboard = current.dashboard?.copy(nutritionLogs = listOf(log) + current.dashboard.nutritionLogs), transientMessage = "Favori öğün tekrar eklendi.") } }
+        runCatching { repository.repeatFavorite(favorite) }.onSuccess { log -> _state.update { current -> current.copy(nutritionBusy = false, dashboard = current.dashboard?.copy(nutritionLogs = listOf(log) + current.dashboard.nutritionLogs), nutritionViewingLogs = if (current.nutritionViewingDate == LocalDate.now()) listOf(log) + current.nutritionViewingLogs else current.nutritionViewingLogs, nutritionHistory = listOf(log) + current.nutritionHistory, transientMessage = "Favori öğün tekrar eklendi.") } }
             .onFailure { error -> _state.update { it.copy(nutritionBusy = false, transientMessage = friendlyError(error)) } }
     }
 
@@ -235,8 +266,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun saveRoute(snapshot: RouteSnapshot, activityType: String) = viewModelScope.launch {
         runCatching { repository.saveRoute(snapshot, activityType) }
-            .onSuccess { _state.update { it.copy(transientMessage = "Hedefit Rota kaydedildi; yeşil paylaşım kartın hazır.") } }
+            .onSuccess {
+                val route = RouteActivityData(
+                    id = snapshot.id,
+                    activityType = activityType,
+                    startedAt = Instant.ofEpochMilli(snapshot.startedAt).toString(),
+                    endedAt = Instant.ofEpochMilli(snapshot.stoppedAt).toString(),
+                    durationSeconds = snapshot.durationSeconds,
+                    distanceMeters = snapshot.distanceMeters,
+                )
+                _state.update { current -> current.copy(
+                    dashboard = current.dashboard?.copy(routeActivities = listOf(route) + current.dashboard.routeActivities.filterNot { it.id == route.id }),
+                    transientMessage = "Hedefit Rota kaydedildi; yeşil paylaşım kartın hazır.",
+                ) }
+            }
             .onFailure { error -> _state.update { it.copy(transientMessage = "Rota cihazda saklandı. Sunucu eşitlemesi: ${friendlyError(error)}") } }
+    }
+
+    fun uploadAvatar(bytes: ByteArray, mimeType: String) = viewModelScope.launch {
+        if (_state.value.avatarUploading) return@launch
+        _state.update { it.copy(avatarUploading = true) }
+        runCatching { repository.uploadAvatar(bytes, mimeType) }
+            .onSuccess { (path, url) -> _state.update { current -> current.copy(avatarUploading = false, dashboard = current.dashboard?.let { data -> data.copy(profile = data.profile.copy(avatarPath = path, avatarUrl = url)) }, transientMessage = "Profil fotoğrafın güncellendi.") } }
+            .onFailure { error -> _state.update { it.copy(avatarUploading = false, transientMessage = friendlyError(error)) } }
     }
 
     fun scheduleWorkout(date: java.time.LocalDate, time: String, originalDate: String? = null) = viewModelScope.launch {
@@ -373,6 +425,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     current.copy(
                         nutritionBusy = false,
                         dashboard = current.dashboard?.copy(nutritionLogs = listOf(log) + current.dashboard.nutritionLogs),
+                        nutritionViewingLogs = if (current.nutritionViewingDate == LocalDate.now()) listOf(log) + current.nutritionViewingLogs else current.nutritionViewingLogs,
+                        nutritionHistory = listOf(log) + current.nutritionHistory,
                         transientMessage = "${log.name} öğün günlüğüne eklendi.",
                     )
                 }
@@ -380,14 +434,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun sendChat(text: String, locale: String = "tr") {
+    fun prepareLocalCoach(locale: String = "tr") {
+        if (_state.value.chatBusy || _state.value.localCoach?.downloading == true) return
+        viewModelScope.launch {
+            _state.update { it.copy(chatBusy = true, transientMessage = null) }
+            runCatching { localCoach.downloadAndPrepare(locale) }
+                .onSuccess { _state.update { it.copy(chatBusy = false, transientMessage = "Akıllı Fit Koç cihazında hazır. İnternet olmadan da konuşabilirsin.") } }
+                .onFailure { error -> _state.update { it.copy(chatBusy = false, transientMessage = friendlyError(error)) } }
+        }
+    }
+
+    fun removeLocalCoach() = localCoach.removeModel()
+
+    fun sendChat(text: String, locale: String = "tr", useLocalCoach: Boolean = false) {
         val clean = text.trim()
         if (clean.isEmpty() || _state.value.chatBusy) return
         val userMessage = ChatMessageState(clean, true)
         _state.update { it.copy(chatBusy = true, chatMessages = it.chatMessages + userMessage) }
         viewModelScope.launch {
             val history = _state.value.chatMessages.map { it.text to it.user }
-            runCatching { repository.sendChat(history, _state.value.dashboard, locale) }
+            runCatching {
+                if (useLocalCoach) com.hedefit.app.data.model.ChatReplyData(localCoach.reply(clean, locale), "qwen-local", null, null)
+                else repository.sendChat(history, _state.value.dashboard, locale)
+            }
                 .onSuccess { reply ->
                     _state.update { it.copy(chatBusy = false, chatMessages = it.chatMessages + ChatMessageState(reply.text, false)) }
                 }

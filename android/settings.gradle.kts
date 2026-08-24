@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "HedefitAndroid"
 include(":app")
+include(":local-ai")
+project(":local-ai").projectDir = file("local-ai")

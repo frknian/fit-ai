@@ -27,6 +27,9 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
@@ -59,6 +62,7 @@ import com.hedefit.app.ui.components.ScreenContainer
 import com.hedefit.app.ui.theme.HedefitColors
 import com.hedefit.app.ui.state.ChatMessageState
 import com.hedefit.app.data.model.DashboardData
+import com.hedefit.app.coach.LocalCoachState
 
 @Composable
 fun CoachScreen(
@@ -72,6 +76,11 @@ fun CoachScreen(
     language: String = "tr",
     coachName: String = if (language == "en") "Fit Coach" else "Fit Koç",
     onCoachNameChange: (String) -> Unit = {},
+    localCoach: LocalCoachState? = null,
+    localCoachEnabled: Boolean = false,
+    onLocalCoachEnabledChange: (Boolean) -> Unit = {},
+    onPrepareLocalCoach: () -> Unit = {},
+    onRemoveLocalCoach: () -> Unit = {},
 ) {
     val en = language == "en"
     var input by remember { mutableStateOf("") }
@@ -84,7 +93,9 @@ fun CoachScreen(
 
     ScreenContainer(padding) {
         Column(Modifier.fillMaxSize().padding(top = 10.dp, bottom = 8.dp)) {
-            CoachHeader(en, coachName, onCoachNameChange)
+            CoachHeader(en, coachName, onCoachNameChange, localCoachEnabled && localCoach?.ready == true)
+            LocalCoachCard(en, localCoach, localCoachEnabled, onLocalCoachEnabledChange, onPrepareLocalCoach, onRemoveLocalCoach)
+            Spacer(Modifier.height(8.dp))
             if (expanded) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                     CoachConversation(messages, busy, input, { input = it }, send, onSendMessage, onOpenPlan, data, Modifier.weight(1.25f), en, coachName)
@@ -102,7 +113,47 @@ fun CoachScreen(
 }
 
 @Composable
-private fun CoachHeader(en: Boolean, coachName: String, onCoachNameChange: (String) -> Unit) {
+private fun LocalCoachCard(
+    en: Boolean,
+    state: LocalCoachState?,
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    onPrepare: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    val supported = state?.supported == true
+    HedefitCard(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+            Box(Modifier.size(38.dp).background(HedefitColors.Lime.copy(alpha = .16f), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.SmartToy, null, tint = HedefitColors.Lime)
+            }
+            Column(Modifier.weight(1f)) {
+                Text(if (en) "Smart Fit Coach" else "Akıllı Fit Koç", style = MaterialTheme.typography.titleSmall)
+                val detail = when {
+                    !supported -> if (en) "Requires Android 11 and a 64-bit device" else "Android 11 ve 64-bit cihaz gerektirir"
+                    state?.downloading == true -> if (state.totalBytes > 0) "Qwen 1.7B · %${(state.progress * 100).toInt()}" else "Qwen 1.7B indiriliyor…"
+                    state?.ready == true -> if (en) "Qwen 1.7B · on this device" else "Qwen 1.7B · cihazında çalışıyor"
+                    state?.installed == true -> if (en) "Qwen 1.7B is ready to start" else "Qwen 1.7B başlatılmaya hazır"
+                    else -> if (en) "Download Qwen 1.7B · 1.8 GB" else "Qwen 1.7B indir · 1,8 GB"
+                }
+                Text(detail, color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                state?.error?.let { Text(it, color = HedefitColors.Coral, style = MaterialTheme.typography.labelSmall) }
+            }
+            when {
+                !supported -> Unit
+                state?.downloading == true -> Text("%${(state.progress * 100).toInt()}", color = HedefitColors.Lime, style = MaterialTheme.typography.labelLarge)
+                state?.ready == true -> {
+                    androidx.compose.material3.Switch(checked = enabled, onCheckedChange = onEnabledChange)
+                    IconButton(onClick = onRemove) { Icon(Icons.Default.Delete, if (en) "Remove local model" else "Yerel modeli sil", tint = HedefitColors.TextSecondary) }
+                }
+                else -> IconButton(onClick = onPrepare) { Icon(Icons.Default.Download, if (en) "Download Qwen" else "Qwen indir", tint = HedefitColors.Lime) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CoachHeader(en: Boolean, coachName: String, onCoachNameChange: (String) -> Unit, local: Boolean) {
     var menuOpen by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
     var draftName by remember(coachName) { mutableStateOf(coachName) }
@@ -115,7 +166,7 @@ private fun CoachHeader(en: Boolean, coachName: String, onCoachNameChange: (Stri
             Text(coachName, style = MaterialTheme.typography.titleLarge)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.size(7.dp).background(Color(0xFF35D04F), CircleShape))
-                Text(if (en) "Online" else "Çevrimiçi", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text(if (local) if (en) "On device" else "Cihazında" else if (en) "Online" else "Çevrimiçi", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
             }
         }
         Box {
@@ -172,7 +223,7 @@ private fun CoachConversation(
         }
         Composer(input, onInput, onSend, busy, en)
         if (!androidx.compose.ui.platform.LocalInspectionMode.current) {
-            Text(if (en) "4 of 5 daily messages left" else "5 günlük mesaj hakkından 4 kaldı", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 7.dp))
+            Text(if (en) "Unlimited chat" else "Sınırsız sohbet", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 7.dp))
         }
     }
 }
@@ -285,13 +336,8 @@ private fun Composer(input: String, onInput: (String) -> Unit, onSend: () -> Uni
 private fun MessageAllowance() {
     HedefitCard(Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Günlük kullanım", style = MaterialTheme.typography.titleMedium)
-            Text("5 günlük mesaj hakkından 4 kaldı", color = HedefitColors.TextSecondary)
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                repeat(5) { index ->
-                    Box(Modifier.weight(1f).height(6.dp).background(if (index < 4) HedefitColors.Lime else HedefitColors.Divider, CircleShape))
-                }
-            }
+            Text("Sınırsız sohbet", style = MaterialTheme.typography.titleMedium)
+            Text("Fit Koç için günlük soru sınırı yok.", color = HedefitColors.TextSecondary)
         }
     }
 }

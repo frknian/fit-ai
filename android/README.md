@@ -12,6 +12,7 @@ fitness metrikleri üzerine kuruludur.
 - Beslenme günlüğü ve öğün ekleme
 - İlerleme grafikleri ve ölçümler
 - Fit Koç sohbeti
+- Akıllı Fit Koç: isteğe bağlı Qwen3 1.7B yerel model, cihazda çevrimdışı sohbet
 - Profil, vücut ölçüleri ve 15 soruluk kişiselleştirme testi
 - Hedef kilo ve tahmini süre grafiği
 - Bildirim takvimi, açık/koyu tema ve dil ayarı
@@ -100,6 +101,7 @@ Lint ve test:
 - Android Keystore ile şifrelenmiş kalıcı oturum ve otomatik token yenileme
 - RLS korumalı Supabase profil, program ve ilerleme verileri
 - Bearer token ile Hedefit beslenme, AI program ve koç API'leri
+- Fit Koç'ta ücretsiz ve premium hesaplar için günlük soru sınırı olmayan sohbet
 - Gerçek antrenman tamamlama, öğün ekleme ve dashboard yenileme akışları
 - Profil güncelleme ve 15 soruluk testi yeniden yanıtlama
 - Yerel haftalık bildirim planlama ve kalıcı görünüm tercihleri
@@ -110,3 +112,14 @@ Lint ve test:
 
 Mobil pakete yalnızca public anon key eklenir. Supabase service-role/secret key
 istemci uygulamasına kesinlikle eklenmemelidir.
+
+## Akıllı Fit Koç (yerel Qwen)
+
+Fit Koç ekranındaki **Akıllı Fit Koç** kartı, Qwen3 1.7B Q8 modelini kullanıcı
+onayıyla cihaza indirir. Model APK içine konmaz; resmî GGUF paketi yaklaşık 1,8 GB
+olduğu için Wi-Fi ve yeterli boş alan gerekir. İndirme tamamlandığında kullanıcı
+çevrimdışı modu açabilir; sohbet isteği bu durumda Hedefit API'sine gönderilmez.
+
+Yerel motor Android 11+ ve 64-bit cihazlarda etkinleşir. Yayın öncesi model adresi
+`LOCAL_COACH_MODEL_URL` ile kendi CDN alanına taşınmalı, dosya için SHA-256 doğrulaması
+eklenmeli ve hedef cihazlarda performans testi yapılmalıdır.

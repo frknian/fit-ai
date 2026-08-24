@@ -66,3 +66,6 @@ supabase/.temp/
 # Python derleme artıkları (scripts/ml)
 __pycache__/
 *.pyc
+
+# Android native derleme artıkları
+/android/**/.cxx/

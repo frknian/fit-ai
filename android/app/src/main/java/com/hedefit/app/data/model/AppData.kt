@@ -17,6 +17,8 @@ data class ProfileData(
     val targetWeightKg: Double? = null,
     val targetWeeks: Int? = null,
     val accountStatus: String = "active",
+    val avatarPath: String? = null,
+    val avatarUrl: String? = null,
 )
 
 data class ProfileUpdateData(
@@ -59,6 +61,15 @@ data class WorkoutSessionData(
     val completedExercises: Int,
     val totalExercises: Int,
     val fatigue: Int?,
+)
+
+data class RouteActivityData(
+    val id: String,
+    val activityType: String,
+    val startedAt: String,
+    val endedAt: String,
+    val durationSeconds: Int,
+    val distanceMeters: Double,
 )
 
 data class WorkoutSetInput(
@@ -152,6 +163,7 @@ data class ExerciseCatalogData(
     val instructions: List<String>,
     val category: String,
     val imageUrls: List<String>,
+    val secondaryMuscles: List<String> = emptyList(),
 )
 
 data class NutritionGoalData(
@@ -187,6 +199,7 @@ data class DashboardData(
     val schedule: List<WorkoutScheduleData> = emptyList(),
     val favoriteMeals: List<FavoriteMealData> = emptyList(),
     val workoutPrograms: List<WorkoutProgramData> = emptyList(),
+    val routeActivities: List<RouteActivityData> = emptyList(),
 )
 
 data class NutritionEstimateData(
@@ -197,6 +210,12 @@ data class NutritionEstimateData(
     val carbs: Double,
     val fat: Double,
     val fiber: Double,
+    val sugar: Double = 0.0,
+    val sodiumMg: Double = 0.0,
+    val potassiumMg: Double = 0.0,
+    val calciumMg: Double = 0.0,
+    val ironMg: Double = 0.0,
+    val vitaminCMg: Double = 0.0,
     val confidence: Double,
 )
 

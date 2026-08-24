@@ -8,11 +8,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +26,7 @@ import com.hedefit.app.ui.components.ExerciseMotionPlayer
 import com.hedefit.app.ui.theme.HedefitColors
 import java.util.UUID
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExerciseLibraryScreen(items: List<ExerciseCatalogData>, loading: Boolean, language: String, onBack: () -> Unit, onSearch: (String, String, String, String, String, String, String, String, String) -> Unit, onUse: (ExerciseCatalogData) -> Unit) {
     val en = language == "en"
@@ -42,56 +42,194 @@ fun ExerciseLibraryScreen(items: List<ExerciseCatalogData>, loading: Boolean, la
     var showFilters by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<ExerciseCatalogData?>(null) }
     var showCustom by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().background(HedefitColors.Background).statusBarsPadding()) {
-        UtilityHeader(if (en) "Movement Atlas" else "Hareket Atlası", onBack)
-        Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            HedefitCard(Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Box(Modifier.size(56.dp).background(HedefitColors.Lime, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.MenuBook, null, tint = HedefitColors.OnLime, modifier = Modifier.size(30.dp)) }
-                    Column(Modifier.weight(1f)) { Text(if (en) "Open the movement atlas" else "Hareket atlasını aç", style = MaterialTheme.typography.titleLarge); Text(if (en) "873 illustrated exercises" else "873 görselli hareket", color = HedefitColors.TextSecondary) }
-                }
+    val activeFilterCount = listOf(muscle, equipment, level, environment, force, mechanic, category).count(String::isNotBlank)
+    val clearFilters = {
+        muscle = ""; equipment = ""; level = ""; environment = ""; muscleRole = ""; force = ""; mechanic = ""; category = ""
+        onSearch(query, "", "", "", "", "", "", "", "")
+    }
+    Column(Modifier.fillMaxSize().background(HedefitColors.Background).statusBarsPadding().navigationBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 6.dp, end = 12.dp, top = 8.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, if (en) "Back" else "Geri", tint = HedefitColors.TextPrimary) }
+            OutlinedTextField(
+                query,
+                { query = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text(if (en) "Search movements" else "Hareket ara") },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = { IconButton(onClick = { onSearch(query, muscle, equipment, level, environment, muscleRole, force, mechanic, category) }) { Icon(Icons.Default.Search, if (en) "Search" else "Ara") } },
+                singleLine = true,
+                shape = RoundedCornerShape(18.dp),
+            )
+            IconButton(onClick = { showCustom = true }) { Icon(Icons.Default.Add, if (en) "Custom movement" else "Özel hareket", tint = HedefitColors.Lime) }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(
+                onClick = { showFilters = true },
+                colors = ButtonDefaults.buttonColors(containerColor = if (activeFilterCount > 0) HedefitColors.Lime else HedefitColors.Surface, contentColor = if (activeFilterCount > 0) HedefitColors.OnLime else HedefitColors.TextPrimary),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
+            ) {
+                Icon(Icons.Default.FilterList, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (activeFilterCount > 0) (if (en) "Filter · $activeFilterCount" else "Filtre · $activeFilterCount") else if (en) "Filter" else "Filtre")
             }
-            OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), placeholder = { Text(if (en) "Search a movement" else "Hareket ara") }, leadingIcon = { Icon(Icons.Default.Search, null) }, trailingIcon = { IconButton(onClick = { onSearch(query, muscle, equipment, level, environment, muscleRole, force, mechanic, category) }) { Icon(Icons.Default.Search, if (en) "Search" else "Ara") } }, singleLine = true)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { showFilters = !showFilters }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.FilterList, null); Spacer(Modifier.width(7.dp)); Text(if (en) "Filters" else "Filtreler"); Text(" • ${listOf(muscle, equipment, level, environment, force, mechanic, category).count(String::isNotBlank)}") }
-                OutlinedButton(onClick = { showCustom = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(7.dp)); Text(if (en) "Custom" else "Özel hareket") }
-            }
-            if (showFilters) {
-                val applyFilters = { onSearch(query, muscle, equipment, level, environment, muscleRole, force, mechanic, category) }
-                FilterSection(if (en) "Place" else "Ortam", listOf("" to if (en) "Any" else "Tümü", "gym" to if (en) "Gym" else "Spor salonu", "home" to if (en) "Home" else "Ev"), environment) { environment = it; applyFilters() }
-                FilterSection(if (en) "Muscle" else "Kas grubu", if (en) listOf("" to "All", "chest" to "Chest", "forearms" to "Forearms", "back" to "Back", "quadriceps" to "Quads", "hamstrings" to "Hamstrings", "glutes" to "Glutes", "shoulders" to "Shoulders", "biceps" to "Biceps", "triceps" to "Triceps", "abdominals" to "Abs", "calves" to "Calves") else listOf("" to "Tümü", "chest" to "Göğüs", "forearms" to "Ön kol", "back" to "Sırt", "quadriceps" to "Ön bacak", "hamstrings" to "Arka bacak", "glutes" to "Kalça", "shoulders" to "Omuz", "biceps" to "Biseps", "triceps" to "Arka kol", "abdominals" to "Karın", "calves" to "Baldır"), muscle) { muscle = it; applyFilters() }
-                if (muscle.isNotBlank()) FilterSection(if (en) "Muscle role" else "Kas rolü", listOf("primary" to if (en) "Primary" else "Ana kas", "secondary" to if (en) "Secondary" else "Yardımcı kas", "" to if (en) "Either" else "Her ikisi"), muscleRole) { muscleRole = it; applyFilters() }
-                FilterSection(if (en) "Training type" else "Antrenman türü", listOf("strength" to if (en) "Strength" else "Kuvvet", "stretching" to if (en) "Mobility" else "Mobilite", "plyometrics" to if (en) "Explosive" else "Patlayıcı", "" to if (en) "All" else "Tümü"), category) { category = it; applyFilters() }
-                FilterSection(if (en) "Movement pattern" else "Hareket paterni", listOf("" to if (en) "All" else "Tümü", "push" to if (en) "Push" else "İtiş", "pull" to if (en) "Pull" else "Çekiş", "static" to if (en) "Static" else "Statik"), force) { force = it; applyFilters() }
-                FilterSection(if (en) "Structure" else "Yapı", listOf("" to if (en) "All" else "Tümü", "compound" to if (en) "Compound" else "Bileşik", "isolation" to if (en) "Isolation" else "İzolasyon"), mechanic) { mechanic = it; applyFilters() }
-                FilterSection(if (en) "Level" else "Seviye", listOf("" to if (en) "All" else "Tümü", "beginner" to if (en) "Easy" else "Kolay", "intermediate" to if (en) "Medium" else "Orta", "expert" to if (en) "Advanced" else "İleri"), level) { level = it; applyFilters() }
-                FilterSection(if (en) "Equipment" else "Ekipman", listOf("" to if (en) "All" else "Tümü", "body only" to if (en) "Bodyweight" else "Vücut", "dumbbell" to if (en) "Dumbbell" else "Dambıl", "barbell" to if (en) "Barbell" else "Halter", "machine" to if (en) "Machine" else "Makine", "cable" to if (en) "Cable" else "Kablo", "bands" to if (en) "Band" else "Bant", "kettlebells" to "Kettlebell"), equipment) { equipment = it; applyFilters() }
-            }
+            Text(if (loading) (if (en) "Loading…" else "Yükleniyor…") else if (en) "${items.size} results" else "${items.size} sonuç", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.weight(1f))
+            if (activeFilterCount > 0) TextButton(onClick = clearFilters) { Text(if (en) "Clear" else "Temizle") }
         }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = HedefitColors.Lime)
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { Text(if (en) "${items.size} movements" else "${items.size} hareket", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.labelLarge) }
-            items(items.size) { index ->
-                val item = items[index]
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(items, key = { it.id }) { item ->
                 HedefitCard(Modifier.fillMaxWidth(), onClick = { selected = item }) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         ExerciseMedia(item.imageUrls.firstOrNull(), item.name, Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)))
-                        Column(Modifier.weight(1f)) { Text(item.name, style = MaterialTheme.typography.titleMedium); Text("${item.primaryMuscles.joinToString()} • ${item.equipment.ifBlank { if (en) "no equipment" else "ekipmansız" }}", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall) }
+                        Column(Modifier.weight(1f)) {
+                            Text(item.name, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                (if (en) "Main: " else "Ana: ") + item.primaryMuscles.joinToString(),
+                                color = HedefitColors.TextSecondary,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            if (item.secondaryMuscles.isNotEmpty()) Text(
+                                (if (en) "Supporting: " else "Yardımcı: ") + item.secondaryMuscles.joinToString(),
+                                color = HedefitColors.TextSecondary.copy(alpha = .78f),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                            )
+                        }
                         Text(item.level, color = HedefitColors.Lime, style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
         }
     }
+    if (showFilters) ModalBottomSheet(onDismissRequest = { showFilters = false }, containerColor = HedefitColors.Surface) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 18.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(if (en) "Narrow results" else "Sonuçları daralt", style = MaterialTheme.typography.titleLarge)
+                    Text(if (en) "Choose only what matters" else "Yalnızca ihtiyacın olanı seç", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                }
+                if (activeFilterCount > 0) TextButton(onClick = clearFilters) { Text(if (en) "Reset" else "Sıfırla") }
+            }
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 560.dp), contentPadding = PaddingValues(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item { FilterSection(if (en) "Place" else "Ortam", environmentOptions(en), environment) { environment = it } }
+                item { FilterSection(if (en) "Target muscle" else "Hedef kas", muscleOptions(en), muscle) { muscle = it; muscleRole = if (it.isBlank()) "" else "primary" } }
+                if (muscle.isNotBlank()) item { FilterSection(if (en) "Muscle role" else "Kasın rolü", muscleRoleOptions(en), muscleRole) { muscleRole = it } }
+                item { FilterSection(if (en) "Training type" else "Antrenman türü", categoryOptions(en), category) { category = it } }
+                item { HorizontalDivider(color = HedefitColors.Divider) }
+                item { Text(if (en) "More precise" else "Daha seçici", color = HedefitColors.Lime, style = MaterialTheme.typography.labelLarge) }
+                item { FilterSection(if (en) "Level" else "Seviye", levelOptions(en), level) { level = it } }
+                item { FilterSection(if (en) "Equipment" else "Ekipman", equipmentOptions(en), equipment) { equipment = it } }
+                item { FilterSection(if (en) "Movement" else "Hareket yönü", forceOptions(en), force) { force = it } }
+                item { FilterSection(if (en) "Structure" else "Yapı", mechanicOptions(en), mechanic) { mechanic = it } }
+            }
+            Button(
+                onClick = { onSearch(query, muscle, equipment, level, environment, muscleRole, force, mechanic, category); showFilters = false },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime),
+            ) { Text(if (en) "Show matching movements" else "Uygun hareketleri göster") }
+        }
+    }
     selected?.let { exercise ->
         AlertDialog(onDismissRequest = { selected = null }, title = { Text(exercise.name) }, text = { LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item { ExerciseMotionPlayer(exercise.imageUrls, exercise.name, Modifier.fillMaxWidth().height(230.dp).clip(RoundedCornerShape(18.dp))) }
-            item { Text("${exercise.primaryMuscles.joinToString()} • ${exercise.equipment}", color = HedefitColors.Lime) }
+            item { MuscleConnections(exercise, en) }
             item { Text(if (en) "How to perform" else "Nasıl yapılır?", style = MaterialTheme.typography.titleMedium) }
             items(exercise.instructions.size) { index -> Text("${index + 1}. ${exercise.instructions[index]}") }
         } }, dismissButton = { TextButton(onClick = { selected = null }) { Text(if (en) "Close" else "Kapat") } }, confirmButton = { Button(onClick = { onUse(exercise); selected = null }, colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Text(if (en) "Add to program" else "Programda kullan") } })
     }
     if (showCustom) CustomExerciseDialog(onDismiss = { showCustom = false }) { exercise -> onUse(exercise); showCustom = false }
+}
+
+private fun environmentOptions(en: Boolean) = listOf(
+    "" to if (en) "Any" else "Tümü",
+    "gym" to if (en) "Gym" else "Spor salonu",
+    "home" to if (en) "Home" else "Ev",
+)
+
+private fun muscleRoleOptions(en: Boolean) = listOf(
+    "primary" to if (en) "Main target" else "Ana hedef",
+    "secondary" to if (en) "Supporting" else "Yardımcı",
+    "" to if (en) "Either" else "Her ikisi",
+)
+
+private fun categoryOptions(en: Boolean) = listOf(
+    "" to if (en) "All" else "Tümü",
+    "strength" to if (en) "Strength" else "Kuvvet",
+    "stretching" to if (en) "Mobility" else "Mobilite",
+    "plyometrics" to if (en) "Explosive" else "Patlayıcı",
+    "cardio" to if (en) "Cardio" else "Kardiyo",
+)
+
+private fun levelOptions(en: Boolean) = listOf(
+    "" to if (en) "All" else "Tümü",
+    "beginner" to if (en) "Easy" else "Kolay",
+    "intermediate" to if (en) "Medium" else "Orta",
+    "expert" to if (en) "Advanced" else "İleri",
+)
+
+private fun equipmentOptions(en: Boolean) = listOf(
+    "" to if (en) "All" else "Tümü",
+    "body only" to if (en) "Bodyweight" else "Vücut ağırlığı",
+    "dumbbell" to if (en) "Dumbbell" else "Dambıl",
+    "barbell" to if (en) "Barbell" else "Halter",
+    "machine" to if (en) "Machine" else "Makine",
+    "cable" to if (en) "Cable" else "Kablo",
+    "bands" to if (en) "Band" else "Direnç bandı",
+    "kettlebells" to "Kettlebell",
+)
+
+private fun forceOptions(en: Boolean) = listOf(
+    "" to if (en) "All" else "Tümü",
+    "push" to if (en) "Push" else "İtiş",
+    "pull" to if (en) "Pull" else "Çekiş",
+    "static" to if (en) "Static" else "Statik",
+)
+
+private fun mechanicOptions(en: Boolean) = listOf(
+    "" to if (en) "All" else "Tümü",
+    "compound" to if (en) "Compound" else "Bileşik",
+    "isolation" to if (en) "Isolation" else "İzolasyon",
+)
+
+private fun muscleOptions(en: Boolean) = if (en) listOf(
+    "" to "All", "arms" to "Arms · all", "back" to "Back · all", "legs" to "Legs · all", "core" to "Core · all", "hips" to "Hips · all", "chest" to "Chest", "lats" to "Lats", "middle back" to "Mid back", "lower back" to "Lower back", "traps" to "Traps", "neck" to "Neck",
+    "shoulders" to "Shoulders", "biceps" to "Front arm · biceps", "triceps" to "Back arm · triceps", "forearms" to "Forearm & wrist", "abdominals" to "Abs",
+    "glutes" to "Glutes", "quadriceps" to "Front thigh · quads", "hamstrings" to "Back thigh · hamstrings", "calves" to "Calves", "adductors" to "Inner thigh · adductors", "abductors" to "Outer hip · abductors",
+) else listOf(
+    "" to "Tümü", "arms" to "Kollar · tümü", "back" to "Sırt · tümü", "legs" to "Bacaklar · tümü", "core" to "Merkez bölge · tümü", "hips" to "Kalça çevresi · tümü", "chest" to "Göğüs", "lats" to "Kanat sırtı (lat)", "middle back" to "Orta sırt (romboid)", "lower back" to "Bel (erektör spinae)", "traps" to "Trapez", "neck" to "Boyun",
+    "shoulders" to "Omuz (deltoid)", "biceps" to "Ön kol (biseps)", "triceps" to "Arka kol (triseps)", "forearms" to "Bilek ve ön kol", "abdominals" to "Karın",
+    "glutes" to "Kalça (gluteal)", "quadriceps" to "Ön uyluk (kuadriseps)", "hamstrings" to "Arka uyluk (hamstring)", "calves" to "Baldır", "adductors" to "İç uyluk (addüktör)", "abductors" to "Dış kalça (abdüktör)",
+)
+
+@Composable
+private fun MuscleConnections(exercise: ExerciseCatalogData, en: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(if (en) "Muscles involved" else "Çalışan kas grupları", style = MaterialTheme.typography.titleMedium)
+        Text(
+            (if (en) "Main target · " else "Ana hedef · ") + exercise.primaryMuscles.joinToString(),
+            color = HedefitColors.Lime,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            if (exercise.secondaryMuscles.isEmpty()) {
+                if (en) "Supporting muscles · No additional group listed" else "Yardımcı kaslar · Ek grup belirtilmemiş"
+            } else {
+                (if (en) "Supporting muscles · " else "Yardımcı kaslar · ") + exercise.secondaryMuscles.joinToString()
+            },
+            color = HedefitColors.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(exercise.equipment.ifBlank { if (en) "No equipment" else "Ekipmansız" }, color = HedefitColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
+    }
 }
 
 @Composable

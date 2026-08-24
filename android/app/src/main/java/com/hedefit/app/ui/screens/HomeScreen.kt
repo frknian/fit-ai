@@ -86,6 +86,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import java.time.LocalDate
+import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.URL
 
 @Composable
 fun HomeScreen(
@@ -116,7 +121,7 @@ fun HomeScreen(
             contentPadding = PaddingValues(top = 16.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { HomeHeader(data?.profile?.displayName ?: if (en) "Athlete" else "Sporcu", onOpenProfile, onOpenNotifications, en) }
+            item { HomeHeader(data?.profile?.displayName ?: if (en) "Athlete" else "Sporcu", data?.profile?.avatarUrl, onOpenProfile, onOpenNotifications, en) }
             if (data == null) {
                 item { HomeDataState(loading, error, onRetry) }
                 return@LazyColumn
@@ -165,20 +170,24 @@ private fun RouteHomeMetric(label: String, value: String) = Column(horizontalAli
 }
 
 @Composable
-private fun HomeHeader(name: String, onOpenProfile: () -> Unit, onOpenNotifications: () -> Unit, en: Boolean) {
+private fun HomeHeader(name: String, avatarUrl: String?, onOpenProfile: () -> Unit, onOpenNotifications: () -> Unit, en: Boolean) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(if (en) "Hello, $name" else "Merhaba, $name", style = MaterialTheme.typography.headlineSmall)
             Text(if (en) "Small, clear steps for today." else "Bugün için küçük, net adımlar.", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
         }
         IconButton(onClick = onOpenNotifications) { Icon(Icons.Default.NotificationsNone, "Bildirimler", tint = HedefitColors.TextSecondary) }
-        Box(
-            Modifier.size(48.dp).background(HedefitColors.Lime, CircleShape).padding(2.dp)
-                .background(HedefitColors.SurfaceHigh, CircleShape).clickable(onClick = onOpenProfile),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("FK", color = HedefitColors.Lime, fontWeight = FontWeight.Bold)
-        }
+        HomeAvatar(avatarUrl, name, Modifier.size(48.dp).clickable(onClick = onOpenProfile))
+    }
+}
+
+@Composable
+private fun HomeAvatar(url: String?, name: String, modifier: Modifier) {
+    var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(url) { bitmap = url?.let { address -> withContext(Dispatchers.IO) { runCatching { URL(address).openStream().use(BitmapFactory::decodeStream) }.getOrNull() } } }
+    Box(modifier.background(HedefitColors.Lime, CircleShape).padding(2.dp).background(HedefitColors.SurfaceHigh, CircleShape), contentAlignment = Alignment.Center) {
+        bitmap?.let { Image(it.asImageBitmap(), contentDescription = "Profil fotoğrafı", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+            ?: Text(name.take(2).uppercase(), color = HedefitColors.Lime, fontWeight = FontWeight.Bold)
     }
 }
 

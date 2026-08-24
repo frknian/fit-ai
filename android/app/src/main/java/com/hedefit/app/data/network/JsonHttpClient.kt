@@ -49,6 +49,32 @@ class JsonHttpClient {
             connection.disconnect()
         }
     }
+
+    suspend fun requestBytes(
+        url: String,
+        method: String,
+        headers: Map<String, String>,
+        body: ByteArray,
+        timeoutMs: Int = 45_000,
+    ): HttpResponse = withContext(Dispatchers.IO) {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = 15_000
+            readTimeout = timeoutMs
+            instanceFollowRedirects = false
+            doOutput = true
+            setRequestProperty("Accept", "application/json")
+            headers.forEach { (name, value) -> setRequestProperty(name, value) }
+        }
+        try {
+            connection.outputStream.use { it.write(body) }
+            val status = connection.responseCode
+            val stream = if (status >= 400) connection.errorStream else connection.inputStream
+            HttpResponse(status, stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty(), connection.headerFields.filterKeys { it != null })
+        } finally {
+            connection.disconnect()
+        }
+    }
 }
 
 fun HttpResponse.requireSuccess(defaultMessage: String): HttpResponse {

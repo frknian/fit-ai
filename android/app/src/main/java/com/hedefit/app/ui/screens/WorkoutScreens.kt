@@ -340,13 +340,7 @@ private fun RegionalProgramBrowser(
     onSelectRegion: (Pair<String, String>) -> Unit,
     onCreateProgram: (String, String) -> Unit,
 ) {
-    val regions = if (en) listOf(
-        "chest" to "Chest", "back" to "Back", "shoulders" to "Shoulders", "biceps" to "Biceps", "triceps" to "Triceps",
-        "abdominals" to "Abs", "quadriceps" to "Quads", "hamstrings" to "Hamstrings", "glutes" to "Glutes", "calves" to "Calves",
-    ) else listOf(
-        "chest" to "Göğüs", "back" to "Sırt", "shoulders" to "Omuz", "biceps" to "Biseps", "triceps" to "Arka kol",
-        "abdominals" to "Karın", "quadriceps" to "Ön bacak", "hamstrings" to "Arka bacak", "glutes" to "Kalça", "calves" to "Baldır",
-    )
+    val regions = regionalMuscleRegions(en)
     var selectedExercise by remember { mutableStateOf<ExerciseCatalogData?>(null) }
     ScreenContainer(padding) {
         LazyColumn(
@@ -360,10 +354,10 @@ private fun RegionalProgramBrowser(
                 items(regions.chunked(2)) { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         row.forEach { region ->
-                            HedefitCard(Modifier.weight(1f).height(112.dp), onClick = { onSelectRegion(region) }) {
+                            HedefitCard(Modifier.weight(1f).height(126.dp), onClick = { onSelectRegion(region.key to region.label) }) {
                                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-                                    Box(Modifier.size(40.dp).background(if (region.first == "back") HedefitColors.Lime.copy(alpha = .18f) else HedefitColors.SurfaceHigh, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Default.FitnessCenter, null, tint = HedefitColors.Lime) }
-                                    Text(region.second, style = MaterialTheme.typography.titleMedium)
+                                    Box(Modifier.size(40.dp).background(HedefitColors.Lime.copy(alpha = .14f), CircleShape), contentAlignment = Alignment.Center) { Text(region.emoji, style = MaterialTheme.typography.titleLarge) }
+                                    Text(region.label, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
@@ -404,7 +398,24 @@ private fun RegionalProgramBrowser(
             title = { Text(exercise.name) },
             text = { LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 item { ExerciseMotionPlayer(exercise.imageUrls, exercise.name, Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(18.dp))) }
-                item { Text(exercise.primaryMuscles.joinToString(), color = HedefitColors.Lime) }
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(if (en) "Muscles involved" else "Çalışan kas grupları", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            (if (en) "Main target · " else "Ana hedef · ") + exercise.primaryMuscles.joinToString(),
+                            color = HedefitColors.Lime,
+                        )
+                        Text(
+                            if (exercise.secondaryMuscles.isEmpty()) {
+                                if (en) "Supporting muscles · No additional group listed" else "Yardımcı kaslar · Ek grup belirtilmemiş"
+                            } else {
+                                (if (en) "Supporting muscles · " else "Yardımcı kaslar · ") + exercise.secondaryMuscles.joinToString()
+                            },
+                            color = HedefitColors.TextSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
                 item { Text(if (en) "How to perform" else "Nasıl yapılır?", style = MaterialTheme.typography.titleMedium) }
                 items(exercise.instructions.size) { index -> Text("${index + 1}. ${exercise.instructions[index]}") }
             } },
@@ -412,6 +423,21 @@ private fun RegionalProgramBrowser(
         )
     }
 }
+
+private data class MuscleRegion(val key: String, val label: String, val emoji: String)
+
+/** The 17 distinct muscles stored in exercises.json, plus the useful aggregate back entry. */
+private fun regionalMuscleRegions(en: Boolean) = if (en) listOf(
+    MuscleRegion("chest", "Chest", "🫁"), MuscleRegion("back", "Back · all", "🔙"),
+    MuscleRegion("lats", "Lats", "🪽"), MuscleRegion("middle back", "Mid back", "🧩"), MuscleRegion("lower back", "Lower back", "↕️"), MuscleRegion("traps", "Traps", "🪨"), MuscleRegion("neck", "Neck", "🧣"),
+    MuscleRegion("shoulders", "Shoulders", "🏋️"), MuscleRegion("biceps", "Front arm · biceps", "💪"), MuscleRegion("triceps", "Back arm · triceps", "🦾"), MuscleRegion("forearms", "Forearm & wrist", "✊"), MuscleRegion("abdominals", "Abs", "🎯"),
+    MuscleRegion("quadriceps", "Front thigh · quads", "🦵"), MuscleRegion("hamstrings", "Back thigh · hamstrings", "🦿"), MuscleRegion("glutes", "Glutes", "🍑"), MuscleRegion("calves", "Calves", "🧦"), MuscleRegion("adductors", "Inner thigh · adductors", "↔️"), MuscleRegion("abductors", "Outer hip · abductors", "↗️"),
+) else listOf(
+    MuscleRegion("chest", "Göğüs", "🫁"), MuscleRegion("back", "Sırt · tümü", "🔙"),
+    MuscleRegion("lats", "Kanat sırtı (lat)", "🪽"), MuscleRegion("middle back", "Orta sırt (romboid)", "🧩"), MuscleRegion("lower back", "Bel (erektör spinae)", "↕️"), MuscleRegion("traps", "Trapez", "🪨"), MuscleRegion("neck", "Boyun", "🧣"),
+    MuscleRegion("shoulders", "Omuz (deltoid)", "🏋️"), MuscleRegion("biceps", "Ön kol (biseps)", "💪"), MuscleRegion("triceps", "Arka kol (triseps)", "🦾"), MuscleRegion("forearms", "Bilek ve ön kol", "✊"), MuscleRegion("abdominals", "Karın", "🎯"),
+    MuscleRegion("quadriceps", "Ön uyluk (kuadriseps)", "🦵"), MuscleRegion("hamstrings", "Arka uyluk (hamstring)", "🦿"), MuscleRegion("glutes", "Kalça (gluteal)", "🍑"), MuscleRegion("calves", "Baldır", "🧦"), MuscleRegion("adductors", "İç uyluk (addüktör)", "↔️"), MuscleRegion("abductors", "Dış kalça (abdüktör)", "↗️"),
+)
 
 @Composable
 private fun WeekStrip() {

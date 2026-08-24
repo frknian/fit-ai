@@ -16,8 +16,8 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as { query?: unknown; grams?: unknown };
   const query = typeof body.query === "string" ? body.query.trim() : "";
   const grams = Number(body.grams);
-  if (query.length < 2 || query.length > 160) {
-    return Response.json({ error: "Yemek adı 2–160 karakter arasında olmalı." }, { status: 400 });
+  if (query.length < 2 || query.length > 1_000) {
+    return Response.json({ error: "Yemek adı veya tarif 2–1000 karakter arasında olmalı." }, { status: 400 });
   }
   if (!Number.isFinite(grams) || grams <= 0 || grams > 5000) {
     return Response.json({ error: "Gramaj 1–5000 gram arasında olmalı." }, { status: 400 });
@@ -54,6 +54,12 @@ export async function POST(request: Request) {
           carbohydrates: item.carbohydrates,
           fat: item.fat,
           fiber: item.fiber,
+          sugar: item.sugar,
+          sodiumMg: item.sodiumMg,
+          potassiumMg: item.potassiumMg,
+          calciumMg: item.calciumMg,
+          ironMg: item.ironMg,
+          vitaminCMg: item.vitaminCMg,
         },
       }],
       totals: {
@@ -62,6 +68,12 @@ export async function POST(request: Request) {
         carbohydrates: item.carbohydrates,
         fat: item.fat,
         fiber: item.fiber,
+        sugar: item.sugar,
+        sodiumMg: item.sodiumMg,
+        potassiumMg: item.potassiumMg,
+        calciumMg: item.calciumMg,
+        ironMg: item.ironMg,
+        vitaminCMg: item.vitaminCMg,
       },
       warnings,
       confidence: item.confidence,

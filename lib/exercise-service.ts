@@ -28,8 +28,26 @@ export function normalizeExercise(value: unknown): Exercise | null {
   };
 }
 
-const exercises = Object.freeze((exerciseData as unknown[]).map(normalizeExercise).filter((exercise): exercise is Exercise => Boolean(exercise)));
-const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
+const importedExercises = (exerciseData as unknown[]).map(normalizeExercise).filter((exercise): exercise is Exercise => Boolean(exercise));
+
+/**
+ * Free Exercise DB contains a small number of entries that describe the same
+ * movement under two names. Keep the original rows addressable so old workout
+ * plans do not break, but expose only the clearer canonical entry in catalogs.
+ * Technique/equipment/grip variants are deliberately not merged.
+ */
+const duplicateExerciseNames = new Set([
+  "Barbell Full Squat",
+  "Calf Raise On A Dumbbell",
+  "Decline Smith Press",
+  "Incline Push-Up Medium",
+  "Oblique Crunches - On The Floor",
+  "Seated Flat Bench Leg Pull-In",
+  "Triceps Overhead Extension with Rope",
+]);
+
+const exercises = Object.freeze(importedExercises.filter((exercise) => !duplicateExerciseNames.has(exercise.name)));
+const exerciseById = new Map(importedExercises.map((exercise) => [exercise.id, exercise]));
 
 export const getAllExercises = () => [...exercises];
 export const getExerciseById = (id: string) => exerciseById.get(id.replace(/[^a-zA-Z0-9_-]/g, "")) ?? null;
@@ -74,18 +92,39 @@ export function searchExercises(query: string) {
 
 export function filterExercises(filters: ExerciseFilters = {}) {
   const search = fold(filters.search || "").slice(0, 100);
-  const muscle = fold(filters.muscle || "");
+  const muscleTargets = expandMuscleFilter(filters.muscle || "");
   const equipment = fold(filters.equipment || "");
   const level = fold(filters.level || "");
   const category = fold(filters.category || "");
   return exercises.filter((exercise, index) => {
     return (!search || searchHaystacks[index].includes(search))
-      && (!muscle || exercise.primaryMuscles.some((item) => fold(item) === muscle) || exercise.secondaryMuscles.some((item) => fold(item) === muscle))
+      && (!muscleTargets.length || [...exercise.primaryMuscles, ...exercise.secondaryMuscles].some((item) => muscleTargets.includes(fold(item))))
       && (!equipment || fold(exercise.equipment || "none") === equipment)
       && (!level || fold(exercise.level) === level)
       && (!category || fold(exercise.category) === category);
   });
 }
+
+const muscleGroups: Record<string, string[]> = {
+  arms: ["biceps", "triceps", "forearms"],
+  back: ["lats", "middle back", "lower back", "traps"],
+  core: ["abdominals", "lower back"],
+  hips: ["glutes", "adductors", "abductors"],
+  legs: ["quadriceps", "hamstrings", "calves", "adductors", "abductors", "glutes"],
+};
+
+/** Expands a UI region (for example `back`) into the source catalog muscles. */
+export function expandMuscleFilter(muscle: string): string[] {
+  const normalized = fold(muscle);
+  if (!normalized) return [];
+  return muscleGroups[normalized] || [normalized];
+}
+
+export const getExerciseCatalogStats = () => ({
+  imported: importedExercises.length,
+  visible: exercises.length,
+  hiddenDuplicates: importedExercises.length - exercises.length,
+});
 
 export const getExercisesByMuscle = (muscle: string) => filterExercises({ muscle });
 export const getExercisesByEquipment = (equipment: string) => filterExercises({ equipment });

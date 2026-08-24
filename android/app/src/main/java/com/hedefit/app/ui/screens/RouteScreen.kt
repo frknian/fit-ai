@@ -69,7 +69,10 @@ fun RouteScreen(onBack: () -> Unit, onCompleted: (RouteSnapshot, String) -> Unit
             || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (granted) {
             permissionMessage = null
-            if (pendingStart) startRoute(context)
+            if (pendingStart) {
+                snapshot = startRoute(context, store)
+                finished = null
+            }
         } else permissionMessage = if (en) "Location permission is required to draw and record your GPS route." else "GPS rotanı çizmek ve kaydetmek için konum izni gerekli."
         pendingStart = false
     }
@@ -110,7 +113,10 @@ fun RouteScreen(onBack: () -> Unit, onCompleted: (RouteSnapshot, String) -> Unit
                 val final = store.stop(); stopRoute(context); snapshot = final; finished = final; onCompleted(final, activityType)
             }, icon = Icons.Default.Stop)
             else PrimaryButton(if (en) "Start GPS Recording" else "GPS Kaydını Başlat", onClick = {
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) startRoute(context)
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    snapshot = startRoute(context, store)
+                    finished = null
+                }
                 else {
                     pendingStart = true
                     permissionLauncher.launch(buildList { add(Manifest.permission.ACCESS_FINE_LOCATION); add(Manifest.permission.ACCESS_COARSE_LOCATION); if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS) }.toTypedArray())
@@ -145,7 +151,13 @@ private fun routePath(points: List<RoutePoint>, width: Float, height: Float): Pa
     return Path().apply { points.forEachIndexed { index, point -> val x = ((point.longitude - minLng) / lngSpan * width).toFloat(); val y = (height - (point.latitude - minLat) / latSpan * height).toFloat(); if (index == 0) moveTo(x, y) else lineTo(x, y) } }
 }
 
-private fun startRoute(context: Context) = ContextCompat.startForegroundService(context, Intent(context, RouteTrackingService::class.java))
+private fun startRoute(context: Context, store: RouteTrackingStore): RouteSnapshot {
+    // Start the visible timer at the tap, rather than waiting for the service and
+    // the next one-second UI refresh to create the route session.
+    val started = store.start()
+    ContextCompat.startForegroundService(context, Intent(context, RouteTrackingService::class.java))
+    return started
+}
 private fun stopRoute(context: Context) = context.startService(Intent(context, RouteTrackingService::class.java).setAction(RouteTrackingService.ACTION_STOP))
 
 private fun shareRoute(context: Context, snapshot: RouteSnapshot, activityType: String, unitSystem: String) {

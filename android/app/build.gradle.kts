@@ -44,6 +44,11 @@ android {
         buildConfigField("String", "SUPABASE_ANON_KEY", quoted(appConfig("NEXT_PUBLIC_SUPABASE_ANON_KEY")))
         buildConfigField(
             "String",
+            "LOCAL_COACH_MODEL_URL",
+            quoted(appConfig("LOCAL_COACH_MODEL_URL", "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf?download=true")),
+        )
+        buildConfigField(
+            "String",
             "GOOGLE_WEB_CLIENT_ID",
             quoted(appConfig(
                 "GOOGLE_WEB_CLIENT_ID",
@@ -80,6 +85,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(project(":local-ai"))
     implementation(platform("androidx.compose:compose-bom:2025.09.00"))
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.activity:activity-compose:1.11.0")

@@ -12,6 +12,7 @@ data class AppPreferences(
     val stepGoal: Int = 10_000,
     val weeklyWorkoutGoal: Int = 3,
     val coachName: String = "",
+    val localCoachEnabled: Boolean = false,
     val unitSystem: String = "metric",
 )
 
@@ -29,6 +30,7 @@ class AppPreferencesStore(context: Context) {
         stepGoal = preferences.getInt("step_goal", 10_000).coerceIn(1_000, 50_000),
         weeklyWorkoutGoal = preferences.getInt("weekly_workout_goal", 3).coerceIn(1, 7),
         coachName = preferences.getString("coach_name", "").orEmpty().take(24),
+        localCoachEnabled = preferences.getBoolean("local_coach_enabled", false),
         unitSystem = preferences.getString("unit_system", "metric").let { if (it == "imperial") "imperial" else "metric" },
     )
 
@@ -43,6 +45,7 @@ class AppPreferencesStore(context: Context) {
             .putInt("step_goal", value.stepGoal)
             .putInt("weekly_workout_goal", value.weeklyWorkoutGoal)
             .putString("coach_name", value.coachName.take(24))
+            .putBoolean("local_coach_enabled", value.localCoachEnabled)
             .putString("unit_system", value.unitSystem)
             .apply()
     }

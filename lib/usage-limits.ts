@@ -4,14 +4,14 @@ import { bearerToken } from "./api-auth.ts";
 
 export type UsageFeature = "chat" | "photo" | "text_nutrition" | "weekly_review" | "nutrition_advice" | "plan";
 
-// Premium'da sınır YOK — bkz. db/migrations/20260821_premium_unlimited_ai_usage.sql
-// `null`, SQL fonksiyonuna "bu özellik için sınır
-// kontrolü yapma" der; TS tarafında `Number.POSITIVE_INFINITY`'e çevrilir
-// (bkz. checkAndConsumeUsage). Ücretsiz plan DEĞİŞMEDİ.
+// Fit Koç sohbeti tüm kullanıcılarda, diğer AI özellikleri ise premium'da
+// sınırsızdır — bkz. db/migrations/20260821_premium_unlimited_ai_usage.sql.
+// `null`, SQL fonksiyonuna "bu özellik için sınır kontrolü yapma" der; TS
+// tarafında `Number.POSITIVE_INFINITY`'e çevrilir (bkz. checkAndConsumeUsage).
 const DAILY_LIMITS = {
-  free: { chat: 5, photo: 1, text_nutrition: 3, weekly_review: 1, nutrition_advice: 5, plan: 3 },
+  free: { chat: null, photo: 1, text_nutrition: 3, weekly_review: 1, nutrition_advice: 5, plan: 3 },
   premium: { chat: null, photo: null, text_nutrition: null, weekly_review: null, nutrition_advice: null, plan: null },
-} as const satisfies { free: Record<UsageFeature, number>; premium: Record<UsageFeature, number | null> };
+} as const satisfies Record<"free" | "premium", Record<UsageFeature, number | null>>;
 
 // Eski (geçiş dönemi) yol yalnız db/migrations/20260726_usage_limits.sql'deki
 // increment_usage_counter'ı çağırır; o fonksiyon NULL'ı "sınırsız" olarak
@@ -131,7 +131,8 @@ async function legacyCheckAndConsumeUsage(
   // Eski increment_usage_counter NULL'ı sınırsız olarak yorumlamaz (integer
   // parametre); bu yüzden burada gerçek NULL yerine LEGACY_UNLIMITED_SENTINEL
   // kullanılır (bkz. yukarıdaki sabitin açıklaması).
-  const limit = isPremium ? (DAILY_LIMITS.premium[feature] ?? LEGACY_UNLIMITED_SENTINEL) : DAILY_LIMITS.free[feature];
+  const configuredLimit = isPremium ? DAILY_LIMITS.premium[feature] : DAILY_LIMITS.free[feature];
+  const limit = configuredLimit ?? LEGACY_UNLIMITED_SENTINEL;
 
   let { data, error } = await client.rpc("increment_usage_counter", { p_feature: feature, p_limit: limit }).single();
   // text_nutrition sayacı sonradan eklendi. Üretim migration'ı henüz
@@ -149,7 +150,12 @@ async function legacyCheckAndConsumeUsage(
     return { error: Response.json({ error: "Kullanım sınırı kontrol edilemedi." }, { status: 500 }) };
   }
   const result = data as { allowed: boolean; current_count: number; effective_limit: number };
-  return { allowed: result.allowed, used: result.current_count, limit: result.effective_limit ?? limit, isPremium };
+  return {
+    allowed: configuredLimit === null ? true : result.allowed,
+    used: result.current_count,
+    limit: configuredLimit === null ? Number.POSITIVE_INFINITY : (result.effective_limit ?? limit),
+    isPremium,
+  };
 }
 
 /**

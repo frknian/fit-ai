@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.MonitorWeight
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
@@ -57,6 +58,8 @@ import com.hedefit.app.ui.settings.MeasurementUnits
 import com.hedefit.app.data.model.DashboardData
 import com.hedefit.app.data.model.BodyMeasurementData
 import com.hedefit.app.data.model.WorkoutSessionData
+import com.hedefit.app.data.model.RouteActivityData
+import com.hedefit.app.route.formatDuration
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -94,7 +97,7 @@ fun ProgressScreen(
                     IconButton(onClick = {}) { Icon(Icons.Default.CalendarMonth, "Takvim", tint = HedefitColors.Lime) }
                 }
             }
-            item { TimeRangeSelector(range) { range = it } }
+            item { TimeRangeSelector(range, en) { range = it } }
             if (expanded) {
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.Top) {
@@ -105,6 +108,7 @@ fun ProgressScreen(
                         Column(Modifier.weight(.8f), verticalArrangement = Arrangement.spacedBy(15.dp)) {
                             ProgressMetrics(filteredData, data?.sessions.orEmpty(), weeklyWorkoutGoal, en) { showGoalEditor = true }
                             WorkoutHistory(filteredData, en)
+                            RouteHistory(filteredData?.routeActivities.orEmpty(), en, unitSystem)
                             WeeklyReviewCard(filteredData, en)
                         }
                     }
@@ -113,6 +117,7 @@ fun ProgressScreen(
                 item { WeightChart(range, filteredData, en, unitSystem) }
                 item { ProgressMetrics(filteredData, data?.sessions.orEmpty(), weeklyWorkoutGoal, en) { showGoalEditor = true } }
                 item { WorkoutHistory(filteredData, en) }
+                item { RouteHistory(filteredData?.routeActivities.orEmpty(), en, unitSystem) }
                 item { BodyMeasurements(filteredData, en, unitSystem) { showMeasurementEditor = true } }
                 item { WeeklyReviewCard(filteredData, en) }
             }
@@ -137,11 +142,12 @@ private fun filterProgressData(data: DashboardData?, range: String): DashboardDa
     return data.copy(
         measurements = data.measurements.filter { runCatching { LocalDate.parse(it.date.take(10)) >= cutoff }.getOrDefault(false) },
         sessions = data.sessions.filter { sessionDate(it) >= cutoff },
+        routeActivities = data.routeActivities.filter { routeDate(it) >= cutoff },
     )
 }
 
 @Composable
-private fun TimeRangeSelector(selected: String, onSelect: (String) -> Unit) {
+private fun TimeRangeSelector(selected: String, en: Boolean, onSelect: (String) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf("7G", "30G", "90G", "1Y", "Tümü").forEach { item ->
             val active = item == selected
@@ -150,7 +156,7 @@ private fun TimeRangeSelector(selected: String, onSelect: (String) -> Unit) {
                     .clickable { onSelect(item) }.padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(item, color = if (active) HedefitColors.OnLime else HedefitColors.TextPrimary, style = MaterialTheme.typography.labelLarge)
+                Text(if (en) when (item) { "7G" -> "7D"; "30G" -> "30D"; "90G" -> "90D"; "1Y" -> "1Y"; else -> "All" } else item, color = if (active) HedefitColors.OnLime else HedefitColors.TextPrimary, style = MaterialTheme.typography.labelLarge)
             }
         }
     }
@@ -194,7 +200,7 @@ private fun ProgressMetrics(data: DashboardData?, allSessions: List<WorkoutSessi
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MetricCard(Icons.Default.FitnessCenter, "${sessions.size}", if (en) "Completed workouts" else "Tamamlanan antrenman", Modifier.weight(1f))
-            MetricCard(Icons.Default.Timer, "$totalMinutes dk", if (en) "Training time" else "Toplam antrenman süresi", Modifier.weight(1f))
+            MetricCard(Icons.Default.Timer, "$totalMinutes ${if (en) "min" else "dk"}", if (en) "Training time" else "Toplam antrenman süresi", Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MetricCard(Icons.Default.LocalFireDepartment, "$totalCalories kcal", if (en) "Workout calories" else "Antrenman kalorisi", Modifier.weight(1f), HedefitColors.Warning)
@@ -236,11 +242,50 @@ private fun WorkoutHistory(data: DashboardData?, en: Boolean) {
                         Text(formatDate(session.completedAt.take(10), en), style = MaterialTheme.typography.titleMedium)
                         Text(if (en) "${session.completedExercises}/${session.totalExercises} movements completed" else "${session.completedExercises}/${session.totalExercises} hareket tamamlandı", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("${session.durationSeconds / 60} dk • ${session.calories} kcal", color = HedefitColors.Lime, style = MaterialTheme.typography.labelLarge)
+                    Text("${session.durationSeconds / 60} ${if (en) "min" else "dk"} • ${session.calories} kcal", color = HedefitColors.Lime, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun RouteHistory(routes: List<RouteActivityData>, en: Boolean, unitSystem: String) {
+    val totalDistance = routes.sumOf { it.distanceMeters }
+    val totalDuration = routes.sumOf { it.durationSeconds }
+    HedefitCard(Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SectionTitle(if (en) "Hedefit Route history" else "Hedefit Rota geçmişi")
+            if (routes.isEmpty()) {
+                Text(if (en) "Your completed GPS routes will appear here." else "Tamamladığın GPS rotaları burada görünecek.", color = HedefitColors.TextSecondary)
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MetricCard(Icons.Default.Route, MeasurementUnits.formatDistance(totalDistance, unitSystem), if (en) "Total distance" else "Toplam mesafe", Modifier.weight(1f))
+                    MetricCard(Icons.Default.Timer, formatDuration(totalDuration), if (en) "Route time" else "Rota süresi", Modifier.weight(1f))
+                }
+                routes.take(5).forEach { route ->
+                    val pace = if (route.distanceMeters >= 50) route.durationSeconds / (route.distanceMeters / 1000.0) else null
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Route, null, tint = HedefitColors.Lime, modifier = Modifier.size(20.dp))
+                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                            Text(routeActivityLabel(route.activityType, en), style = MaterialTheme.typography.titleMedium)
+                            Text(formatDate(route.startedAt.take(10), en), color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(MeasurementUnits.formatDistance(route.distanceMeters, unitSystem), color = HedefitColors.Lime, style = MaterialTheme.typography.labelLarge)
+                            Text("${formatDuration(route.durationSeconds)} • ${MeasurementUnits.formatPace(pace?.toInt(), unitSystem)}", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun routeActivityLabel(type: String, en: Boolean) = when (type.lowercase()) {
+    "run", "running", "koşu" -> if (en) "Run" else "Koşu"
+    "ride", "cycling", "bisiklet" -> if (en) "Ride" else "Bisiklet"
+    else -> if (en) "Walk" else "Yürüyüş"
 }
 
 @Composable
@@ -367,6 +412,7 @@ private fun MeasurementInputRow(
 private fun measurementDelta(first: Double?, latest: Double?, unitSystem: String) = if (first != null && latest != null) MeasurementUnits.formatLength(latest - first, unitSystem, signed = true).replace('.', ',') else null
 
 private fun sessionDate(session: WorkoutSessionData): LocalDate = runCatching { Instant.parse(session.completedAt).atZone(ZoneId.systemDefault()).toLocalDate() }.recoverCatching { LocalDate.parse(session.completedAt.take(10)) }.getOrDefault(LocalDate.MIN)
+private fun routeDate(route: RouteActivityData): LocalDate = runCatching { Instant.parse(route.startedAt).atZone(ZoneId.systemDefault()).toLocalDate() }.recoverCatching { LocalDate.parse(route.startedAt.take(10)) }.getOrDefault(LocalDate.MIN)
 
 private fun formatDate(raw: String, en: Boolean): String = runCatching {
     LocalDate.parse(raw.take(10)).format(DateTimeFormatter.ofPattern(if (en) "d MMM" else "d MMM", if (en) Locale.ENGLISH else Locale("tr", "TR")))

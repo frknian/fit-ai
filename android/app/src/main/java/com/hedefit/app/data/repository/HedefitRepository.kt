@@ -11,6 +11,7 @@ import com.hedefit.app.data.model.ProfileData
 import com.hedefit.app.data.model.ProfileUpdateData
 import com.hedefit.app.data.model.WorkoutExerciseData
 import com.hedefit.app.data.model.WorkoutSessionData
+import com.hedefit.app.data.model.RouteActivityData
 import com.hedefit.app.data.model.WorkoutSetInput
 import com.hedefit.app.data.model.WorkoutFeedbackData
 import com.hedefit.app.data.model.WorkoutScheduleData
@@ -41,6 +42,7 @@ class HedefitRepository(
     private val rest: SupabaseRestClient,
     private val api: HedefitApiClient,
 ) {
+    private val rawHttp = com.hedefit.app.data.network.JsonHttpClient()
     suspend fun saveRoute(snapshot: RouteSnapshot, activityType: String) {
         val points = JSONArray().also { array -> snapshot.points.forEach { point -> array.put(JSONObject().put("lat", point.latitude).put("lng", point.longitude).put("alt", point.altitude).put("time", point.recordedAt)) } }
         rest.insert("route_activities", JSONObject()
@@ -63,13 +65,15 @@ class HedefitRepository(
         val scheduleCall = async { optionalSelect("workout_schedule", "select=*&user_id=eq.$userId&scheduled_date=gte.${date.minusDays(7)}&scheduled_date=lte.${date.plusDays(21)}&order=scheduled_date.asc") }
         val favoritesCall = async { optionalSelect("favorite_meals", "select=*&user_id=eq.$userId&order=updated_at.desc&limit=30") }
         val programsCall = async { optionalSelect("workout_program_collections", "select=*&user_id=eq.$userId&order=updated_at.desc&limit=50") }
+        val routesCall = async { optionalSelect("route_activities", "select=id,activity_type,started_at,ended_at,duration_seconds,distance_meters&user_id=eq.$userId&order=started_at.desc&limit=100") }
 
         val profileJson = profileCall.await().optJSONObject(0)
-        val profile = if (profileJson == null) {
+        val rawProfile = if (profileJson == null) {
             val displayName = auth.currentSession()?.user?.email?.substringBefore('@').orEmpty().ifBlank { "Sporcu" }
             rest.upsert("profiles", JSONObject().put("id", userId).put("display_name", displayName), "id")
             parseProfile(null, userId)
         } else parseProfile(profileJson, userId)
+        val profile = rawProfile.copy(avatarUrl = if (rawProfile.avatarPath != null) signedAvatarUrl(rawProfile.avatarPath) else null)
         val workouts = parseWorkouts(planCall.await().optJSONObject(0)?.optJSONArray("workouts") ?: JSONArray())
         val sessions = parseSessions(sessionsCall.await())
         val nutritionLogs = parseNutritionLogs(nutritionCall.await().optJSONArray("logs") ?: JSONArray())
@@ -92,8 +96,15 @@ class HedefitRepository(
             schedule = parseSchedule(scheduleCall.await()),
             favoriteMeals = parseFavorites(favoritesCall.await()),
             workoutPrograms = parseWorkoutPrograms(programsCall.await()),
+            routeActivities = parseRouteActivities(routesCall.await()),
         )
     }
+
+    suspend fun loadNutritionLogs(date: LocalDate): List<NutritionLogData> =
+        parseNutritionLogs(api.get("/api/nutrition/logs?date=$date").requireSuccess("Beslenme günlüğü yüklenemedi.").jsonObject().optJSONArray("logs") ?: JSONArray())
+
+    suspend fun loadNutritionHistory(): List<NutritionLogData> =
+        parseNutritionLogs(api.get("/api/nutrition/logs").requireSuccess("Beslenme geçmişi yüklenemedi.").jsonObject().optJSONArray("logs") ?: JSONArray())
 
     suspend fun accountStatus(): String {
         val userId = requireNotNull(auth.userId())
@@ -155,6 +166,22 @@ class HedefitRepository(
             .put("updated_at", Instant.now().toString())
         val saved = rest.upsert("profiles", row, "id")
         return parseProfile(saved, userId)
+    }
+
+    suspend fun uploadAvatar(bytes: ByteArray, mimeType: String): Pair<String, String> {
+        require(bytes.isNotEmpty() && bytes.size <= 5 * 1024 * 1024) { "Profil fotoğrafı en fazla 5 MB olabilir." }
+        require(mimeType in setOf("image/jpeg", "image/png", "image/webp")) { "Profil fotoğrafı JPG, PNG veya WebP olmalı." }
+        val userId = requireNotNull(auth.userId())
+        val extension = when (mimeType) { "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
+        val path = "$userId/avatar-${UUID.randomUUID()}.$extension"
+        val response = rawHttp.requestBytes(
+            url = "${com.hedefit.app.BuildConfig.SUPABASE_URL.trimEnd('/')}/storage/v1/object/profile-avatars/$path",
+            method = "POST",
+            headers = mapOf("apikey" to com.hedefit.app.BuildConfig.SUPABASE_ANON_KEY, "Authorization" to "Bearer ${auth.validAccessToken()}", "Content-Type" to mimeType, "x-upsert" to "true"),
+            body = bytes,
+        ).requireSuccess("Profil fotoğrafı yüklenemedi.")
+        rest.update("profiles", "id=eq.$userId", JSONObject().put("avatar_path", path).put("updated_at", Instant.now().toString()))
+        return path to signedAvatarUrl(path)
     }
 
     suspend fun freezeAccount() {
@@ -290,11 +317,34 @@ class HedefitRepository(
     }
 
     suspend fun loadExerciseCatalog(search: String = "", muscle: String = "", equipment: String = "", level: String = "", environment: String = "", muscleRole: String = "", force: String = "", mechanic: String = "", category: String = "", locale: String = "tr"): List<ExerciseCatalogData> {
+        val requestedMuscles = when (muscle) {
+            "arms" -> listOf("biceps", "triceps", "forearms")
+            "back" -> listOf("lats", "middle back", "lower back", "traps")
+            "core" -> listOf("abdominals", "lower back")
+            "hips" -> listOf("glutes", "adductors", "abductors")
+            "legs" -> listOf("quadriceps", "hamstrings", "calves", "adductors", "abductors", "glutes")
+            else -> listOf(muscle)
+        }
+        if (requestedMuscles.size > 1) return coroutineScope {
+            requestedMuscles.map { target ->
+                async { loadExerciseCatalog(search, target, equipment, level, environment, muscleRole, force, mechanic, category, locale) }
+            }.map { it.await() }.flatten().distinctBy(ExerciseCatalogData::id).sortedBy(ExerciseCatalogData::name)
+        }
         val encode = { value: String -> java.net.URLEncoder.encode(value, Charsets.UTF_8.name()) }
         val path = "/api/exercises?limit=1000&search=${encode(search)}&muscle=${encode(muscle)}&equipment=${encode(equipment)}&level=${encode(level)}&environment=${encode(environment)}&muscleRole=${encode(muscleRole)}&force=${encode(force)}&mechanic=${encode(mechanic)}&category=${encode(category)}&locale=${if (locale == "en") "en" else "tr"}"
         val array = api.get(path).requireSuccess("Egzersiz kütüphanesi yüklenemedi.").jsonObject().optJSONArray("items") ?: JSONArray()
         return buildList { for (index in 0 until array.length()) array.optJSONObject(index)?.let { item ->
-            add(ExerciseCatalogData(item.optString("id"), item.optString("name"), item.optString("level"), item.optString("equipment"), item.optJSONArray("primaryMuscles")?.let { a -> List(a.length()) { a.optString(it) } }.orEmpty(), item.optJSONArray("instructions")?.let { a -> List(a.length()) { a.optString(it) } }.orEmpty(), item.optString("category"), item.optJSONArray("images")?.let { a -> List(a.length()) { a.optString(it) }.filter(String::isNotBlank) }.orEmpty()))
+            add(ExerciseCatalogData(
+                id = item.optString("id"),
+                name = item.optString("name"),
+                level = item.optString("level"),
+                equipment = item.optString("equipment"),
+                primaryMuscles = item.optJSONArray("primaryMuscles")?.let { values -> List(values.length()) { values.optString(it) } }.orEmpty(),
+                instructions = item.optJSONArray("instructions")?.let { values -> List(values.length()) { values.optString(it) } }.orEmpty(),
+                category = item.optString("category"),
+                imageUrls = item.optJSONArray("images")?.let { values -> List(values.length()) { values.optString(it) }.filter(String::isNotBlank) }.orEmpty(),
+                secondaryMuscles = item.optJSONArray("secondaryMuscles")?.let { values -> List(values.length()) { values.optString(it) } }.orEmpty(),
+            ))
         } }
     }
 
@@ -354,6 +404,12 @@ class HedefitRepository(
             carbs = nutrition.optDouble("carbohydrates"),
             fat = nutrition.optDouble("fat"),
             fiber = nutrition.optDouble("fiber"),
+            sugar = nutrition.optDouble("sugar"),
+            sodiumMg = nutrition.optDouble("sodiumMg"),
+            potassiumMg = nutrition.optDouble("potassiumMg"),
+            calciumMg = nutrition.optDouble("calciumMg"),
+            ironMg = nutrition.optDouble("ironMg"),
+            vitaminCMg = nutrition.optDouble("vitaminCMg"),
             confidence = item.optDouble("confidence", response.optDouble("confidence", .5)),
         )
     }
@@ -373,7 +429,8 @@ class HedefitRepository(
             .put("inputMethod", "natural_language")
             .put("confidence", estimate.confidence)
             .put("isEstimated", true)
-            .put("metadata", JSONObject().put("client", "android"))
+            .put("metadata", JSONObject().put("client", "android").put("sugar", estimate.sugar).put("sodiumMg", estimate.sodiumMg)
+                .put("potassiumMg", estimate.potassiumMg).put("calciumMg", estimate.calciumMg).put("ironMg", estimate.ironMg).put("vitaminCMg", estimate.vitaminCMg))
         val log = api.post("/api/nutrition/logs", body).requireSuccess("Öğün kaydedilemedi.").jsonObject().getJSONObject("log")
         return parseNutritionLog(log)
     }
@@ -414,7 +471,20 @@ class HedefitRepository(
         targetWeightKg = Regex("hedef:([0-9.]+)").find(rawGoal)?.groupValues?.getOrNull(1)?.toDoubleOrNull(),
         targetWeeks = Regex("hafta:([0-9]+)").find(rawGoal)?.groupValues?.getOrNull(1)?.toIntOrNull(),
         accountStatus = json?.optString("account_status", "active") ?: "active",
+        avatarPath = json?.stringOrNull("avatar_path"),
     )
+    }
+
+    private suspend fun signedAvatarUrl(path: String): String {
+        val response = rawHttp.request(
+            url = "${com.hedefit.app.BuildConfig.SUPABASE_URL.trimEnd('/')}/storage/v1/object/sign/profile-avatars/${SupabaseRestClient.encode(path).replace("+", "%20")}",
+            method = "POST",
+            headers = mapOf("apikey" to com.hedefit.app.BuildConfig.SUPABASE_ANON_KEY, "Authorization" to "Bearer ${auth.validAccessToken()}", "Content-Type" to "application/json"),
+            body = JSONObject().put("expiresIn", 86_400).toString(),
+        ).requireSuccess("Profil fotoğrafı hazırlanamadı.").jsonObject()
+        val signed = response.optString("signedURL").ifBlank { response.optString("signedUrl") }
+        require(signed.isNotBlank()) { "Profil fotoğrafı bağlantısı oluşturulamadı." }
+        return if (signed.startsWith("http")) signed else "${com.hedefit.app.BuildConfig.SUPABASE_URL.trimEnd('/')}/storage/v1$signed"
     }
 
     private suspend fun optionalSelect(table: String, query: String): JSONArray =
@@ -457,6 +527,20 @@ class HedefitRepository(
                 durationSeconds = item.optInt("duration_seconds"), calories = item.optInt("calories"),
                 completedExercises = item.optInt("completed_exercises"), totalExercises = item.optInt("total_exercises"),
                 fatigue = item.intOrNull("fatigue"),
+            ))
+        }
+    }
+
+    private fun parseRouteActivities(array: JSONArray): List<RouteActivityData> = buildList {
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            add(RouteActivityData(
+                id = item.optString("id"),
+                activityType = item.optString("activity_type", "walk"),
+                startedAt = item.optString("started_at"),
+                endedAt = item.optString("ended_at"),
+                durationSeconds = item.optInt("duration_seconds"),
+                distanceMeters = item.optDouble("distance_meters"),
             ))
         }
     }

@@ -64,7 +64,12 @@ export function withUsageMock({ isPremium = false, allowed = true, currentCount 
     if (href.includes("/rpc/check_and_consume_usage")) {
       const body = init?.body ? JSON.parse(String(init.body)) : {};
       const effectiveLimit = isPremium ? body.p_premium_limit : body.p_free_limit;
-      return Response.json({ allowed, current_count: currentCount, effective_limit: effectiveLimit, is_premium: isPremium });
+      return Response.json({
+        allowed: effectiveLimit === null ? true : allowed,
+        current_count: currentCount,
+        effective_limit: effectiveLimit,
+        is_premium: isPremium,
+      });
     }
     if (href.includes("/rest/v1/profiles")) return Response.json({ is_premium: isPremium });
     if (href.includes("/rpc/increment_usage_counter")) return Response.json({ allowed, current_count: currentCount });
