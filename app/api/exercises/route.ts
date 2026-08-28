@@ -39,7 +39,12 @@ export function GET(request: Request) {
     .sort((a, b) => {
       const aPrimary = a.primaryMuscles.some((value) => muscleTargets.includes(value));
       const bPrimary = b.primaryMuscles.some((value) => muscleTargets.includes(value));
-      return muscle && aPrimary !== bPrimary ? (aPrimary ? -1 : 1) : a.name.localeCompare(b.name);
+      if (muscle && aPrimary !== bPrimary) return aPrimary ? -1 : 1;
+      // Bölgesel atlas ve programda önce temel/bileşik hareketler görünür;
+      // ardından daha hedefli izolasyon hareketleri gelir.
+      const aOrder = a.mechanic === "compound" ? 0 : a.mechanic === "isolation" ? 2 : 1;
+      const bOrder = b.mechanic === "compound" ? 0 : b.mechanic === "isolation" ? 2 : 1;
+      return aOrder !== bOrder ? aOrder - bOrder : a.name.localeCompare(b.name);
     });
   const offset = (page - 1) * limit;
   const localized = items.slice(offset, offset + limit).map((item) => ({

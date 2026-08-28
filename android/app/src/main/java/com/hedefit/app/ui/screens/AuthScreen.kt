@@ -23,17 +23,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,16 +47,21 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hedefit.app.R
 import com.hedefit.app.data.auth.AuthState
+import com.hedefit.app.data.auth.RegistrationLegalAcceptance
 import com.hedefit.app.ui.components.HedefitCard
 import com.hedefit.app.ui.components.PrimaryButton
 import com.hedefit.app.ui.theme.HedefitColors
+import com.hedefit.app.ui.validation.validateAuthForm
 
 @Composable
 fun AuthGateScreen(
@@ -63,13 +70,14 @@ fun AuthGateScreen(
     googleBusy: Boolean,
     message: String?,
     onSignIn: (String, String) -> Unit,
-    onSignUp: (String, String) -> Unit,
-    onGoogleSignIn: () -> Unit,
+    onSignUp: (String, String, RegistrationLegalAcceptance) -> Unit,
+    onGoogleSignIn: (RegistrationLegalAcceptance?) -> Unit,
+    onClearMessage: () -> Unit,
 ) {
     when (authState) {
         AuthState.Loading -> FullScreenLoader("Oturum kontrol ediliyor")
         is AuthState.ConfigurationError -> ConfigurationErrorScreen(authState.message)
-        AuthState.SignedOut -> AuthForm(busy, googleBusy, message, onSignIn, onSignUp, onGoogleSignIn)
+        AuthState.SignedOut -> AuthForm(busy, googleBusy, message, onSignIn, onSignUp, onGoogleSignIn, onClearMessage)
         is AuthState.SignedIn -> Unit
     }
 }
@@ -80,19 +88,29 @@ private fun AuthForm(
     googleBusy: Boolean,
     message: String?,
     onSignIn: (String, String) -> Unit,
-    onSignUp: (String, String) -> Unit,
-    onGoogleSignIn: () -> Unit,
+    onSignUp: (String, String, RegistrationLegalAcceptance) -> Unit,
+    onGoogleSignIn: (RegistrationLegalAcceptance?) -> Unit,
+    onClearMessage: () -> Unit,
 ) {
     var login by remember { mutableStateOf(true) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordAgain by remember { mutableStateOf("") }
     var reveal by remember { mutableStateOf(false) }
-    val localError = when {
-        email.isNotBlank() && !android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches() -> "Geçerli bir e-posta adresi yaz."
-        password.isNotEmpty() && password.length < 8 -> "Şifre en az 8 karakter olmalı."
-        !login && passwordAgain.isNotEmpty() && password != passwordAgain -> "Şifreler eşleşmiyor."
+    var submitted by remember { mutableStateOf(false) }
+    var kvkkAccepted by remember { mutableStateOf(false) }
+    var privacyAccepted by remember { mutableStateOf(false) }
+    var legalDocument by remember { mutableStateOf<LegalDocument?>(null) }
+    fun legalError(requireSubmission: Boolean): String? = when {
+        login || (requireSubmission && !submitted) -> null
+        !kvkkAccepted -> "KVKK Aydınlatma Metni'ni okuduğunu onaylamalısın."
+        !privacyAccepted -> "Gizlilik Politikası'nı kabul etmelisin."
         else -> null
+    }
+    val localError = validateAuthForm(email, password, passwordAgain, login, submitted) ?: legalError(requireSubmission = true)
+    fun edited(change: () -> Unit) {
+        change()
+        if (message != null) onClearMessage()
     }
 
     Box(
@@ -105,23 +123,37 @@ private fun AuthForm(
             Modifier.fillMaxWidth().widthIn(max = 460.dp).padding(22.dp).verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(Modifier.size(72.dp).background(HedefitColors.Lime, RoundedCornerShape(22.dp)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.FitnessCenter, null, tint = HedefitColors.OnLime, modifier = Modifier.size(38.dp))
-            }
-            Spacer(Modifier.height(18.dp))
-            Text("Hedefit", style = MaterialTheme.typography.headlineLarge)
-            Text("Hedefine güçlü bir adımla başla.", color = HedefitColors.TextSecondary)
+            Image(
+                painter = painterResource(R.drawable.app_logo_transparent),
+                contentDescription = "Hedefit logosu",
+                modifier = Modifier.size(88.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "HEDEFIT",
+                fontWeight = FontWeight.Black,
+                fontSize = 38.sp,
+                letterSpacing = 1.5.sp,
+            )
+            Spacer(Modifier.height(5.dp))
+            Text(
+                "Hedefine güçlü bir adımla başla.",
+                color = HedefitColors.TextSecondary,
+                fontFamily = FontFamily.Serif,
+                fontStyle = FontStyle.Italic,
+                style = MaterialTheme.typography.bodyLarge,
+            )
             Spacer(Modifier.height(26.dp))
             HedefitCard(Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(15.dp)) {
                     Row(Modifier.fillMaxWidth().background(HedefitColors.SurfaceHigh, RoundedCornerShape(13.dp)).padding(4.dp)) {
-                        AuthModeChip("Giriş Yap", login, Modifier.weight(1f)) { login = true }
-                        AuthModeChip("Kayıt Ol", !login, Modifier.weight(1f)) { login = false }
+                        AuthModeChip("Giriş Yap", login, Modifier.weight(1f)) { edited { login = true; submitted = false } }
+                        AuthModeChip("Kayıt Ol", !login, Modifier.weight(1f)) { edited { login = false; submitted = false } }
                     }
-                    Text(if (login) "Tekrar hoş geldin" else "Hesabını oluştur", style = MaterialTheme.typography.headlineSmall)
-                    AuthTextField(email, { email = it }, "E-posta", Icons.Default.Email, KeyboardType.Email)
+                    if (!login) Text("Hesabını oluştur", style = MaterialTheme.typography.headlineSmall)
+                    AuthTextField(email, { next -> edited { email = next } }, "E-posta", Icons.Default.Email, KeyboardType.Email)
                     AuthTextField(
-                        password, { password = it }, "Şifre", Icons.Default.Lock, KeyboardType.Password,
+                        password, { next -> edited { password = next } }, "Şifre", Icons.Default.Lock, KeyboardType.Password,
                         visualTransformation = if (reveal) VisualTransformation.None else PasswordVisualTransformation(),
                         trailing = {
                             IconButton(onClick = { reveal = !reveal }) {
@@ -129,13 +161,25 @@ private fun AuthForm(
                             }
                         },
                     )
-                    if (!login) AuthTextField(passwordAgain, { passwordAgain = it }, "Şifre tekrar", Icons.Default.Lock, KeyboardType.Password, PasswordVisualTransformation())
+                    if (!login) {
+                        AuthTextField(passwordAgain, { next -> edited { passwordAgain = next } }, "Şifre tekrar", Icons.Default.Lock, KeyboardType.Password, PasswordVisualTransformation())
+                        LegalAcceptanceFields(
+                            kvkkAccepted = kvkkAccepted,
+                            privacyAccepted = privacyAccepted,
+                            onKvkkChange = { kvkkAccepted = it },
+                            onPrivacyChange = { privacyAccepted = it },
+                            onOpenDocument = { legalDocument = it },
+                        )
+                    }
                     (localError ?: message)?.let {
                         Text(it, color = if (message?.contains("gönderildi", true) == true) HedefitColors.Lime else HedefitColors.Coral, style = MaterialTheme.typography.bodyMedium)
                     }
                     PrimaryButton(if (busy) "İşleniyor…" else if (login) "Giriş Yap" else "Hesap Oluştur", onClick = {
-                        if (!busy && localError == null && email.isNotBlank() && password.length >= 8) {
-                            if (login) onSignIn(email, password) else onSignUp(email, password)
+                        submitted = true
+                        val error = validateAuthForm(email, password, passwordAgain, login, submitted = true) ?: legalError(requireSubmission = false)
+                        if (!busy && error == null) {
+                            if (login) onSignIn(email.trim(), password)
+                            else onSignUp(email.trim(), password, RegistrationLegalAcceptance(kvkkAccepted, privacyAccepted))
                         }
                     })
                     Row(
@@ -147,16 +191,57 @@ private fun AuthForm(
                         Text("veya", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                         Box(Modifier.weight(1f).height(1.dp).background(HedefitColors.Divider))
                     }
-                    GoogleSignInButton(disabled = busy, loading = googleBusy, onClick = onGoogleSignIn)
+                    GoogleSignInButton(disabled = busy, loading = googleBusy, onClick = {
+                        if (login) onGoogleSignIn(null)
+                        else if (kvkkAccepted && privacyAccepted) onGoogleSignIn(RegistrationLegalAcceptance(kvkkAccepted, privacyAccepted))
+                        else submitted = true
+                    })
                     Text(
                         if (login) "Hesabın yok mu? Kayıt ol" else "Zaten hesabın var mı? Giriş yap",
                         color = HedefitColors.Lime,
-                        modifier = Modifier.align(Alignment.CenterHorizontally).clickable { login = !login },
+                        modifier = Modifier.align(Alignment.CenterHorizontally).clickable { edited { login = !login; submitted = false } },
                     )
                 }
             }
         }
     }
+    legalDocument?.let { LegalDocumentDialog(it) { legalDocument = null } }
+}
+
+private enum class LegalDocument { Kvkk, Privacy }
+
+@Composable
+private fun LegalAcceptanceFields(
+    kvkkAccepted: Boolean,
+    privacyAccepted: Boolean,
+    onKvkkChange: (Boolean) -> Unit,
+    onPrivacyChange: (Boolean) -> Unit,
+    onOpenDocument: (LegalDocument) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = kvkkAccepted, onCheckedChange = onKvkkChange)
+            TextButton(onClick = { onOpenDocument(LegalDocument.Kvkk) }) { Text("KVKK Aydınlatma Metni'ni okudum") }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = privacyAccepted, onCheckedChange = onPrivacyChange)
+            TextButton(onClick = { onOpenDocument(LegalDocument.Privacy) }) { Text("Gizlilik Politikası'nı okudum ve kabul ediyorum") }
+        }
+    }
+}
+
+@Composable
+private fun LegalDocumentDialog(document: LegalDocument, onDismiss: () -> Unit) {
+    val (title, body) = when (document) {
+        LegalDocument.Kvkk -> "KVKK Aydınlatma Metni" to "Hedefit; hesap oluşturma, kişisel antrenman planı, beslenme ve ilerleme takibi hizmetlerini sunmak için e-posta, hesap bilgileri, profil/ölçüm, antrenman, beslenme ve uygulama kullanım verilerini işler. Sağlıkla ilgili veriler yalnızca uygulamada seçtiğin özellikleri sunmak için ve gerekli olduğu ölçüde işlenir. Veriler, hizmet altyapısı sağlayıcılarına teknik hizmet sunumu amacıyla aktarılabilir; reklam veya pazarlama amacıyla satılmaz. Verilerin işlenmesi, saklanması, silinmesi ve KVKK kapsamındaki erişim, düzeltme, silme ve itiraz haklarınla ilgili ayrıntılar yayımlanacak nihai aydınlatma metninde yer alır."
+        LegalDocument.Privacy -> "Gizlilik Politikası" to "Hedefit hesabın, planın, öğünlerin, ölçümlerin ve uygulama tercihlerin kişiselleştirilmiş hizmet sunmak için saklanır. Hesap ayarlarından verilerini güncelleyebilir; uygulama içindeki hesap silme akışıyla hesabının silinmesini isteyebilirsin. Yerel Fit Koç modeli cihazında çalışır; bu modda sohbet içeriği sunucuya gönderilmez. Güvenlik için erişim kontrolleri ve şifreli bağlantılar kullanılır. Bu metin uygulama sürümüyle birlikte güncellenebilir; önemli değişiklikler ayrıca bildirilir."
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(body, modifier = Modifier.verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodyMedium) },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Okudum") } },
+    )
 }
 
 @Composable

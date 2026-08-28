@@ -88,10 +88,14 @@ test("görev üretimi sağlayıcı hatasında açık hata verir; rota yerel yede
   }));
 });
 
-test("şema gerektiren görevde deterministik yerel sağlayıcı zincire GİRMEZ", async () => {
-  // Yerel sağlayıcı serbest şema üretemez; denenmesi boşuna gecikme olurdu.
-  const { deterministicLocalProvider } = await import("../lib/ai/providers/deterministic-local.ts");
-  providerRegistry.reset([deterministicLocalProvider, echoProvider()]);
+test("şema gerektiren görevde nesne üretmeyen sağlayıcı zincire GİRMEZ", async () => {
+  const textOnlyProvider = {
+    id: "text-only",
+    kind: "local",
+    isAvailable: async () => true,
+    generateText: async () => ({ text: "yerel", provider: "text-only", model: "test", latencyMs: 1 }),
+  };
+  providerRegistry.reset([textOnlyProvider, echoProvider()]);
   const result = await generateCoachObject({
     schema: {}, category: "complex_reasoning", facts: {}, domainRules: "k", prompt: "p", policy: SILENT,
   });

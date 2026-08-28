@@ -1,15 +1,15 @@
-import type { CoachMessage } from "../../../lib/ai-coach.ts";
 import { authenticateRequest } from "../../../lib/api-auth.ts";
 import { rateLimit, tooManyRequests } from "../../../lib/rate-limit.ts";
 import { hasRemoteProvider } from "../../../lib/ai/providers/openai-compatible.ts";
 import { generateCoachResponse } from "../../../lib/ai/coach.ts";
-import { LOCAL_PROVIDER_ID } from "../../../lib/ai/providers/deterministic-local.ts";
 import { evaluateSafety } from "../../../lib/ai/safety.ts";
 import { loadMemories } from "../../../lib/ai/memory.ts";
 import { sanitizeCoachSignals } from "../../../lib/ai/signals.ts";
 import { AiAllProvidersFailedError } from "../../../lib/ai/errors.ts";
 import { checkAndConsumeUsage, refundUsage, usageLimitExceeded } from "../../../lib/usage-limits.ts";
 import { parseCoachActions } from "../../../lib/ai/coach-actions.ts";
+
+type CoachMessage = { role: "user" | "assistant"; text: string };
 
 export const runtime = "edge";
 
@@ -24,13 +24,39 @@ function safeMessages(value: unknown): CoachMessage[] {
   });
 }
 
+function unavailableNotice(error: unknown, locale: "tr" | "en") {
+  const kind = error instanceof AiAllProvidersFailedError ? error.failures[0]?.message : "unknown";
+  const tr = {
+    auth: "OpenAI API anahtarı kabul edilmedi veya bu projenin model erişimi yok.",
+    quota: "OpenAI API projesinin bakiye ya da harcama sınırına ulaşıldı.",
+    rate_limited: "OpenAI API proje hız sınırına ulaşıldı; kısa süre sonra tekrar dene.",
+    timeout: "OpenAI zamanında yanıt vermedi; bağlantıyı kontrol edip tekrar dene.",
+    provider_error: "OpenAI servisi geçici olarak yanıt veremedi; biraz sonra tekrar dene.",
+    empty_response: "OpenAI modelinin yanıt üretim ayarı tamamlanamadı. Model erişimini kontrol et.",
+    unknown: "OpenAI isteği tamamlanamadı. API projesindeki model erişimini ve harcama sınırını kontrol et.",
+  } as const;
+  const en = {
+    auth: "The OpenAI API key was rejected or this project cannot access the model.",
+    quota: "This OpenAI API project has reached its credit or spending limit.",
+    rate_limited: "This OpenAI API project has reached its rate limit. Try again shortly.",
+    timeout: "OpenAI did not respond in time. Check the connection and try again.",
+    provider_error: "OpenAI is temporarily unavailable. Try again shortly.",
+    empty_response: "OpenAI could not complete the model response. Check model access.",
+    unknown: "The OpenAI request could not complete. Check this API project's model access and spending limit.",
+  } as const;
+  return (locale === "en" ? en : tr)[kind as keyof typeof tr] ?? (locale === "en" ? en.unknown : tr.unknown);
+}
+
 export async function POST(request: Request) {
   const auth = await authenticateRequest(request);
   if ("error" in auth) return auth.error;
-  const rateLimitResult = rateLimit(`chat:${auth.user.id}`, 20, 60_000);
+  // Kısa süreli spam ve kontrolsüz maliyet artışını önler. Günlük plan
+  // kotası ayrıca checkAndConsumeUsage içinde uygulanır.
+  const rateLimitResult = rateLimit(`chat:${auth.user.id}`, 5, 60_000);
   if (!rateLimitResult.ok) return tooManyRequests(rateLimitResult.retryAfterSeconds);
 
   let payload: { messages?: unknown; context?: unknown; signals?: unknown; locale?: unknown };
+  let providerFailure: unknown = undefined;
   try {
     payload = await request.json() as typeof payload;
   } catch {
@@ -72,24 +98,27 @@ export async function POST(request: Request) {
       signals,
       memories,
       category: "conversation",
-      maxOutputTokens: 500,
-      // 20 sn, sağlayıcının akıl yürüten modelinde (42 sn ölçüldü) hiç
-      // yetişmiyordu; koç neredeyse her soruda güvenli yerel yanıta düşüyordu.
-      // Varsayılan model hızlıya alındı (~5 sn), pencere yine de paylı.
-      abortSignal: AbortSignal.timeout(15_000),
+      policy: { mode: "remote" },
+      // GPT-5'in düşünme ve görünür yanıt bütçesi aynıdır. Minimal düşünme
+      // etkin olsa da 380 token kısa yanıtı kesebiliyordu; bu sınır günlük
+      // sohbet için akıcı bir açıklama üretmeye yeterlidir.
+      maxOutputTokens: 640,
+      // Fit Koç'un kişisel bağlamı kısa sağlık isteminden belirgin biçimde
+      // uzundur. 15 sn sınırı model erişimi sağlıklı olsa bile gerçek sohbeti
+      // yarıda kesiyordu. Android istemcisi 45 sn bekler; sunucu 35 sn'de
+      // kontrollü biçimde sonlandırarak ağ yanıtına da pay bırakır.
+      abortSignal: AbortSignal.timeout(35_000),
     });
     if (result.text.trim()) {
       // Yanıtı YEREL (deterministik) sağlayıcı ürettiyse kullanıcı ücretli AI
       // hizmetini gerçekte ALMADI — uzak model başarısız olduğu için güvenli
       // şablon yanıta düşüldü. Bu durumda günlük hak iade edilir; göç
       // öncesindeki davranış da buydu (bkz. lib/usage-limits.ts refundUsage).
-      const servedLocally = result.provider === LOCAL_PROVIDER_ID;
-      if (servedLocally && Number.isFinite(usage.limit)) await refundUsage(request, "chat");
       // Eylemler YALNIZCA gerçek modelden ayrıştırılır. Yerel yedek şablon
       // yanıtlar üretir; oradan yapılandırılmış çağrı beklemek, kullanıcıya
       // model onaylamamışken "plana ekle" düğmesi göstermek olurdu
       // (bkz. lib/ai/coach-actions.ts).
-      const parsed = servedLocally ? { text: result.text, actions: [] } : parseCoachActions(result.text);
+      const parsed = parseCoachActions(result.text);
       // Sınır uygulanmıyorsa (bkz. lib/usage-limits.ts) limit sonsuzdur; JSON'da
       // null'a dönüşüp arayüzde "0/null" görüneceği için alanı hiç göndermiyoruz.
       return Response.json({
@@ -99,18 +128,18 @@ export async function POST(request: Request) {
         ...(parsed.actions.length ? { actions: parsed.actions } : {}),
         // Göç öncesindeki source sözleşmesi korunur: "ai" = gerçek model,
         // "fallback" = güvenli yerel öneri.
-        source: servedLocally ? "fallback" : "ai",
+        source: "ai",
         provider: result.provider,
         model: result.model,
         promptVersion: result.promptVersion,
-        ...(servedLocally && { notice: "Fit Koç şu an sınırlı modda yanıt veriyor." }),
-        ...(!servedLocally && Number.isFinite(usage.limit) ? { usage: { used: usage.used, limit: usage.limit } } : {}),
+        ...(Number.isFinite(usage.limit) ? { usage: { used: usage.used, limit: usage.limit } } : {}),
       });
     }
   } catch (error) {
+    providerFailure = error;
     // Ham sağlayıcı hatası kullanıcıya ASLA gösterilmez; yalnızca sınıflandırılmış
     // özet sunucu log'una yazılır (bkz. lib/ai/telemetry.ts classifyError).
-    if (error instanceof AiAllProvidersFailedError) console.error("AI coach error", error.message);
+    if (error instanceof AiAllProvidersFailedError) console.error("AI coach error", JSON.stringify(error.failures));
     else console.error("AI coach error", error instanceof Error ? error.name : "unknown");
   }
 
@@ -123,8 +152,8 @@ export async function POST(request: Request) {
   return Response.json({
     text: hasRemoteProvider()
       ? "Fit Koç şu anda yanıt veremiyor. Verilerin kaybolmadı; biraz sonra tekrar deneyebilirsin."
-      : "Fit Koç şu anda yanıt veremiyor. Bağlantı ayarların tamamlanınca tekrar deneyebilirsin.",
-    source: "fallback",
-    notice: "Fit Koç geçici olarak yanıt veremedi.",
-  });
+      : "Fit Koç bulut AI ayarları tamamlanana kadar yanıt veremiyor.",
+    source: "unavailable",
+    notice: hasRemoteProvider() ? unavailableNotice(providerFailure, locale) : "OpenAI API anahtarı canlı sunucuda tanımlı değil.",
+  }, { status: 503 });
 }

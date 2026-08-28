@@ -45,6 +45,58 @@ function numberList(value: unknown, min: number, max: number, limit = 14): numbe
   return list.length ? list : undefined;
 }
 
+function text(value: unknown, limit = 100): string | undefined {
+  return typeof value === "string" ? value.trim().slice(0, limit) || undefined : undefined;
+}
+
+function foodEntries(value: unknown) {
+  if (!Array.isArray(value)) return undefined;
+  const entries = value.flatMap((item) => {
+    const source = record(item);
+    const meal = text(source?.meal, 30);
+    const name = text(source?.name, 100);
+    if (!meal || !name) return [];
+    return [{
+      meal,
+      name,
+      calories: bounded(source?.calories, 0, 20_000),
+      protein: bounded(source?.protein, 0, 1_000),
+      carbs: bounded(source?.carbs, 0, 2_000),
+      fat: bounded(source?.fat, 0, 1_000),
+    }];
+  }).slice(0, 30);
+  return entries.length ? entries : undefined;
+}
+
+function training(value: unknown) {
+  const source = record(value);
+  if (!source) return undefined;
+  const activeExercises = Array.isArray(source.activeExercises) ? source.activeExercises.flatMap((item) => {
+    const exercise = record(item);
+    const name = text(exercise?.name);
+    if (!name) return [];
+    return [{ name, area: text(exercise?.area, 60), sets: bounded(exercise?.sets, 1, 20), reps: text(exercise?.reps, 40) }];
+  }).slice(0, 20) : undefined;
+  const recentSessions = Array.isArray(source.recentSessions) ? source.recentSessions.flatMap((item) => {
+    const session = record(item);
+    const completedAt = typeof session?.completedAt === "string" ? session.completedAt.slice(0, 30) : undefined;
+    const exerciseNames = Array.isArray(session?.exerciseNames) ? session.exerciseNames.map((name) => text(name)).filter((name): name is string => Boolean(name)).slice(0, 12) : [];
+    if (!completedAt || !exerciseNames.length) return [];
+    return [{ completedAt, exerciseNames, durationMinutes: bounded(session?.durationMinutes, 0, 600), fatigue: bounded(session?.fatigue, 1, 10) }];
+  }).slice(0, 4) : undefined;
+  const recentPerformance = Array.isArray(source.recentPerformance) ? source.recentPerformance.flatMap((item) => {
+    const performance = record(item);
+    const exerciseName = text(performance?.exerciseName);
+    const sets = Array.isArray(performance?.sets) ? performance.sets.flatMap((set) => {
+      const entry = record(set);
+      const reps = bounded(entry?.reps, 1, 200);
+      return reps === undefined ? [] : [{ weightKg: bounded(entry?.weightKg, 0, 1_000), reps, rpe: bounded(entry?.rpe, 1, 10) }];
+    }).slice(0, 12) : [];
+    return exerciseName && sets.length ? [{ exerciseId: text(performance?.exerciseId, 100), exerciseName, sets }] : [];
+  }).slice(0, 20) : undefined;
+  return activeExercises?.length || recentSessions?.length || recentPerformance?.length ? { activeExercises, recentSessions, recentPerformance } : undefined;
+}
+
 function totals(value: unknown) {
   const source = record(value);
   if (!source) return undefined;
@@ -100,6 +152,11 @@ export function sanitizeCoachSignals(value: unknown, legacyContext?: string): In
       sex: typeof profile?.sex === "string" ? profile.sex.slice(0, 20) : undefined,
       heightCm: bounded(profile?.heightCm, 80, 260),
       weightKg: bounded(profile?.weightKg, 20, 400),
+      environment: text(profile?.environment, 40),
+      equipment: text(profile?.equipment, 200),
+      assessmentAnswers: Array.isArray(profile?.assessmentAnswers)
+        ? profile.assessmentAnswers.map((answer) => text(answer, 100)).filter((answer): answer is string => Boolean(answer)).slice(0, 20)
+        : undefined,
     },
     goal: {
       goalType: goalType(goal?.goalType),
@@ -113,7 +170,9 @@ export function sanitizeCoachSignals(value: unknown, legacyContext?: string): In
       totals: totals(today?.totals),
       steps: bounded(today?.steps, 0, 200_000),
       waterMl: bounded(today?.waterMl, 0, 20_000),
+      sleepMinutes: bounded(today?.sleepMinutes, 0, 1_440),
       workoutCompleted: typeof today?.workoutCompleted === "boolean" ? today.workoutCompleted : undefined,
+      foods: foodEntries(today?.foods),
     },
     measurements: measurements(source.measurements),
     recentCalories: numberList(source.recentCalories, 0, 20_000, 7),
@@ -124,5 +183,6 @@ export function sanitizeCoachSignals(value: unknown, legacyContext?: string): In
       runningDistanceKm: bounded(activity?.runningDistanceKm, 0, 500),
       streakDays: bounded(activity?.streakDays, 0, 10_000),
     },
+    training: training(source.training),
   };
 }

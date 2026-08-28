@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -18,9 +19,9 @@ object HedefitColors {
     var Surface = Color(0xFF111411)
     var SurfaceHigh = Color(0xFF181C18)
     var SurfaceSoft = Color(0xFF20251F)
-    val Lime = Color(0xFF78D85B)
-    val LimeDark = Color(0xFF4FAF3D)
-    val OnLime = Color(0xFF071005)
+    var Lime = Color(0xFF78D85B)
+    var LimeDark = Color(0xFF4FAF3D)
+    var OnLime = Color(0xFF071005)
     var TextPrimary = Color(0xFFF4F7F2)
     var TextSecondary = Color(0xFF9CA69A)
     var Divider = Color(0xFF2A3029)
@@ -29,7 +30,11 @@ object HedefitColors {
     val Sleep = Color(0xFFAA96FF)
     val Warning = Color(0xFFFFC857)
 
-    fun applyTheme(dark: Boolean) {
+    fun applyTheme(dark: Boolean, accentHue: Float) {
+        val hue = ((accentHue % 360f) + 360f) % 360f
+        Lime = Color.hsl(hue, .62f, if (dark) .61f else .48f)
+        LimeDark = Color.hsl(hue, .66f, if (dark) .45f else .38f)
+        OnLime = if (Lime.luminance() > .45f) Color(0xFF071005) else Color.White
         Background = if (dark) Color(0xFF080A08) else Color(0xFFF6F8F3)
         Surface = if (dark) Color(0xFF111411) else Color.White
         SurfaceHigh = if (dark) Color(0xFF181C18) else Color(0xFFEEF2E9)
@@ -40,10 +45,10 @@ object HedefitColors {
     }
 }
 
-private val HedefitScheme = darkColorScheme(
+private fun hedefitDarkScheme() = darkColorScheme(
     primary = HedefitColors.Lime,
     onPrimary = HedefitColors.OnLime,
-    primaryContainer = Color(0xFF243820),
+    primaryContainer = HedefitColors.LimeDark.copy(alpha = .34f),
     onPrimaryContainer = HedefitColors.Lime,
     secondary = HedefitColors.LimeDark,
     background = HedefitColors.Background,
@@ -56,12 +61,12 @@ private val HedefitScheme = darkColorScheme(
     outline = HedefitColors.Divider,
 )
 
-private val HedefitLightScheme = lightColorScheme(
+private fun hedefitLightScheme() = lightColorScheme(
     primary = HedefitColors.LimeDark,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFE1F2DB),
-    onPrimaryContainer = Color(0xFF1E3100),
-    secondary = Color(0xFF547C17),
+    onPrimary = HedefitColors.OnLime,
+    primaryContainer = HedefitColors.Lime.copy(alpha = .22f),
+    onPrimaryContainer = HedefitColors.LimeDark,
+    secondary = HedefitColors.LimeDark,
     background = Color(0xFFF6F8F3),
     onBackground = Color(0xFF10150F),
     surface = Color.White,
@@ -87,10 +92,10 @@ private val HedefitTypography = androidx.compose.material3.Typography(
 )
 
 @Composable
-fun HedefitTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    HedefitColors.applyTheme(darkTheme)
+fun HedefitTheme(darkTheme: Boolean = isSystemInDarkTheme(), accentHue: Float = 106f, content: @Composable () -> Unit) {
+    HedefitColors.applyTheme(darkTheme, accentHue)
     MaterialTheme(
-        colorScheme = if (darkTheme) HedefitScheme else HedefitLightScheme,
+        colorScheme = if (darkTheme) hedefitDarkScheme() else hedefitLightScheme(),
         typography = HedefitTypography,
     ) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground, content = content)

@@ -1,5 +1,5 @@
 import exerciseData from "../data/exercises.json" with { type: "json" };
-import { translateExerciseLabel } from "./exercise-translations.ts";
+import { translateExerciseLabel, translateExerciseName } from "./exercise-translations.ts";
 import type { AIExerciseContext, Exercise, ExerciseFilters } from "@/types/exercise";
 
 const safeText = (value: unknown, fallback = "", maxLength = 300) => typeof value === "string" ? value.trim().slice(0, maxLength) : fallback;
@@ -63,6 +63,7 @@ export const getExerciseById = (id: string) => exerciseById.get(id.replace(/[^a-
  */
 const searchHaystacks = exercises.map((exercise) => fold([
   exercise.name,
+  translateExerciseName(exercise.name),
   ...exercise.primaryMuscles,
   ...exercise.secondaryMuscles,
   exercise.equipment || "",
@@ -110,7 +111,7 @@ const muscleGroups: Record<string, string[]> = {
   back: ["lats", "middle back", "lower back", "traps"],
   core: ["abdominals", "lower back"],
   hips: ["glutes", "adductors", "abductors"],
-  legs: ["quadriceps", "hamstrings", "calves", "adductors", "abductors", "glutes"],
+  legs: ["quadriceps", "hamstrings", "calves", "adductors"],
 };
 
 /** Expands a UI region (for example `back`) into the source catalog muscles. */
@@ -256,10 +257,26 @@ function balanceForPrompt(exercises: AIExerciseContext[], limit = PROMPT_CATALOG
  * model evdeki kullanıcıya lat pulldown öneremez. Ekipman elemesinden sonra
  * kalan liste ayrıca PROMPT_CATALOG_LIMIT ile sınırlanır.
  */
-export function getExercisesForProfile(isGym: boolean, equipmentText: string): AIExerciseContext[] {
+export function getExercisesForProfile(
+  isGym: boolean,
+  equipmentText: string,
+  environmentText = "",
+  trainingStyleText = "",
+): AIExerciseContext[] {
   const owned = equipmentText.toLocaleLowerCase("tr-TR");
+  const outdoorRunning = /açık hava|outdoor/.test(environmentText.toLocaleLowerCase("tr-TR"))
+    && /koşu|run|jog/.test(trainingStyleText.toLocaleLowerCase("tr-TR"));
+  const outdoorMovement = /\b(?:run(?:ning)?|jog(?:ging)?|sprint(?:s)?|walk(?:ing)?)\b/i;
   return balanceForPrompt(getExercisesForAI().filter((exercise) => {
     const tag = (exercise.equipment || "").toLocaleLowerCase("en-US");
+    const equipmentAvailable = BODYWEIGHT_TAGS.has(tag)
+      || isGym
+      || (EQUIPMENT_TAG_SYNONYMS[tag]?.some((word) => owned.includes(word)) ?? false);
+    if (!equipmentAvailable) return false;
+    // AI kataloğu token tasarrufu için `category` taşımaz. Burada kategoriye
+    // bakmak açık hava koşu profilini sessizce BOŞ kataloğa düşürüyordu.
+    // Kelime sınırları da zorunlu: çıplak /run/ ifadesi "crunch"ı koşu sanır.
+    if (outdoorRunning) return outdoorMovement.test(exercise.name);
     if (BODYWEIGHT_TAGS.has(tag)) return true;
     if (isGym) return true;
     const synonyms = EQUIPMENT_TAG_SYNONYMS[tag];

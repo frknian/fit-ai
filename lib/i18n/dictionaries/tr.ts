@@ -387,7 +387,7 @@ export const tr = {
     mealAdviceTitle: "Bir sonraki öğünde neye odaklanmalı?",
     mealAdviceLoading: "Günlük hedeflerin ve öğünlerin birlikte değerlendiriliyor…",
     mealAdvicePreparing: "Öğün özeti hazırlanıyor…",
-    mealAdviceAiNote: "Kişisel hedef ve bugünkü kayıtlara göre Kimi K3 ile hazırlandı.",
+    mealAdviceAiNote: "Kişisel hedef ve bugünkü kayıtlara göre AI ile hazırlandı.",
     mealAdviceFallbackNote: "Güvenli beslenme kurallarıyla hazırlandı.",
     mealAdviceDisclaimer: "Tıbbi beslenme tavsiyesi değildir.",
     refresh: "Yenile",

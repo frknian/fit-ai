@@ -23,7 +23,14 @@ import com.hedefit.app.ui.theme.HedefitColors
 import kotlin.math.abs
 import kotlin.math.ceil
 
-private data class ProfileQuestion(val title: String, val subtitle: String, val choices: List<String> = emptyList(), val freeText: Boolean = false)
+private data class ProfileQuestion(
+    val title: String,
+    val subtitle: String,
+    val choices: List<String> = emptyList(),
+    val freeText: Boolean = false,
+    val multiSelect: Boolean = false,
+    val exclusiveChoice: String? = null,
+)
 
 private val profileQuestions = listOf(
     ProfileQuestion("Ana hedefin ne?", "Programın ve tahmini süren bu hedefe göre hazırlanır.", listOf("Kilo verme", "Kilo alma", "Kas alma", "Formu koruma")),
@@ -32,21 +39,25 @@ private val profileQuestions = listOf(
     ProfileQuestion("Daha önce düzenli spor yaptın mı?", "Geçmiş deneyimin", listOf("Hayır", "Kısa süre", "6–12 ay", "1 yıldan fazla")),
     ProfileQuestion("Kendini hangi seviyede görüyorsun?", "Yoğunluğu buna göre ayarlarız.", listOf("Başlangıç", "Orta", "İleri")),
     ProfileQuestion("Son 3 ayda haftada kaç gün spor yaptın?", "Mevcut alışkanlığın", listOf("0 gün", "1–2 gün", "3–4 gün", "5+ gün")),
-    ProfileQuestion("Haftada kaç gün ayırabilirsin?", "Gerçekçi bir tempo seç.", listOf("2 gün", "3 gün", "4 gün", "5 gün", "6 gün")),
+    ProfileQuestion("Haftada kaç gün ayırabilirsin?", "Gerçekçi bir tempo seç.", listOf("2 gün", "3 gün", "4 gün", "5 gün", "6 gün", "7 gün")),
     ProfileQuestion("Bir antrenman için ne kadar süren var?", "Isınma ve soğuma dahil ayırabileceğin toplam süre.", listOf("15 dk", "30 dk", "45 dk", "60 dk", "75+ dk")),
-    ProfileQuestion("Hangi antrenmanları seversin?", "Planın karakteri", listOf("Ağırlık", "HIIT", "Koşu", "Pilates", "Vücut ağırlığı")),
+    ProfileQuestion("Hangi antrenmanları seversin?", "Birden fazla seçebilirsin.", listOf("Ağırlık", "HIIT", "Koşu", "Bisiklet", "Vücut ağırlığı"), multiSelect = true),
     ProfileQuestion("Nerede çalışacaksın?", "Egzersizler ortama göre seçilir.", listOf("Evde", "Spor salonunda", "Açık havada", "Karışık")),
-    ProfileQuestion("Hangi ekipmanların var?", "En sık kullanacağın ekipmanı seç.", listOf("Ekipman yok", "Dambıl", "Direnç bandı", "Tam salon", "Kardiyo aleti")),
-    ProfileQuestion("Ağrı veya sakatlık var mı?", "Güvenli hareket seçimi için önemlidir.", listOf("Yok", "Bel", "Diz", "Omuz", "Boyun", "Diğer")),
+    ProfileQuestion("Hangi ekipmanların var?", "Birden fazla seçebilirsin.", listOf("Ekipman yok", "Dambıl", "Direnç bandı", "Tam salon", "Kardiyo aleti"), multiSelect = true),
+    ProfileQuestion("Ağrı veya sakatlık var mı?", "Birden fazla bölge seçebilirsin. “Yok” tek başına seçilir.", listOf("Yok", "Bel", "Diz", "Omuz", "Boyun", "Diğer"), multiSelect = true, exclusiveChoice = "Yok"),
     ProfileQuestion("Gün içinde ne kadar hareketlisin?", "Günlük enerji hesabı", listOf("Çoğunlukla oturuyorum", "Ara sıra hareket", "Aktif", "Çok aktif")),
     ProfileQuestion("Uyku düzenin nasıl?", "Toparlanma kapasiten", listOf("5 saatten az", "5–6 saat", "7–8 saat", "9+ saat")),
     ProfileQuestion("Koçunun bilmesi gereken başka bir şey?", "Tercih, kısıt veya not ekleyebilirsin.", freeText = true),
 )
 
+private val quickStartQuestionOrder = listOf(0, 4, 6, 7, 11)
+
 @Composable
-fun ProfileQuestionnaireScreen(profile: ProfileData, saving: Boolean, onClose: () -> Unit, onSave: (ProfileUpdateData) -> Unit) {
+fun ProfileQuestionnaireScreen(profile: ProfileData, saving: Boolean, quickStart: Boolean, onClose: () -> Unit, onSave: (ProfileUpdateData) -> Unit) {
     val answers = remember(profile) { mutableStateListOf<String>().apply { addAll((profile.historyAnswers + List(15) { "" }).take(15)) } }
-    var index by remember { mutableIntStateOf(0) }
+    val questionOrder = remember(quickStart) { if (quickStart) quickStartQuestionOrder else profileQuestions.indices.toList() }
+    var step by remember { mutableIntStateOf(0) }
+    val index = questionOrder[step]
     var targetText by remember(profile) { mutableStateOf(profile.targetWeightKg?.toString() ?: suggestedTarget(profile).toString()) }
     val question = profileQuestions[index]
     val goal = if (index == 0) answers[0] else answers[0].ifBlank { profile.goal }
@@ -54,20 +65,25 @@ fun ProfileQuestionnaireScreen(profile: ProfileData, saving: Boolean, onClose: (
     val weeks = estimateWeeks(profile.weightKg, target, goal)
 
     Column(Modifier.fillMaxSize().background(HedefitColors.Background).statusBarsPadding().navigationBarsPadding()) {
-        UtilityHeader("Profil testi", onClose)
-        LinearProgressIndicator(progress = { (index + 1) / 15f }, modifier = Modifier.fillMaxWidth(), color = HedefitColors.Lime, trackColor = HedefitColors.Divider)
+        UtilityHeader(if (quickStart) "Hızlı başlangıç" else "Profil testi", onClose)
+        LinearProgressIndicator(progress = { (step + 1).toFloat() / questionOrder.size }, modifier = Modifier.fillMaxWidth(), color = HedefitColors.Lime, trackColor = HedefitColors.Divider)
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            item { Text("${index + 1} / 15", color = HedefitColors.Lime, style = MaterialTheme.typography.labelLarge) }
+            item { Text("${step + 1} / ${questionOrder.size}", color = HedefitColors.Lime, style = MaterialTheme.typography.labelLarge) }
+            if (quickStart && step == 0) item { Text("Bu 5 yanıtla ilk güvenli programını hemen hazırlayacağız. Ayrıntıları profilinden sonra tamamlayabilirsin.", color = HedefitColors.TextSecondary) }
             item { Text(question.title, color = HedefitColors.TextPrimary, style = MaterialTheme.typography.headlineMedium) }
             item { Text(question.subtitle, color = HedefitColors.TextSecondary) }
             if (question.freeText) item {
                 OutlinedTextField(answers[index], { answers[index] = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 130.dp), placeholder = { Text("Yanıtını yaz…") }, colors = questionnaireFieldColors())
             } else items(question.choices.size) { choiceIndex ->
                 val choice = question.choices[choiceIndex]
-                val selected = answers[index] == choice
+                val selected = if (question.multiSelect) choice in selectedProfileChoices(answers[index]) else answers[index] == choice
                 Row(
                     Modifier.fillMaxWidth().background(if (selected) HedefitColors.Lime.copy(alpha = .16f) else HedefitColors.Surface, RoundedCornerShape(16.dp))
-                        .clickable { answers[index] = choice }.padding(17.dp),
+                        .clickable {
+                            answers[index] = if (question.multiSelect) {
+                                toggleProfileChoice(answers[index], choice, question.choices, question.exclusiveChoice)
+                            } else choice
+                        }.padding(17.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(choice, Modifier.weight(1f), color = HedefitColors.TextPrimary, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
@@ -89,18 +105,19 @@ fun ProfileQuestionnaireScreen(profile: ProfileData, saving: Boolean, onClose: (
             }
         }
         Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (index > 0) OutlinedButton(onClick = { index-- }, modifier = Modifier.weight(.7f).height(56.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = HedefitColors.TextPrimary)) { Text("Geri") }
+            if (step > 0) OutlinedButton(onClick = { step-- }, modifier = Modifier.weight(.7f).height(56.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = HedefitColors.TextPrimary)) { Text("Geri") }
             Button(
                 enabled = (answers[index].isNotBlank() || question.freeText) && !saving,
                 onClick = {
-                    if (index < 14) index++ else onSave(ProfileUpdateData(
+                    if (step < questionOrder.lastIndex) step++ else onSave(ProfileUpdateData(
                         profile.displayName, profile.age, profile.gender, profile.heightCm, profile.weightKg,
-                        answers[0].ifBlank { profile.goal }, target, weeks, answers[9].ifBlank { profile.environment }, answers[10].ifBlank { profile.equipment }, answers.toList(),
+                        answers[0].ifBlank { profile.goal }, target, weeks, answers[9].ifBlank { profile.environment }, answers[10].ifBlank { profile.equipment },
+                        answers.mapIndexed { answerIndex, answer -> if (answer.isBlank() && profileQuestions[answerIndex].freeText) "Yok" else answer },
                     ))
                 },
                 modifier = Modifier.weight(1.3f).height(56.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime),
-            ) { Text(if (saving) "Plan hazırlanıyor…" else if (index == 14) "Kaydet ve planı yenile" else "Devam") }
+            ) { Text(if (saving) "Plan hazırlanıyor…" else if (step == questionOrder.lastIndex) if (quickStart) "Planımı oluştur" else "Kaydet ve planı yenile" else "Devam") }
         }
     }
 }

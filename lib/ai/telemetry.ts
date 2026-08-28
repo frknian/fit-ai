@@ -35,11 +35,46 @@ export type AiEvent = {
   prefillTokensPerSecond?: number;
 };
 
+type ErrorRecord = Record<string, unknown>;
+
+function asErrorRecord(value: unknown): ErrorRecord | null {
+  return value && typeof value === "object" ? value as ErrorRecord : null;
+}
+
+/**
+ * AI SDK, HTTP hatasını bazen `cause` zincirinin içine sarar. Ham yanıt gövdesi
+ * (ve dolayısıyla beklenmedik bir sağlayıcı metni) günlüğe yazılmaz; yalnızca
+ * erişim teşhisi için güvenli durum kodu ve sağlayıcı hata kodu okunur.
+ */
+function errorDetails(error: unknown) {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current && !seen.has(current); depth += 1) {
+    seen.add(current);
+    const record = asErrorRecord(current);
+    if (!record) break;
+    const status = typeof record.statusCode === "number"
+      ? record.statusCode
+      : typeof record.status === "number" ? record.status : undefined;
+    const directCode = typeof record.code === "string" ? record.code : undefined;
+    const data = asErrorRecord(record.data);
+    const nestedError = asErrorRecord(data?.error);
+    const code = directCode
+      ?? (typeof data?.code === "string" ? data.code : undefined)
+      ?? (typeof nestedError?.code === "string" ? nestedError.code : undefined);
+    if (status !== undefined || code !== undefined) return { status, code };
+    current = record.cause;
+  }
+  return {};
+}
+
 /** Sağlayıcı hatasını ham mesaj SIZDIRMADAN sınıflandırır. */
 export function classifyError(error: unknown): string {
   if (error instanceof Error) {
     if (error.name === "AbortError" || error.name === "TimeoutError") return "timeout";
     if (error.name === "AiUnsupportedRequestError") return "unsupported";
+    if (error.name === "AI_NoContentGeneratedError") return "empty_response";
+    if (error.name === "AI_InvalidResponseDataError") return "invalid_output";
     // Kullanıcı iptali arıza değildir; ayrı sınıflandırılır ki hata
     // oranlarını şişirmesin.
     if (error.name === "LocalGenerationCancelledError") return "cancelled";
@@ -50,6 +85,12 @@ export function classifyError(error: unknown): string {
   if (/integrity_failed|checksum_mismatch|size_mismatch/.test(nativeMessage)) return "model_corrupted";
   if (/insufficient_storage/.test(nativeMessage)) return "insufficient_storage";
   if (/load_failed|generation_failed/.test(nativeMessage)) return "local_runtime_error";
+  const { status, code } = errorDetails(error);
+  if (status === 401 || status === 403 || /invalid_api_key|authentication|model_not_found|model_access/i.test(code ?? "")) return "auth";
+  if (/insufficient_quota|billing|credit_balance/i.test(code ?? "")) return "quota";
+  if (status === 429 || /rate_limit/i.test(code ?? "")) return "rate_limited";
+  if (status !== undefined && status >= 500) return "provider_error";
+  if (status === 408 || status === 504) return "timeout";
   const message = error instanceof Error ? error.message : String(error);
   // "max RPM: 3" gibi ifadeler 429 veya "rate limit" geçmiyor; sınıflandırma
   // dışında kalınca hız sınırı telemetride "unknown" görünüyordu ve gerçek
@@ -75,6 +116,8 @@ export type AiEventSink = (event: AiEvent) => void;
 
 /** Geliştirme kolaylığı: yönlendirmenin ne yaptığını sunucu log'unda görmek. */
 export const consoleEventSink: AiEventSink = (event) => {
-  if (process.env.NODE_ENV === "production" && !process.env.AI_DEBUG) return;
+  // Başarı günlükleri üretimde kapalı kalır; ancak hata türü (asla istek/yanıt
+  // metni değil) canlı bir AI erişim sorununu teşhis etmek için gereklidir.
+  if (process.env.NODE_ENV === "production" && !process.env.AI_DEBUG && event.outcome !== "error") return;
   console.info("[ai]", JSON.stringify(event));
 };

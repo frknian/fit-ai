@@ -38,7 +38,7 @@ const INTENSITY_MET: Record<GoalIntensity, number> = {
 };
 
 export const GOAL_INTENSITIES: GoalIntensity[] = ["easy", "steady", "hard"];
-export const WEEKLY_DAY_OPTIONS = [2, 3, 4, 5, 6];
+export const WEEKLY_DAY_OPTIONS = [2, 3, 4, 5, 6, 7];
 export const SESSION_MINUTE_OPTIONS = [30, 45, 60, 75];
 
 export type GoalPlanAnswers = {

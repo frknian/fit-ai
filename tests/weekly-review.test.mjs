@@ -4,6 +4,10 @@ import { enforceWeeklySafety, hasEnoughWeeklyData, localWeeklyReview, validateWe
 import { authorizedRequest, withAuthenticatedFetch, withSupabaseAuthEnv, withUsageMock } from "./helpers/auth.mjs";
 import { tr } from "../lib/i18n/dictionaries/tr.ts";
 
+function openAiResponse(text) {
+  return { id: "resp_test", created_at: 1, model: "gpt-5.6-terra", output: [{ type: "message", role: "assistant", id: "msg_test", content: [{ type: "output_text", text, annotations: [] }] }], usage: { input_tokens: 10, output_tokens: 10 } };
+}
+
 const baseSummary = {
   weekStart: "2026-07-20", goalCategory: "Güçlenme", sessionCount: 2, completionRate: 90, totalMinutes: 70,
   easySessions: 1, suitableSessions: 1, hardSessions: 0, averageFatigue: 2.5, painAreas: [], nutritionEntryCount: 8,
@@ -84,7 +88,7 @@ test("günlük AI değerlendirme sınırı dolunca AI'ya gitmeden yerel değerle
 function withWeeklyReviewFetch({ isPremium, lastAiWeekStart, generated }) {
   return withUsageMock({ isPremium, allowed: true, currentCount: 1 }, (url) => {
     if (String(url).includes("/rest/v1/weekly_ai_reviews")) return Response.json(lastAiWeekStart ? [{ week_start: lastAiWeekStart }] : []);
-    if (String(url).includes("/chat/completions")) return Response.json({ choices: [{ message: { role: "assistant", content: JSON.stringify(generated) } }] });
+    if (String(url).includes("/responses")) return Response.json(openAiResponse(JSON.stringify(generated)));
     throw new TypeError(`beklenmeyen ağ isteği: ${url}`);
   });
 }

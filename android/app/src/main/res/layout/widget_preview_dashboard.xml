@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/widget_background" android:gravity="center_vertical" android:orientation="vertical" android:padding="16dp">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="HEDEFIT • BUGÜN" android:textColor="#B4F18B" android:textSize="12sp" android:textStyle="bold" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="8.522 adım  •  341 kcal" android:textColor="#FFFFFFFF" android:textSize="20sp" android:textStyle="bold" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Su 2,0 L  •  Seri 7 gün" android:textColor="#FFB8C0B7" android:textSize="12sp" />
+</LinearLayout>

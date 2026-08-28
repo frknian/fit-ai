@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/widget_background" android:gravity="center_vertical" android:orientation="vertical" android:padding="14dp">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="KENDİ WIDGET'IN" android:textColor="#B4F18B" android:textSize="12sp" android:textStyle="bold" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:text="Metriklerini seç" android:textColor="#FFFFFFFF" android:textSize="18sp" android:textStyle="bold" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Görünüm ve işlemi özelleştir" android:textColor="#FFB8C0B7" android:textSize="12sp" />
+</LinearLayout>

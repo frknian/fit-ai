@@ -11,8 +11,11 @@ fitness metrikleri üzerine kuruludur.
 - Etkileşimli aktif antrenman
 - Beslenme günlüğü ve öğün ekleme
 - İlerleme grafikleri ve ölçümler
+- Görevler: her gün değişen, toplam 100 XP değerindeki uyku, adım, antrenman,
+  rota ve beslenme görevleri
+- 24 başarım ve her başarıma ait 100 XP ödülü
 - Fit Koç sohbeti
-- Akıllı Fit Koç: isteğe bağlı Qwen3 1.7B yerel model, cihazda çevrimdışı sohbet
+- Fit Koç: sunucu tarafındaki bulut AI ile güvenli sohbet
 - Profil, vücut ölçüleri ve 15 soruluk kişiselleştirme testi
 - Hedef kilo ve tahmini süre grafiği
 - Bildirim takvimi, açık/koyu tema ve dil ayarı
@@ -101,7 +104,8 @@ Lint ve test:
 - Android Keystore ile şifrelenmiş kalıcı oturum ve otomatik token yenileme
 - RLS korumalı Supabase profil, program ve ilerleme verileri
 - Bearer token ile Hedefit beslenme, AI program ve koç API'leri
-- Fit Koç'ta ücretsiz ve premium hesaplar için günlük soru sınırı olmayan sohbet
+- Fit Koç günlük soru hakkı; ücretsiz hesaplarda 300 XP'de +1, 500 XP'de +2
+  ek soru hakkı açan görev ödülleri
 - Gerçek antrenman tamamlama, öğün ekleme ve dashboard yenileme akışları
 - Profil güncelleme ve 15 soruluk testi yeniden yanıtlama
 - Yerel haftalık bildirim planlama ve kalıcı görünüm tercihleri
@@ -113,13 +117,22 @@ Lint ve test:
 Mobil pakete yalnızca public anon key eklenir. Supabase service-role/secret key
 istemci uygulamasına kesinlikle eklenmemelidir.
 
-## Akıllı Fit Koç (yerel Qwen)
+## Fit Koç bulut AI
 
-Fit Koç ekranındaki **Akıllı Fit Koç** kartı, Qwen3 1.7B Q8 modelini kullanıcı
-onayıyla cihaza indirir. Model APK içine konmaz; resmî GGUF paketi yaklaşık 1,8 GB
-olduğu için Wi-Fi ve yeterli boş alan gerekir. İndirme tamamlandığında kullanıcı
-çevrimdışı modu açabilir; sohbet isteği bu durumda Hedefit API'sine gönderilmez.
+Fit Koç yanıtları sunucu tarafındaki OpenAI yapılandırması üzerinden üretilir.
+Anahtar Android uygulamasına eklenmez; çevrimdışıyken yalnız AI özellikleri
+kullanılamaz, diğer kayıt ve takip işlevleri çalışmaya devam eder.
 
-Yerel motor Android 11+ ve 64-bit cihazlarda etkinleşir. Yayın öncesi model adresi
-`LOCAL_COACH_MODEL_URL` ile kendi CDN alanına taşınmalı, dosya için SHA-256 doğrulaması
-eklenmeli ve hedef cihazlarda performans testi yapılmalıdır.
+## Görevler ve ödüller
+
+Alt bardaki Görevler simgesi, günün doğrulanabilir görevlerini gösterir. Görev
+seti her gün değişir; tamamlanabilecek görevlerin XP toplamı daima 100'dür.
+Su içme XP görevi yoktur. Uyku görevi, Health Connect'ten eşitlenen en az yedi
+saatlik uyku kaydıyla tamamlanır; yalnız uyku süresi olan kaynaklarda uyanış
+saati varsayılmaz.
+
+Başarımlar antrenman, adım, rota, erken/geç aktivite ve seri hedeflerini kapsar.
+24 başarımın her biri 100 XP verir. Toplam XP, Fit Koç için günlük ek soru
+hakkı açar: 300 XP +1, 500 XP +2; sonrasında her 250 XP'de bir artar ve +5'te
+durur. Bu ödüller yalnız veritabanındaki `tasks_rewards` migration'ı
+uygulandıktan sonra sunucu tarafında kullanıma yansır.

@@ -1,6 +1,7 @@
 package com.hedefit.app.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -61,12 +62,25 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.hedefit.app.R
 import com.hedefit.app.ui.model.AppDestination
 import com.hedefit.app.ui.layout.LayoutPolicy
 import com.hedefit.app.ui.theme.HedefitColors
 
 val ScreenHorizontalPadding = 18.dp
 val CardRadius = 18.dp
+
+@Composable
+fun FitCoachRobotAvatar(modifier: Modifier = Modifier) {
+    Image(
+        painter = painterResource(R.drawable.fit_coach_robot),
+        contentDescription = "Fit Koç spor robotu",
+        modifier = modifier,
+        contentScale = ContentScale.Fit,
+    )
+}
 
 @Composable
 fun HedefitAppFrame(
@@ -102,7 +116,7 @@ private fun HedefitBottomBar(selected: AppDestination, onSelect: (AppDestination
         NavigationBar(
             containerColor = HedefitColors.Surface,
             tonalElevation = 0.dp,
-            modifier = Modifier.height(80.dp),
+            modifier = Modifier.height(64.dp),
             windowInsets = WindowInsets(0),
         ) {
             AppDestination.entries.forEach { destination ->
@@ -113,30 +127,23 @@ private fun HedefitBottomBar(selected: AppDestination, onSelect: (AppDestination
             Column(
                 Modifier.weight(1f).fillMaxHeight()
                     .selectable(selected = active, interactionSource = interactionSource, indication = null, role = Role.Tab) { if (!active) onSelect(destination) }
-                    .padding(top = 5.dp, bottom = 3.dp),
+                    .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceEvenly,
             ) {
                 Box(
                     Modifier
                         .then(if (isCoach) Modifier.size(48.dp) else Modifier.width(62.dp).height(36.dp))
-                        .background(if (isCoach || active) HedefitColors.Lime else Color.Transparent, if (isCoach) CircleShape else RoundedCornerShape(22.dp)),
+                        .background(if (!isCoach && active) HedefitColors.Lime else Color.Transparent, RoundedCornerShape(22.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
+                    if (isCoach) FitCoachRobotAvatar(Modifier.size(43.dp)) else Icon(
                         destination.icon,
                         contentDescription = label,
-                        modifier = Modifier.size(if (isCoach) 25.dp else 22.dp),
-                        tint = if (isCoach || active) HedefitColors.OnLime else HedefitColors.TextSecondary,
+                        modifier = Modifier.size(22.dp),
+                        tint = if (active) HedefitColors.OnLime else HedefitColors.TextSecondary,
                     )
                 }
-                Text(
-                    label,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontSize = 10.sp,
-                    color = if (active) HedefitColors.Lime else HedefitColors.TextSecondary,
-                )
             }
         }
         }
@@ -161,12 +168,12 @@ private fun HedefitNavigationRail(selected: AppDestination, onSelect: (AppDestin
             NavigationRailItem(
                 selected = destination == selected,
                 onClick = { onSelect(destination) },
-                icon = { Icon(destination.icon, label) },
+                icon = { if (destination == AppDestination.Coach) FitCoachRobotAvatar(Modifier.size(38.dp)) else Icon(destination.icon, label) },
                 label = { Text(label, fontSize = 10.sp) },
                 colors = NavigationRailItemDefaults.colors(
                     selectedIconColor = HedefitColors.OnLime,
                     selectedTextColor = HedefitColors.Lime,
-                    indicatorColor = HedefitColors.Lime,
+                    indicatorColor = if (destination == AppDestination.Coach) Color.Transparent else HedefitColors.Lime,
                     unselectedIconColor = HedefitColors.TextSecondary,
                     unselectedTextColor = HedefitColors.TextSecondary,
                 ),

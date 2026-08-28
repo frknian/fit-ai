@@ -51,6 +51,7 @@ data class WorkoutProgramData(
     val focusArea: String,
     val exercises: List<WorkoutExerciseData>,
     val isActive: Boolean,
+    val showOnHome: Boolean = false,
 )
 
 data class WorkoutSessionData(
@@ -61,15 +62,49 @@ data class WorkoutSessionData(
     val completedExercises: Int,
     val totalExercises: Int,
     val fatigue: Int?,
+    val exerciseNames: List<String> = emptyList(),
+    val difficulty: String? = null,
+    val painAreas: List<String> = emptyList(),
+)
+
+data class WorkoutSetPerformanceData(
+    val setNumber: Int,
+    val weightKg: Double?,
+    val reps: Int?,
+    val durationSeconds: Int?,
+    val rpe: Int?,
+)
+
+data class WorkoutExercisePerformanceData(
+    val sessionId: String,
+    val exerciseId: String?,
+    val exerciseName: String,
+    val completedAt: String,
+    val sets: List<WorkoutSetPerformanceData>,
 )
 
 data class RouteActivityData(
     val id: String,
     val activityType: String,
+    val title: String,
     val startedAt: String,
     val endedAt: String,
     val durationSeconds: Int,
+    val movingDurationSeconds: Int,
     val distanceMeters: Double,
+    val averagePaceSecondsPerKm: Int? = null,
+    val averageSpeedKmh: Double = 0.0,
+    val calories: Int = 0,
+    val status: String = "completed",
+    val routePoints: List<ActivityRoutePointData> = emptyList(),
+)
+
+data class ActivityRoutePointData(
+    val latitude: Double,
+    val longitude: Double,
+    val recordedAt: Long,
+    val accuracyMeters: Double = 0.0,
+    val altitudeMeters: Double? = null,
 )
 
 data class WorkoutSetInput(
@@ -164,6 +199,8 @@ data class ExerciseCatalogData(
     val category: String,
     val imageUrls: List<String>,
     val secondaryMuscles: List<String> = emptyList(),
+    val force: String = "",
+    val mechanic: String = "",
 )
 
 data class NutritionGoalData(
@@ -200,7 +237,14 @@ data class DashboardData(
     val favoriteMeals: List<FavoriteMealData> = emptyList(),
     val workoutPrograms: List<WorkoutProgramData> = emptyList(),
     val routeActivities: List<RouteActivityData> = emptyList(),
+    val exercisePerformance: List<WorkoutExercisePerformanceData> = emptyList(),
+    val stepHistory: List<DailyStepData> = emptyList(),
+    val gamificationTotalXp: Int? = null,
+    val gamificationWeeklyXp: Int? = null,
+    val unlockedAchievements: Map<String, LocalDate> = emptyMap(),
 )
+
+data class DailyStepData(val localDate: LocalDate, val steps: Int)
 
 data class NutritionEstimateData(
     val name: String,

@@ -389,7 +389,7 @@ export const en: typeof tr = {
     mealAdviceTitle: "What should you focus on for your next meal?",
     mealAdviceLoading: "Evaluating your daily goals and meals together…",
     mealAdvicePreparing: "Preparing meal summary…",
-    mealAdviceAiNote: "Prepared with Kimi K3 based on your personal goal and today's log.",
+    mealAdviceAiNote: "Prepared with AI based on your personal goal and today's log.",
     mealAdviceFallbackNote: "Prepared with safe nutrition rules.",
     mealAdviceDisclaimer: "Not medical nutrition advice.",
     refresh: "Refresh",

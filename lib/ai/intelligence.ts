@@ -17,6 +17,7 @@
 
 import { bodyMassIndex, bmiCategory, type BmiCategory } from "../body-metrics.ts";
 import { calculateNutritionGoal, calculateWeeklyWeightTrend, type NutritionGoal, type NutritionGoalType, type NutritionTotals, type WeightMeasurement } from "../nutrition-goals.ts";
+import { progressionSuggestion, recoveryScore, weeklyVolume } from "../training-intelligence.ts";
 
 export type IntelligenceInput = {
   profile?: {
@@ -24,6 +25,9 @@ export type IntelligenceInput = {
     sex?: string | null;
     heightCm?: number | null;
     weightKg?: number | null;
+    environment?: string | null;
+    equipment?: string | null;
+    assessmentAnswers?: string[];
   };
   goal?: {
     goalType?: NutritionGoalType | null;
@@ -38,6 +42,8 @@ export type IntelligenceInput = {
     steps?: number | null;
     workoutCompleted?: boolean | null;
     waterMl?: number | null;
+    sleepMinutes?: number | null;
+    foods?: Array<{ meal: string; name: string; calories?: number; protein?: number; carbs?: number; fat?: number }>;
   };
   /** Tarihe göre sıralanmamış olabilir; alt modüller kendisi sıralar. */
   measurements?: WeightMeasurement[];
@@ -51,6 +57,11 @@ export type IntelligenceInput = {
     runningDistanceKm?: number | null;
     streakDays?: number | null;
   };
+  training?: {
+    activeExercises?: Array<{ name: string; area?: string; sets?: number; reps?: string }>;
+    recentSessions?: Array<{ completedAt: string; exerciseNames: string[]; durationMinutes?: number; fatigue?: number }>;
+    recentPerformance?: Array<{ exerciseId?: string; exerciseName: string; sets: Array<{ weightKg?: number; reps?: number; rpe?: number }> }>;
+  };
 };
 
 export type CoachFacts = {
@@ -61,6 +72,9 @@ export type CoachFacts = {
     weightKg?: number;
     bmi?: number;
     bmiCategory?: BmiCategory;
+    environment?: string;
+    equipment?: string;
+    assessmentAnswers?: string[];
   };
   goals: {
     goalType?: NutritionGoalType;
@@ -79,7 +93,9 @@ export type CoachFacts = {
     proteinRemainingGrams?: number;
     steps?: number;
     waterMl?: number;
+    sleepMinutes?: number;
     workoutCompleted?: boolean;
+    foods?: Array<{ meal: string; name: string; calories?: number; protein?: number; carbs?: number; fat?: number }>;
   };
   trends: {
     weightChange7dKg?: number;
@@ -94,6 +110,13 @@ export type CoachFacts = {
     walkingDistanceKm?: number;
     runningDistanceKm?: number;
     streakDays?: number;
+  };
+  training: {
+    activeExercises?: Array<{ name: string; area?: string; sets?: number; reps?: string }>;
+    recentSessions?: Array<{ completedAt: string; exerciseNames: string[]; durationMinutes?: number; fatigue?: number }>;
+    recovery?: { score: number; decision: "heavy" | "moderate" | "rest"; reason: string };
+    progression?: Array<{ exerciseName: string; action: string; suggestedWeightKg?: number; targetReps: string }>;
+    weeklyVolume?: Array<{ area: string; sets: number; status: string }>;
   };
   /** Hesaplanamayan alanların NEDENİ. Model "veri yok" diyebilsin diye. */
   missing: string[];
@@ -193,6 +216,11 @@ export function analyze(input: IntelligenceInput): CoachFacts {
     : undefined;
 
   const currentWeight = weightKg ?? sorted.at(-1)?.weightKg;
+  const recovery = recoveryScore({ sleepMinutes: finite(input.today?.sleepMinutes), steps: finite(input.today?.steps), sessions: input.training?.recentSessions, fatigue: input.training?.recentSessions?.[0]?.fatigue });
+  const progression = (input.training?.recentPerformance ?? []).flatMap((entry) => {
+    const suggestion = progressionSuggestion(entry.sets, input.training?.activeExercises?.find((item) => item.name === entry.exerciseName)?.reps);
+    return suggestion ? [{ exerciseName: entry.exerciseName, ...suggestion }] : [];
+  }).slice(0, 6);
 
   return {
     profile: {
@@ -200,6 +228,9 @@ export function analyze(input: IntelligenceInput): CoachFacts {
       ...(sex !== undefined && { sex }),
       ...(heightCm !== undefined && { heightCm }),
       ...(currentWeight !== undefined && { weightKg: round(currentWeight, 1) }),
+      ...(input.profile?.environment && { environment: input.profile.environment }),
+      ...(input.profile?.equipment && { equipment: input.profile.equipment }),
+      ...(input.profile?.assessmentAnswers?.length && { assessmentAnswers: input.profile.assessmentAnswers }),
       ...(bmi !== undefined && { bmi, bmiCategory: bmiCategory(bmi) }),
     },
     goals: {
@@ -218,7 +249,9 @@ export function analyze(input: IntelligenceInput): CoachFacts {
       ...(proteinGrams !== undefined && proteinTarget !== undefined && { proteinRemainingGrams: round(Math.max(0, proteinTarget - proteinGrams)) }),
       ...(finite(input.today?.steps) !== undefined && { steps: round(input.today!.steps as number) }),
       ...(finite(input.today?.waterMl) !== undefined && { waterMl: round(input.today!.waterMl as number) }),
+      ...(finite(input.today?.sleepMinutes) !== undefined && { sleepMinutes: round(input.today!.sleepMinutes as number) }),
       ...(typeof input.today?.workoutCompleted === "boolean" && { workoutCompleted: input.today.workoutCompleted }),
+      ...(input.today?.foods?.length && { foods: input.today.foods }),
     },
     trends: {
       ...(weightChange7dKg !== undefined && { weightChange7dKg }),
@@ -231,6 +264,13 @@ export function analyze(input: IntelligenceInput): CoachFacts {
       ...(finite(input.activity?.walkingDistanceKm) !== undefined && { walkingDistanceKm: round(input.activity!.walkingDistanceKm as number, 1) }),
       ...(finite(input.activity?.runningDistanceKm) !== undefined && { runningDistanceKm: round(input.activity!.runningDistanceKm as number, 1) }),
       ...(finite(input.activity?.streakDays) !== undefined && { streakDays: input.activity!.streakDays as number }),
+    },
+    training: {
+      ...(input.training?.activeExercises?.length && { activeExercises: input.training.activeExercises }),
+      ...(input.training?.recentSessions?.length && { recentSessions: input.training.recentSessions }),
+      recovery,
+      ...(progression.length && { progression: progression.map((item) => ({ exerciseName: item.exerciseName, action: item.action, suggestedWeightKg: item.suggestedWeightKg, targetReps: item.targetReps })) }),
+      ...(input.training?.activeExercises?.length && { weeklyVolume: weeklyVolume(input.training.activeExercises) }),
     },
     missing,
   };

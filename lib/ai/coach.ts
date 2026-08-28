@@ -1,7 +1,7 @@
 // AI Coach Service — Hedefit'in AI'ya açılan TEK kapısı.
 //
 // Rotalar ve bileşenler buradaki fonksiyonları çağırır; hangi sağlayıcının
-// (yerel / Kimi / gelecekteki bir sağlayıcı) cevapladığını bilmezler.
+// hangi bulut modelinin yanıt verdiğini bilmezler.
 //
 // Akış:
 //   deterministik gerçekler → hafıza → bilgi getirimi → bağlam bütçesi

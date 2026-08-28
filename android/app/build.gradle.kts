@@ -33,8 +33,8 @@ android {
         applicationId = "com.hedefit.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 20
+        versionName = "0.2.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -42,11 +42,9 @@ android {
         buildConfigField("String", "API_BASE_URL", quoted(appConfig("HEDEFIT_API_BASE_URL", "https://hedefit.frknian.workers.dev")))
         buildConfigField("String", "SUPABASE_URL", quoted(appConfig("NEXT_PUBLIC_SUPABASE_URL")))
         buildConfigField("String", "SUPABASE_ANON_KEY", quoted(appConfig("NEXT_PUBLIC_SUPABASE_ANON_KEY")))
-        buildConfigField(
-            "String",
-            "LOCAL_COACH_MODEL_URL",
-            quoted(appConfig("LOCAL_COACH_MODEL_URL", "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf?download=true")),
-        )
+        buildConfigField("String", "ADMOB_BANNER_AD_UNIT_ID", quoted(appConfig("ADMOB_BANNER_AD_UNIT_ID", "ca-app-pub-5328854373446190/6660516300")))
+        buildConfigField("String", "ADMOB_INTERSTITIAL_AD_UNIT_ID", quoted(appConfig("ADMOB_INTERSTITIAL_AD_UNIT_ID", "ca-app-pub-5328854373446190/3478045691")))
+        manifestPlaceholders["ADMOB_APP_ID"] = appConfig("ADMOB_APP_ID", "ca-app-pub-5328854373446190~4094062717")
         buildConfigField(
             "String",
             "GOOGLE_WEB_CLIENT_ID",
@@ -54,7 +52,7 @@ android {
                 "GOOGLE_WEB_CLIENT_ID",
                 appConfig(
                     "NEXT_PUBLIC_GOOGLE_CLIENT_ID",
-                    "755194872819-ouv943k16kr9rd5jpv6bdtgcnjv2mcr7.apps.googleusercontent.com",
+                    "755194872819-e6ruj676gprq426d3k544kskdmgqr2sa.apps.googleusercontent.com",
                 ),
             )),
         )
@@ -63,6 +61,12 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    sourceSets.getByName("main").assets.srcDir(file("../../data"))
+
+    packaging {
+        jniLibs.useLegacyPackaging = true
     }
 
     buildTypes {
@@ -85,7 +89,6 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":local-ai"))
     implementation(platform("androidx.compose:compose-bom:2025.09.00"))
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.activity:activity-compose:1.11.0")
@@ -97,6 +100,9 @@ dependencies {
     implementation("androidx.credentials:credentials:1.7.0-alpha02")
     implementation("androidx.credentials:credentials-play-services-auth:1.7.0-alpha02")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.2.0")
+    implementation("com.google.android.gms:play-services-ads:25.4.0")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.google.android.ump:user-messaging-platform:4.0.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.foundation:foundation")

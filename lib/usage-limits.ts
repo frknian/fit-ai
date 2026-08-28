@@ -4,13 +4,15 @@ import { bearerToken } from "./api-auth.ts";
 
 export type UsageFeature = "chat" | "photo" | "text_nutrition" | "weekly_review" | "nutrition_advice" | "plan";
 
-// Fit Koç sohbeti tüm kullanıcılarda, diğer AI özellikleri ise premium'da
-// sınırsızdır — bkz. db/migrations/20260821_premium_unlimited_ai_usage.sql.
+// Fit Koç kotası maliyet ve kötüye kullanım koruması için plan bazında
+// günlük olarak sınırlandırılır. Diğer premium AI araçları sınırsız kalır.
 // `null`, SQL fonksiyonuna "bu özellik için sınır kontrolü yapma" der; TS
-// tarafında `Number.POSITIVE_INFINITY`'e çevrilir (bkz. checkAndConsumeUsage).
+// tarafında `Number.POSITIVE_INFINITY`e çevrilir (bkz. checkAndConsumeUsage).
 const DAILY_LIMITS = {
-  free: { chat: null, photo: 1, text_nutrition: 3, weekly_review: 1, nutrition_advice: 5, plan: 3 },
-  premium: { chat: null, photo: null, text_nutrition: null, weekly_review: null, nutrition_advice: null, plan: null },
+  free: { chat: 5, photo: 1, text_nutrition: 3, weekly_review: 1, nutrition_advice: 5, plan: 3 },
+  // Mevcut üretim altyapısında Plus ve Pro aynı premium kotasını kullanır.
+  // plan_tier canlıya ayrıştırıldığında bu değerler Plus/Pro için ayrı atanabilir.
+  premium: { chat: 25, photo: null, text_nutrition: null, weekly_review: null, nutrition_advice: null, plan: null },
 } as const satisfies Record<"free" | "premium", Record<UsageFeature, number | null>>;
 
 // Eski (geçiş dönemi) yol yalnız db/migrations/20260726_usage_limits.sql'deki
@@ -309,7 +311,7 @@ export function usageLimitExceeded(feature: UsageFeature, used: number, limit: n
             : "AI beslenme önerisi";
   return Response.json(
     {
-      error: `Bugünkü ücretsiz ${featureLabel} sınırına ulaştın (${limit}/${limit}). Yarın tekrar deneyebilirsin.`,
+      error: `Bugünkü ${featureLabel} sınırına ulaştın (${limit}/${limit}). Yarın tekrar deneyebilirsin.`,
       limitReached: true,
       feature,
       used,

@@ -18,6 +18,13 @@ test("derives safe calorie and macro targets for all goals", () => {
   }
 });
 
+test("keeps general protein goals practical instead of scaling without bound", () => {
+  const highWeightLoss = calculateNutritionGoal({ ...base, weightKg: 130, workoutDays: 3, goalType: "fatLoss" });
+  const regularAdult = calculateNutritionGoal({ ...base, weightKg: 82.5, workoutDays: 4, goalType: "lose" });
+  assert.ok(highWeightLoss.proteinGrams <= 160);
+  assert.equal(regularAdult.proteinGrams, 132);
+});
+
 test("infers goal and weekly training frequency from profile answers", () => {
   // Serbest metinde ikisi birden geçiyorsa yağ kaybı kazanır: daha küçük açık
   // ve daha yüksek protein üretir, yani tartıyı da düşürür ama kası korur.

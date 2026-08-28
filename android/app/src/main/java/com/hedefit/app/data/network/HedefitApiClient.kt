@@ -2,6 +2,7 @@ package com.hedefit.app.data.network
 
 import com.hedefit.app.BuildConfig
 import com.hedefit.app.data.auth.AuthRepository
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 
 class HedefitApiClient(
@@ -22,11 +23,19 @@ class HedefitApiClient(
             body = body,
             timeoutMs = when {
                 path.contains("generate-plan") -> 75_000
-                path.contains("/api/chat") -> 25_000
+                path.contains("/api/chat") -> 45_000
                 else -> 40_000
             },
         )
         val first = execute(auth.validAccessToken())
-        return if (first.status == 401) execute(auth.validAccessToken(forceRefresh = true)) else first
+        if (first.status == 401) return execute(auth.validAccessToken(forceRefresh = true))
+        if (path.contains("/api/chat") && first.status in setOf(502, 503, 504)) {
+            // Sunucu başarısız OpenAI hakkını iade eder. Kısa süreli sağlayıcı
+            // kesintisinde kullanıcıdan aynı mesajı yeniden yazmasını istemek
+            // yerine, geçerli oturumla yalnız bir kez otomatik tekrar et.
+            delay(750)
+            return execute(auth.validAccessToken())
+        }
+        return first
     }
 }

@@ -26,7 +26,10 @@ object MeasurementUnits {
         return pattern.format(value, heightUnit(system))
     }
 
-    fun formatDistance(meters: Double, system: String): String = if (isImperial(system)) "%.2f mi".format(meters / METERS_PER_MILE) else "%.2f km".format(meters / 1_000.0)
+    fun formatDistance(meters: Double, system: String): String {
+        val safeMeters = meters.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+        return if (isImperial(system)) "%.2f mi".format(safeMeters / METERS_PER_MILE) else "%.2f km".format(safeMeters / 1_000.0)
+    }
 
     fun formatPace(secondsPerKm: Int?, system: String): String {
         val converted = secondsPerKm?.let { if (isImperial(system)) (it * 1.609344).toInt() else it }

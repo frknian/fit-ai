@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/widget_background" android:gravity="center" android:orientation="vertical" android:padding="12dp">
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🔥" android:textSize="24sp" />
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="341 kcal" android:textColor="#FFFFFFFF" android:textSize="18sp" android:textStyle="bold" />
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Aktif kalori" android:textColor="#FFB8C0B7" android:textSize="11sp" />
+</LinearLayout>

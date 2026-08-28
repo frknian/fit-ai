@@ -2,25 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { openAiCompatibleProvider } from "../lib/ai/providers/openai-compatible.ts";
 
-// Sağlayıcının kabul etmediği parametreleri PAZARLIKLA bırakma davranışı.
-//
-// Bu dosyanın varlık sebebi sahada çıkan gerçek bir arıza: üretimdeki model
-// `kimi-k2.7-code-highspeed`, isteğe eklenen `thinking: { type: "disabled" }`
-// yüzünden HER çağrıyı 392 ms'de reddediyordu
-// ("invalid thinking: only type=enabled is allowed for this model").
-// Router bunu normal bir yedeklemeye çevirdiği için hata hiçbir yerde
-// görünmüyordu; kullanıcı yalnızca "Fit Koç şu an sınırlı modda yanıt
-// veriyor." şablonlarını görüyordu. Yani koç haftalarca hiç LLM kullanmadı.
-
-const ENV_KEYS = ["AI_API_KEY", "AI_MODEL", "AI_PROVIDER_NAME", "AI_BASE_URL"];
+const ENV_KEYS = ["OPENAI_API_KEY", "OPENAI_MODEL_STANDARD"];
 let saved;
 
 test.beforeEach(() => {
   saved = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
-  process.env.AI_API_KEY = "test-key";
-  process.env.AI_MODEL = "kimi-k2.7-code-highspeed";
-  process.env.AI_PROVIDER_NAME = "moonshot";
-  process.env.AI_BASE_URL = "https://api.example.test/v1";
+  process.env.OPENAI_API_KEY = "test-key";
+  process.env.OPENAI_MODEL_STANDARD = "gpt-5.6-terra";
 });
 
 test.afterEach(() => {
@@ -28,42 +16,31 @@ test.afterEach(() => {
     if (saved[key] === undefined) delete process.env[key];
     else process.env[key] = saved[key];
   }
-  delete globalThis.fetch.__stub;
+  if (globalThis.fetch.__stub) globalThis.fetch = globalThis.fetch.__stub;
 });
 
-/** İstek gövdelerini kaydeden, sırayla verilen yanıtları döndüren fetch. */
-function stubFetch(responses) {
-  const bodies = [];
-  const original = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    bodies.push(JSON.parse(init.body));
-    const next = responses[Math.min(bodies.length - 1, responses.length - 1)];
-    return new Response(JSON.stringify(next.body), {
-      status: next.status,
-      headers: { "Content-Type": "application/json" },
-    });
+function response(text) {
+  return {
+    id: "resp_test", created_at: 1, model: "gpt-5.6-terra",
+    output: [{ type: "message", role: "assistant", id: "msg_test", content: [{ type: "output_text", text, annotations: [] }] }],
+    usage: { input_tokens: 10, output_tokens: 8 },
   };
-  globalThis.fetch.__stub = original;
-  return bodies;
 }
 
-const THINKING_REJECTED = {
-  status: 400,
-  body: { error: { message: "invalid thinking: only type=enabled is allowed for this model", type: "invalid_request_error" } },
-};
+function stubFetch(responses) {
+  const calls = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: JSON.parse(init.body) });
+    const next = responses[Math.min(calls.length - 1, responses.length - 1)];
+    return Response.json(next.body, { status: next.status });
+  };
+  globalThis.fetch.__stub = original;
+  return calls;
+}
 
-const OK_ANSWER = {
-  status: 200,
-  body: {
-    id: "x", object: "chat.completion", created: 1, model: "kimi-k2.7-code-highspeed",
-    choices: [{ index: 0, message: { role: "assistant", content: "Günde 160-220 gram protein hedefle." }, finish_reason: "stop" }],
-    usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
-  },
-};
-
-test("düşünmeyi kapatmayı reddeden model için istek THINKING'SİZ tekrarlanır", async () => {
-  const bodies = stubFetch([THINKING_REJECTED, OK_ANSWER]);
-
+test("GPT-5.6 çağrısı Responses API, düşük reasoning ve çıktı bütçesi kullanır", async () => {
+  const calls = stubFetch([{ status: 200, body: response("Günde 160-220 gram protein hedefle.") }]);
   const result = await openAiCompatibleProvider.generateText({
     category: "conversation",
     system: "Sen Fit Koç'sun.",
@@ -71,43 +48,25 @@ test("düşünmeyi kapatmayı reddeden model için istek THINKING'SİZ tekrarlan
     maxOutputTokens: 500,
   });
 
-  assert.equal(result.text, "Günde 160-220 gram protein hedefle.", "ikinci deneme kullanıcıya ulaşmalı");
-  assert.equal(bodies.length, 2, "tam olarak bir kez yeniden denenmeli");
-
-  // İlk deneme: quirk uygulanmış (düşünme kapalı, küçük token tabanı).
-  assert.ok(JSON.stringify(bodies[0]).includes("disabled"), "ilk deneme düşünmeyi kapatmayı denemeli");
-
-  // İkinci deneme: düşünme seçeneği DÜŞÜRÜLMÜŞ olmalı.
-  assert.ok(!JSON.stringify(bodies[1]).includes("disabled"), "ikinci denemede thinking gönderilmemeli");
+  assert.equal(result.text, "Günde 160-220 gram protein hedefle.");
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/v1\/responses$/);
+  assert.equal(calls[0].body.model, "gpt-5.6-terra");
+  assert.equal(calls[0].body.reasoning.effort, "low");
+  assert.equal(calls[0].body.text.verbosity, "low");
+  assert.equal(calls[0].body.max_output_tokens, 500);
 });
 
-test("düşünme açık kalınca token tabanı da YÜKSELİR", async () => {
-  // İki ayar birlikte değişmek zorunda: düşünen model, küçük bütçeyi düşünmeye
-  // harcayıp asıl içeriğe sıra bırakmadan sessizce BOŞ metin döndürür. Token
-  // tabanı yükseltilmezse hata görünmez ama yanıt boş gelir ve router yine
-  // şablona düşer — yani arıza aynı yerden, başka kılıkta geri gelir.
-  const bodies = stubFetch([THINKING_REJECTED, OK_ANSWER]);
-
-  await openAiCompatibleProvider.generateText({
-    category: "conversation",
-    messages: [{ role: "user", text: "merhaba" }],
-    maxOutputTokens: 500,
-  });
-
-  const tokensOf = (body) => body.max_tokens ?? body.max_completion_tokens;
-  assert.equal(tokensOf(bodies[0]), 500, "düşünme kapalıyken route'un bütçesi yeterli");
-  assert.ok(tokensOf(bodies[1]) >= 4_000, `düşünme açıkken taban yükselmeli, gelen: ${tokensOf(bodies[1])}`);
+test("GPT-5.6 isteğinde desteklenmeyen sıcaklık gönderilmez", async () => {
+  const calls = stubFetch([{ status: 200, body: response("Tamam") }]);
+  const result = await openAiCompatibleProvider.generateText({ category: "conversation", prompt: "merhaba", temperature: 0.2 });
+  assert.equal(result.text, "Tamam");
+  assert.equal(calls.length, 1);
+  assert.ok(!("temperature" in calls[0].body));
 });
 
-test("ilgisiz bir sağlayıcı hatası YENİDEN DENENMEZ, yukarı fırlatılır", async () => {
-  // Yeniden deneme yalnız "bu parametreyi kabul etmiyorum" hataları için.
-  // Kota veya kimlik hatasında tekrar denemek gecikme ve maliyet ekler.
-  const bodies = stubFetch([{ status: 401, body: { error: { message: "invalid api key", type: "authentication_error" } } }]);
-
-  await assert.rejects(() => openAiCompatibleProvider.generateText({
-    category: "conversation",
-    messages: [{ role: "user", text: "merhaba" }],
-    maxOutputTokens: 500,
-  }));
-  assert.equal(bodies.length, 1, "kimlik hatası için pazarlık yapılmamalı");
+test("kimlik hatası yeniden denenmez", async () => {
+  const calls = stubFetch([{ status: 401, body: { error: { message: "invalid api key", type: "authentication_error" } } }]);
+  await assert.rejects(() => openAiCompatibleProvider.generateText({ category: "conversation", prompt: "merhaba" }));
+  assert.equal(calls.length, 1);
 });

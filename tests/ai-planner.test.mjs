@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { POST, profileSignals } from "../app/api/generate-plan/route.ts";
+import { POST, buildLocalPlan, profileSignals } from "../app/api/generate-plan/route.ts";
 import { extractSessionMinutes, planProgressionBlock } from "../lib/training-profile.ts";
 import { authorizedRequest, withAuthenticatedFetch, withSupabaseAuthEnv, withUsageMock } from "./helpers/auth.mjs";
-import { QUESTION, emptyHistory } from "../lib/onboarding-questions.ts";
-import { PROMPT_CATALOG_LIMIT } from "../lib/exercise-service.ts";
+import { QUESTION, QUESTION_LABELS, emptyHistory } from "../lib/onboarding-questions.ts";
+import { PROMPT_CATALOG_LIMIT, getExerciseById, getExercisesForAI, getExercisesForProfile } from "../lib/exercise-service.ts";
+
+function openAiResponse(text, model = "gpt-5.6-sol") {
+  return { id: "resp_test", created_at: 1, model, output: [{ type: "message", role: "assistant", id: "msg_test", content: [{ type: "output_text", text, annotations: [] }] }], usage: { input_tokens: 10, output_tokens: 10 } };
+}
 
 // Cevaplar lib/onboarding-questions.ts'teki 15'lik sıraya göre kurulur.
 // Sıra bilgisini teste elle gömmek yerine adlandırılmış indeksleri kullanıyoruz;
@@ -22,7 +26,9 @@ const scenarios = [
     payload: { age: 24, gender: "Erkek", height: 180, weight: 80, environment: "Evde", equipment: "Ayarlanabilir dambıl", goal: "Kas geliştirmek", history: history({
       goal: "Kas geliştirmek", experience: "Düzenli", level: "Orta seviye",
       recentFrequency: "3–4 gün", availableDays: "3–4 gün", sessionMinutes: "45 dakika",
-      trainingStyles: "Kuvvet", injuries: "Yok", dailyMovement: "Orta", sleep: "İyi",
+      motivation: "Daha güçlü hissetmek", barrier: "Yoğun çalışma temposu",
+      trainingStyles: "Kuvvet", location: "Evde", equipment: "Ayarlanabilir dambıl",
+      injuries: "Yok", dailyMovement: "Orta", sleep: "İyi", freeNote: "Akşam antrenmanı tercih ederim",
     }) },
     expected: { primaryGoal: "Kas geliştirme", weeklyDays: 3, exerciseCount: 5 },
   },
@@ -114,45 +120,53 @@ test("serbest metindeki gün sayısını antrenman süresi sanmaz", () => {
   assert.equal(extractSessionMinutes("45"), 45);
 });
 
-// OpenAI-uyumlu sağlayıcının gerçek istek/yanıt şekli: POST {baseURL}/chat/completions,
-// yanıt choices[0].message.content içinde JSON metni taşır. Hangi sağlayıcı/model
-// seçilirse seçilsin (OpenRouter, Together, kendi vLLM sunucunuz) şekil aynıdır.
+// Resmi OpenAI sağlayıcısının gerçek istek/yanıt şekli: POST /v1/responses.
 test("AI sağlayıcısı başarıyla plan üretir", { concurrency: false }, async () => {
-  const previousKey = process.env.AI_API_KEY;
+  const previousKey = process.env.OPENAI_API_KEY;
   const previousFetch = globalThis.fetch;
   const restoreAuthEnv = withSupabaseAuthEnv();
   const calls = [];
-  process.env.AI_API_KEY = "test-key";
-  globalThis.fetch = withUsageMock({ isPremium: false, allowed: true, currentCount: 1 }, async (url) => {
+  const requestBodies = [];
+  process.env.OPENAI_API_KEY = "test-key";
+  globalThis.fetch = withUsageMock({ isPremium: false, allowed: true, currentCount: 1 }, async (url, init) => {
     calls.push(String(url));
+    requestBodies.push(String(init?.body || ""));
     const generated = {
       title: "Test planı", profileSummary: "Test", rationale: "Test", safetyNote: "Test",
       analysis: { experienceLevel: "Yeni", weeklyFrequency: "1–2 gün", sessionMinutes: 30, primaryGoal: "Güç", intensity: "Düşük", equipmentMode: "Ekipmansız", focusAreas: ["Tüm vücut"], adaptations: ["A", "B", "C"] },
       weeklySchedule: [{ day: "Pazartesi", focus: "Tüm vücut", durationMinutes: 30 }], progression: ["1", "2", "3", "4"],
       workouts: [1, 2, 3, 4].map((index) => ({ id: `ex-${index}`, name: `Hareket ${index}`, english: `Exercise ${index}`, area: "Core", sets: 3, reps: "10 tekrar", restSeconds: 60, instructions: "Kontrollü uygula." })),
     };
-    return Response.json({ choices: [{ message: { role: "assistant", content: JSON.stringify(generated) } }] });
+    return Response.json(openAiResponse(JSON.stringify(generated)));
   });
 
   try {
     const response = await POST(authorizedRequest("http://localhost/api/generate-plan", { method: "POST", body: JSON.stringify(scenarios[0].payload) }));
     const result = await response.json();
     assert.equal(response.status, 200);
-    assert.equal(result.workouts.length, 4);
-    assert.ok(calls.some((url) => url.includes("/chat/completions")));
+    assert.equal(result.workouts.length, scenarios[0].expected.exerciseCount);
+    assert.ok(result.workouts.every((workout) => getExerciseById(workout.id)), "program yalnız Hareket Atlası kimliklerini içermeli");
+    assert.ok(calls.some((url) => url.includes("/responses")));
+    const openAiBody = requestBodies.find((body) => body.includes("profileTest")) || requestBodies.at(-1) || "";
+    const fullHistory = scenarios[0].payload.history;
+    assert.equal(fullHistory.filter(Boolean).length, 15, "test profili 15 sorunun tamamını doldurmalı");
+    for (const [name, index] of Object.entries(QUESTION)) {
+      assert.ok(openAiBody.includes(QUESTION_LABELS[name]), `${QUESTION_LABELS[name]} OpenAI isteğinde bulunmalı`);
+      assert.ok(openAiBody.includes(fullHistory[index]), `${QUESTION_LABELS[name]} yanıtı OpenAI isteğinde bulunmalı`);
+    }
   } finally {
     globalThis.fetch = previousFetch;
     restoreAuthEnv();
-    if (previousKey === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey;
   }
 });
 
 test("anahtar veya ağ yokken doğrulanmış katalogdan güvenli yerel plan döndürür", { concurrency: false }, async () => {
-  const previousKey = process.env.AI_API_KEY;
+  const previousKey = process.env.OPENAI_API_KEY;
   const previousFetch = globalThis.fetch;
   const restoreAuthEnv = withSupabaseAuthEnv();
   globalThis.fetch = withAuthenticatedFetch(null);
-  delete process.env.AI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
   try {
     const missingKey = await POST(authorizedRequest("http://localhost/api/generate-plan", { method: "POST", body: "{}" }));
     assert.equal(missingKey.status, 200);
@@ -160,9 +174,9 @@ test("anahtar veya ağ yokken doğrulanmış katalogdan güvenli yerel plan dön
     assert.equal(missingKeyPlan.fallback, true);
     assert.ok(missingKeyPlan.workouts.length >= 3);
 
-    process.env.AI_API_KEY = "test-key";
+    process.env.OPENAI_API_KEY = "test-key";
     // Kota kontrolü başarıyla geçmeli; ağ hatası özellikle AI model çağrısını
-    // (chat/completions) vurmalı ki test AI üretiminin kendisinin başarısız
+    // (/responses) vurmalı ki test AI üretiminin kendisinin başarısız
     // olma senaryosunu ölçsün, kota kontrolünü değil.
     globalThis.fetch = withUsageMock({ isPremium: false, allowed: true, currentCount: 1 }, async () => {
       throw new TypeError("network unavailable");
@@ -175,8 +189,22 @@ test("anahtar veya ağ yokken doğrulanmış katalogdan güvenli yerel plan dön
   } finally {
     globalThis.fetch = previousFetch;
     restoreAuthEnv();
-    if (previousKey === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey;
   }
+});
+
+test("yerel kas geliştirme planı esneme yerine büyük kasları çalıştıran bileşik kuvvet hareketleri seçer", () => {
+  const signals = profileSignals(scenarios[2].payload);
+  const plan = buildLocalPlan(signals, getExercisesForProfile(true, "Tam salon"), "tr");
+  const selected = plan.workouts.map((workout) => getExerciseById(workout.id)).filter(Boolean);
+
+  assert.equal(selected.length, scenarios[2].expected.exerciseCount);
+  assert.ok(selected.every((exercise) => exercise.category !== "stretching"), "kas geliştirme planına esneme ana hareket olarak girmemeli");
+  assert.ok(selected.filter((exercise) => exercise.mechanic === "compound").length >= 4, "planın omurgası bileşik hareketlerden oluşmalı");
+  const majorGroups = new Set(selected.flatMap((exercise) => exercise.primaryMuscles).filter((muscle) =>
+    ["quadriceps", "hamstrings", "glutes", "chest", "lats", "middle back", "shoulders"].includes(muscle),
+  ));
+  assert.ok(majorGroups.size >= 4, `büyük kas grubu çeşitliliği yetersiz: ${[...majorGroups].join(", ")}`);
 });
 
 test("kimliği doğrulanmamış plan isteği reddedilir", { concurrency: false }, async () => {
@@ -213,9 +241,7 @@ test("plan ilerleme blokları tamamlanan antrenmanla kademeli açılır", () => 
 // generate-plan istek gövdesi boyutu ve exerciseCatalog kırpma sınırı: sunucu
 // öncesinde ikisini de doğrulamıyordu; kimliği doğrulanmış tek bir kullanıcı
 // 5 dk'da 5 istek hakkının HER birine megabaytlarca prompt taşıtabilirdi.
-function catalogItem(index) {
-  return { id: `item-${index}`, name: `Hareket ${index}`, english: `Exercise ${index}`, area: "Core", equipment: "none" };
-}
+const atlasCatalog = getExercisesForAI();
 
 // rateLimit `generate-plan:${userId}` anahtarını tüm dosya boyunca paylaşılan
 // tekil bir Map'te tutuyor (bkz. lib/rate-limit.ts); TEST_USER_ID'yi
@@ -240,10 +266,10 @@ function withIsolatedPlanFetch(userId, handler) {
 }
 
 test("generate-plan payload: normal durum — küçük bir katalog aynen isteme gider", { concurrency: false }, async () => {
-  const previousKey = process.env.AI_API_KEY;
+  const previousKey = process.env.OPENAI_API_KEY;
   const previousFetch = globalThis.fetch;
   const restoreAuthEnv = withSupabaseAuthEnv();
-  process.env.AI_API_KEY = "test-key";
+  process.env.OPENAI_API_KEY = "test-key";
   let promptBody = "";
   globalThis.fetch = withIsolatedPlanFetch("00000000-0000-4000-8000-000000000097", async (url, init) => {
     promptBody = String(init?.body || "");
@@ -253,26 +279,25 @@ test("generate-plan payload: normal durum — küçük bir katalog aynen isteme 
       weeklySchedule: [{ day: "Pazartesi", focus: "Tüm vücut", durationMinutes: 30 }], progression: ["1", "2", "3", "4"],
       workouts: [1, 2, 3].map((index) => ({ id: `ex-${index}`, name: `H${index}`, english: `E${index}`, area: "Core", sets: 3, reps: "10", restSeconds: 60, instructions: "Kontrollü uygula." })),
     };
-    return Response.json({ choices: [{ message: { role: "assistant", content: JSON.stringify(generated) } }] });
+    return Response.json(openAiResponse(JSON.stringify(generated)));
   });
   try {
-    const smallCatalog = Array.from({ length: 5 }, (_, index) => catalogItem(index));
+    const smallCatalog = atlasCatalog.slice(0, 5);
     const response = await POST(authorizedRequest("http://localhost/api/generate-plan", { method: "POST", body: JSON.stringify({ ...scenarios[0].payload, exerciseCatalog: smallCatalog }) }));
     assert.equal(response.status, 200);
-    const itemCount = (promptBody.match(/item-\d+/g) || []).length;
-    assert.equal(itemCount, 5, "5 hareketlik katalog eksiksiz gitmeli");
+    assert.ok(smallCatalog.every((item) => promptBody.includes(item.id)), "5 hareketlik Atlas kataloğu eksiksiz gitmeli");
   } finally {
     globalThis.fetch = previousFetch;
     restoreAuthEnv();
-    if (previousKey === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey;
   }
 });
 
 test(`generate-plan payload: edge case — ${PROMPT_CATALOG_LIMIT}'ı aşan katalog tam sınırda kırpılır`, { concurrency: false }, async () => {
-  const previousKey = process.env.AI_API_KEY;
+  const previousKey = process.env.OPENAI_API_KEY;
   const previousFetch = globalThis.fetch;
   const restoreAuthEnv = withSupabaseAuthEnv();
-  process.env.AI_API_KEY = "test-key";
+  process.env.OPENAI_API_KEY = "test-key";
   let promptBody = "";
   globalThis.fetch = withIsolatedPlanFetch("00000000-0000-4000-8000-000000000098", async (url, init) => {
     promptBody = String(init?.body || "");
@@ -282,35 +307,35 @@ test(`generate-plan payload: edge case — ${PROMPT_CATALOG_LIMIT}'ı aşan kata
       weeklySchedule: [{ day: "Pazartesi", focus: "Tüm vücut", durationMinutes: 30 }], progression: ["1", "2", "3", "4"],
       workouts: [1, 2, 3].map((index) => ({ id: `ex-${index}`, name: `H${index}`, english: `E${index}`, area: "Core", sets: 3, reps: "10", restSeconds: 60, instructions: "Kontrollü uygula." })),
     };
-    return Response.json({ choices: [{ message: { role: "assistant", content: JSON.stringify(generated) } }] });
+    return Response.json(openAiResponse(JSON.stringify(generated)));
   });
   try {
     // Sınırın 60 fazlası: kırpma gerçekten devrede mi, yoksa katalog zaten
     // küçük olduğu için mi geçiyor ayırt edilsin diye kasıtlı büyük seçildi.
-    const oversizedCatalog = Array.from({ length: PROMPT_CATALOG_LIMIT + 60 }, (_, index) => catalogItem(index));
+    const oversizedCatalog = atlasCatalog.slice(0, PROMPT_CATALOG_LIMIT + 60);
     const response = await POST(authorizedRequest("http://localhost/api/generate-plan", { method: "POST", body: JSON.stringify({ ...scenarios[0].payload, exerciseCatalog: oversizedCatalog }) }));
     assert.equal(response.status, 200);
-    const itemCount = (promptBody.match(/item-\d+/g) || []).length;
-    assert.equal(itemCount, PROMPT_CATALOG_LIMIT, `katalog tam olarak ${PROMPT_CATALOG_LIMIT} hareketle sınırlanmalı`);
+    const included = oversizedCatalog.filter((item) => promptBody.includes(`\\\"id\\\":\\\"${item.id}\\\"`));
+    assert.equal(included.length, PROMPT_CATALOG_LIMIT, `katalog tam olarak ${PROMPT_CATALOG_LIMIT} hareketle sınırlanmalı`);
     // Kırpma dizinin BAŞINDAN (.slice(0, LIMIT)) yapılıyor; son eklenenler
     // değil ilk LIMIT tanesi gitmeli.
-    assert.match(promptBody, /item-0\b/);
-    assert.doesNotMatch(promptBody, new RegExp(`item-${PROMPT_CATALOG_LIMIT}\\b`));
+    assert.ok(promptBody.includes(oversizedCatalog[0].id));
+    assert.ok(!promptBody.includes(`\\\"id\\\":\\\"${oversizedCatalog[PROMPT_CATALOG_LIMIT].id}\\\"`));
   } finally {
     globalThis.fetch = previousFetch;
     restoreAuthEnv();
-    if (previousKey === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey;
   }
 });
 
 test("generate-plan payload: hatalı input — aşırı büyük istek gövdesi AI'ya hiç gitmeden 413 ile reddedilir", { concurrency: false }, async () => {
-  const previousKey = process.env.AI_API_KEY;
+  const previousKey = process.env.OPENAI_API_KEY;
   const previousFetch = globalThis.fetch;
   const restoreAuthEnv = withSupabaseAuthEnv();
-  process.env.AI_API_KEY = "test-key";
+  process.env.OPENAI_API_KEY = "test-key";
   let aiCalled = false;
   globalThis.fetch = withIsolatedPlanFetch("00000000-0000-4000-8000-000000000099", async (url) => {
-    if (String(url).includes("/chat/completions")) { aiCalled = true; return Response.json({}); }
+    if (String(url).includes("/responses")) { aiCalled = true; return Response.json({}); }
     throw new TypeError(`beklenmeyen ağ isteği: ${url}`);
   });
   try {
@@ -322,6 +347,6 @@ test("generate-plan payload: hatalı input — aşırı büyük istek gövdesi A
   } finally {
     globalThis.fetch = previousFetch;
     restoreAuthEnv();
-    if (previousKey === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey;
   }
 });

@@ -115,10 +115,10 @@ test("şema gerektiren istekte generateObject'i olmayan sağlayıcı elenir", as
   assert.deepEqual(response.object, { ok: "remote" });
 });
 
-test("mode:'local' uzak sağlayıcıyı tamamen dışarıda bırakır", async () => {
+test("mode:'auto' kayıtlı uygun sağlayıcı sırasını korur", async () => {
   providerRegistry.reset([stubProvider("local", "local"), stubProvider("remote", "remote")]);
-  const chain = await selectProviders(request, { mode: "local" }, false);
-  assert.deepEqual(chain.map((provider) => provider.id), ["local"]);
+  const chain = await selectProviders(request, { mode: "auto" }, false);
+  assert.deepEqual(chain.map((provider) => provider.id), ["local", "remote"]);
 });
 
 test("mode:'remote' yerel sağlayıcıyı atlar", async () => {
@@ -139,9 +139,9 @@ test("kullanıcı isteği iptal ettiyse ücretli yedek çağrı YAPILMAZ", async
   assert.equal(remoteCalls, 0);
 });
 
-test("registry yerel sağlayıcıları uzak olanların önüne alır", () => {
+test("registry sağlayıcıların açık kayıt sırasını korur", () => {
   providerRegistry.reset([stubProvider("remote", "remote"), stubProvider("local", "local")]);
-  assert.deepEqual(providerRegistry.list().map((provider) => provider.id), ["local", "remote"]);
+  assert.deepEqual(providerRegistry.list().map((provider) => provider.id), ["remote", "local"]);
 });
 
 test("aynı id ile kayıt sağlayıcıyı değiştirir, ikinci kopya oluşturmaz", () => {

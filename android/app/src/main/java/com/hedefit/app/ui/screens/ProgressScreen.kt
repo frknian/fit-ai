@@ -1,6 +1,7 @@
 package com.hedefit.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +45,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -59,6 +64,7 @@ import com.hedefit.app.data.model.DashboardData
 import com.hedefit.app.data.model.BodyMeasurementData
 import com.hedefit.app.data.model.WorkoutSessionData
 import com.hedefit.app.data.model.RouteActivityData
+import com.hedefit.app.data.model.WorkoutExercisePerformanceData
 import com.hedefit.app.route.formatDuration
 import java.time.DayOfWeek
 import java.time.Instant
@@ -79,11 +85,13 @@ fun ProgressScreen(
     onWeeklyWorkoutGoalChange: (Int) -> Unit = {},
     measurementSaving: Boolean = false,
     onSaveMeasurement: (BodyMeasurementData) -> Unit = {},
+    onDeleteRoute: (RouteActivityData) -> Unit = {},
 ) {
     val en = language == "en"
     var range by remember { mutableStateOf("30G") }
     var showGoalEditor by remember { mutableStateOf(false) }
     var showMeasurementEditor by remember { mutableStateOf(false) }
+    var showWeeklyReview by remember { mutableStateOf(false) }
     val filteredData = filterProgressData(data, range)
     ScreenContainer(padding) {
         LazyColumn(
@@ -94,7 +102,7 @@ fun ProgressScreen(
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(if (en) "Progress" else "İlerleme", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-                    IconButton(onClick = {}) { Icon(Icons.Default.CalendarMonth, "Takvim", tint = HedefitColors.Lime) }
+                    IconButton(onClick = { showMeasurementEditor = true }) { Icon(Icons.Default.MonitorWeight, if (en) "Add measurement" else "Ölçüm ekle", tint = HedefitColors.Lime) }
                 }
             }
             item { TimeRangeSelector(range, en) { range = it } }
@@ -108,8 +116,9 @@ fun ProgressScreen(
                         Column(Modifier.weight(.8f), verticalArrangement = Arrangement.spacedBy(15.dp)) {
                             ProgressMetrics(filteredData, data?.sessions.orEmpty(), weeklyWorkoutGoal, en) { showGoalEditor = true }
                             WorkoutHistory(filteredData, en)
-                            RouteHistory(filteredData?.routeActivities.orEmpty(), en, unitSystem)
-                            WeeklyReviewCard(filteredData, en)
+                            ExercisePerformanceHistory(filteredData?.exercisePerformance.orEmpty(), en)
+                            RouteHistory(filteredData?.routeActivities.orEmpty(), en, unitSystem, onDeleteRoute)
+                            WeeklyReviewCard(filteredData, en) { showWeeklyReview = true }
                         }
                     }
                 }
@@ -117,9 +126,10 @@ fun ProgressScreen(
                 item { WeightChart(range, filteredData, en, unitSystem) }
                 item { ProgressMetrics(filteredData, data?.sessions.orEmpty(), weeklyWorkoutGoal, en) { showGoalEditor = true } }
                 item { WorkoutHistory(filteredData, en) }
-                item { RouteHistory(filteredData?.routeActivities.orEmpty(), en, unitSystem) }
+                item { ExercisePerformanceHistory(filteredData?.exercisePerformance.orEmpty(), en) }
+                item { RouteHistory(filteredData?.routeActivities.orEmpty(), en, unitSystem, onDeleteRoute) }
                 item { BodyMeasurements(filteredData, en, unitSystem) { showMeasurementEditor = true } }
-                item { WeeklyReviewCard(filteredData, en) }
+                item { WeeklyReviewCard(filteredData, en) { showWeeklyReview = true } }
             }
         }
     }
@@ -133,6 +143,7 @@ fun ProgressScreen(
         onDismiss = { if (!measurementSaving) showMeasurementEditor = false },
         onSave = { onSaveMeasurement(it); showMeasurementEditor = false },
     )
+    if (showWeeklyReview) WeeklyReviewDialog(filteredData, en) { showWeeklyReview = false }
 }
 
 private fun filterProgressData(data: DashboardData?, range: String): DashboardData? {
@@ -142,6 +153,7 @@ private fun filterProgressData(data: DashboardData?, range: String): DashboardDa
     return data.copy(
         measurements = data.measurements.filter { runCatching { LocalDate.parse(it.date.take(10)) >= cutoff }.getOrDefault(false) },
         sessions = data.sessions.filter { sessionDate(it) >= cutoff },
+        exercisePerformance = data.exercisePerformance.filter { performanceDate(it) >= cutoff },
         routeActivities = data.routeActivities.filter { routeDate(it) >= cutoff },
     )
 }
@@ -250,7 +262,34 @@ private fun WorkoutHistory(data: DashboardData?, en: Boolean) {
 }
 
 @Composable
-private fun RouteHistory(routes: List<RouteActivityData>, en: Boolean, unitSystem: String) {
+private fun ExercisePerformanceHistory(performances: List<WorkoutExercisePerformanceData>, en: Boolean) {
+    val latestByExercise = performances.sortedByDescending { it.completedAt }.distinctBy { it.exerciseId ?: it.exerciseName }.take(6)
+    HedefitCard(Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SectionTitle(if (en) "Movement progress" else "Hareket ilerlemesi")
+            if (latestByExercise.isEmpty()) Text(if (en) "Complete a movement from your plan or the exercise atlas to see its performance here." else "Programdan veya Hareket Atlası'ndan bir hareketi tamamla; set performansın burada görünür.", color = HedefitColors.TextSecondary)
+            latestByExercise.forEach { performance ->
+                val best = performance.sets.maxWithOrNull(compareBy<com.hedefit.app.data.model.WorkoutSetPerformanceData> { it.weightKg ?: 0.0 }.thenBy { it.reps ?: 0 })
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(performance.exerciseName, style = MaterialTheme.typography.titleMedium)
+                        Text(formatDate(performance.completedAt.take(10), en), color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(
+                        best?.let { "${it.weightKg?.let { weight -> "${weight.toInt()} kg" } ?: if (en) "Bodyweight" else "Vücut ağırlığı"} × ${it.reps ?: "—"}" } ?: "—",
+                        color = HedefitColors.Lime,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RouteHistory(routes: List<RouteActivityData>, en: Boolean, unitSystem: String, onDeleteRoute: (RouteActivityData) -> Unit) {
+    var selectedRoute by remember { mutableStateOf<RouteActivityData?>(null) }
+    var deleteCandidate by remember { mutableStateOf<RouteActivityData?>(null) }
     val totalDistance = routes.sumOf { it.distanceMeters }
     val totalDuration = routes.sumOf { it.durationSeconds }
     HedefitCard(Modifier.fillMaxWidth()) {
@@ -265,10 +304,10 @@ private fun RouteHistory(routes: List<RouteActivityData>, en: Boolean, unitSyste
                 }
                 routes.take(5).forEach { route ->
                     val pace = if (route.distanceMeters >= 50) route.durationSeconds / (route.distanceMeters / 1000.0) else null
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clickable { selectedRoute = route }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Route, null, tint = HedefitColors.Lime, modifier = Modifier.size(20.dp))
                         Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                            Text(routeActivityLabel(route.activityType, en), style = MaterialTheme.typography.titleMedium)
+                            Text(route.title.ifBlank { routeActivityLabel(route.activityType, en) }, style = MaterialTheme.typography.titleMedium)
                             Text(formatDate(route.startedAt.take(10), en), color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                         }
                         Column(horizontalAlignment = Alignment.End) {
@@ -278,6 +317,51 @@ private fun RouteHistory(routes: List<RouteActivityData>, en: Boolean, unitSyste
                     }
                 }
             }
+        }
+    }
+    selectedRoute?.let { route -> AlertDialog(
+        onDismissRequest = { selectedRoute = null },
+        title = { Text(route.title.ifBlank { routeActivityLabel(route.activityType, en) }) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            RoutePolylinePreview(route, Modifier.fillMaxWidth().height(210.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                LabeledValue(if (en) "Distance" else "Mesafe", MeasurementUnits.formatDistance(route.distanceMeters, unitSystem), accent = HedefitColors.Lime)
+                LabeledValue(if (en) "Time" else "Süre", formatDuration(route.movingDurationSeconds))
+                LabeledValue(if (en) "Avg pace" else "Ort. Tempo", MeasurementUnits.formatPace(route.averagePaceSecondsPerKm, unitSystem))
+            }
+            Text("${if (en) "Elapsed" else "Toplam süre"}: ${formatDuration(route.durationSeconds)}  •  ${route.calories} kcal", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+        } },
+        dismissButton = { TextButton(onClick = { selectedRoute = null; deleteCandidate = route }) { Text(if (en) "Delete record" else "Kaydı sil", color = HedefitColors.Coral) } },
+        confirmButton = { TextButton(onClick = { selectedRoute = null }) { Text(if (en) "Done" else "Tamam") } },
+    ) }
+    deleteCandidate?.let { route -> AlertDialog(
+        onDismissRequest = { deleteCandidate = null },
+        title = { Text(if (en) "Delete this route?" else "Bu rota silinsin mi?") },
+        text = { Text(if (en) "The GPS track, distance and activity record will be permanently deleted." else "GPS izi, mesafe ve aktivite kaydı kalıcı olarak silinecek.") },
+        dismissButton = { TextButton(onClick = { deleteCandidate = null }) { Text(if (en) "Cancel" else "Vazgeç") } },
+        confirmButton = { Button(onClick = { onDeleteRoute(route); deleteCandidate = null; selectedRoute = null }, colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Coral, contentColor = androidx.compose.ui.graphics.Color.White)) { Text(if (en) "Delete" else "Sil") } },
+    ) }
+}
+
+@Composable
+private fun RoutePolylinePreview(route: RouteActivityData, modifier: Modifier) {
+    val points = route.routePoints
+    Box(modifier.background(HedefitColors.SurfaceHigh, RoundedCornerShape(18.dp)), contentAlignment = Alignment.Center) {
+        if (points.size < 2) Text("Rota önizlemesi bulunmuyor", color = HedefitColors.TextSecondary)
+        else Canvas(Modifier.fillMaxSize().padding(18.dp)) {
+            val minLat = points.minOf { it.latitude }; val maxLat = points.maxOf { it.latitude }
+            val minLng = points.minOf { it.longitude }; val maxLng = points.maxOf { it.longitude }
+            val latRange = (maxLat - minLat).coerceAtLeast(.000001); val lngRange = (maxLng - minLng).coerceAtLeast(.000001)
+            val path = Path()
+            points.forEachIndexed { index, point ->
+                val x = ((point.longitude - minLng) / lngRange * size.width).toFloat()
+                val y = (size.height - (point.latitude - minLat) / latRange * size.height).toFloat()
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, HedefitColors.Lime, style = Stroke(width = 8f, cap = StrokeCap.Round))
+            val first = points.first(); val last = points.last()
+            fun offset(point: com.hedefit.app.data.model.ActivityRoutePointData) = Offset(((point.longitude - minLng) / lngRange * size.width).toFloat(), (size.height - (point.latitude - minLat) / latRange * size.height).toFloat())
+            drawCircle(androidx.compose.ui.graphics.Color.White, 9f, offset(first)); drawCircle(HedefitColors.Lime, 11f, offset(last))
         }
     }
 }
@@ -325,7 +409,7 @@ private fun BodyMeasurementDialog(
     var chest by remember(latest, unitSystem) { mutableStateOf(initial(latest?.chestCm)) }
     var arm by remember(latest, unitSystem) { mutableStateOf(initial(latest?.armCm)) }
     var thigh by remember(latest, unitSystem) { mutableStateOf(initial(latest?.thighCm)) }
-    var validationError by remember { mutableStateOf(false) }
+    var validationError by remember { mutableStateOf<String?>(null) }
     val keyboard = KeyboardOptions(keyboardType = KeyboardType.Decimal)
     fun parsed(raw: String) = raw.trim().replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 }
     fun lengthCm(raw: String) = parsed(raw)?.let { MeasurementUnits.heightToCm(it, unitSystem) }
@@ -342,31 +426,31 @@ private fun BodyMeasurementDialog(
                 )
                 OutlinedTextField(
                     value = weight,
-                    onValueChange = { weight = it; validationError = false },
+                    onValueChange = { weight = it; validationError = null },
                     label = { Text(if (en) "Weight (${MeasurementUnits.weightUnit(unitSystem)})" else "Kilo (${MeasurementUnits.weightUnit(unitSystem)})") },
                     singleLine = true,
                     keyboardOptions = keyboard,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 MeasurementInputRow(
-                    firstValue = waist, onFirstChange = { waist = it; validationError = false }, firstLabel = if (en) "Waist" else "Bel",
-                    secondValue = hips, onSecondChange = { hips = it; validationError = false }, secondLabel = if (en) "Hips" else "Kalça",
+                    firstValue = waist, onFirstChange = { waist = it; validationError = null }, firstLabel = if (en) "Waist" else "Bel",
+                    secondValue = hips, onSecondChange = { hips = it; validationError = null }, secondLabel = if (en) "Hips" else "Kalça",
                     unit = MeasurementUnits.heightUnit(unitSystem), keyboard = keyboard,
                 )
                 MeasurementInputRow(
-                    firstValue = chest, onFirstChange = { chest = it; validationError = false }, firstLabel = if (en) "Chest" else "Göğüs",
-                    secondValue = arm, onSecondChange = { arm = it; validationError = false }, secondLabel = if (en) "Arm" else "Kol",
+                    firstValue = chest, onFirstChange = { chest = it; validationError = null }, firstLabel = if (en) "Chest" else "Göğüs",
+                    secondValue = arm, onSecondChange = { arm = it; validationError = null }, secondLabel = if (en) "Arm" else "Kol",
                     unit = MeasurementUnits.heightUnit(unitSystem), keyboard = keyboard,
                 )
                 OutlinedTextField(
                     value = thigh,
-                    onValueChange = { thigh = it; validationError = false },
+                    onValueChange = { thigh = it; validationError = null },
                     label = { Text("${if (en) "Thigh" else "Bacak"} (${MeasurementUnits.heightUnit(unitSystem)})") },
                     singleLine = true,
                     keyboardOptions = keyboard,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                if (validationError) Text(if (en) "Enter at least one valid value." else "En az bir geçerli değer gir.", color = MaterialTheme.colorScheme.error)
+                validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text(if (en) "Cancel" else "Vazgeç") } },
@@ -383,8 +467,18 @@ private fun BodyMeasurementDialog(
                         armCm = lengthCm(arm),
                         thighCm = lengthCm(thigh),
                     )
-                    if (listOf(measurement.weightKg, measurement.waistCm, measurement.hipsCm, measurement.chestCm, measurement.armCm, measurement.thighCm).all { it == null }) validationError = true
-                    else onSave(measurement)
+                    val invalidWeight = weight.isNotBlank() && measurement.weightKg?.let { it in 20.0..400.0 } != true
+                    val rawLengths = listOf(waist, hips, chest, arm, thigh)
+                    val lengths = listOf(measurement.waistCm, measurement.hipsCm, measurement.chestCm, measurement.armCm, measurement.thighCm)
+                    val invalidLength = rawLengths.zip(lengths).any { (raw, value) ->
+                        raw.isNotBlank() && value?.let { it in 10.0..300.0 } != true
+                    }
+                    when {
+                        invalidWeight -> validationError = if (en) "Weight must be between 20 and 400 kg." else "Kilo 20 ile 400 kg arasında olmalı."
+                        invalidLength -> validationError = if (en) "Measurements must be between 10 and 300 cm." else "Çevre ölçüleri 10 ile 300 cm arasında olmalı."
+                        listOf(measurement.weightKg, measurement.waistCm, measurement.hipsCm, measurement.chestCm, measurement.armCm, measurement.thighCm).all { it == null } -> validationError = if (en) "Enter at least one valid value." else "En az bir geçerli değer gir."
+                        else -> onSave(measurement)
+                    }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime),
             ) { Text(if (saving) (if (en) "Saving…" else "Kaydediliyor…") else if (en) "Save" else "Kaydet") }
@@ -412,6 +506,7 @@ private fun MeasurementInputRow(
 private fun measurementDelta(first: Double?, latest: Double?, unitSystem: String) = if (first != null && latest != null) MeasurementUnits.formatLength(latest - first, unitSystem, signed = true).replace('.', ',') else null
 
 private fun sessionDate(session: WorkoutSessionData): LocalDate = runCatching { Instant.parse(session.completedAt).atZone(ZoneId.systemDefault()).toLocalDate() }.recoverCatching { LocalDate.parse(session.completedAt.take(10)) }.getOrDefault(LocalDate.MIN)
+private fun performanceDate(performance: WorkoutExercisePerformanceData): LocalDate = runCatching { Instant.parse(performance.completedAt).atZone(ZoneId.systemDefault()).toLocalDate() }.recoverCatching { LocalDate.parse(performance.completedAt.take(10)) }.getOrDefault(LocalDate.MIN)
 private fun routeDate(route: RouteActivityData): LocalDate = runCatching { Instant.parse(route.startedAt).atZone(ZoneId.systemDefault()).toLocalDate() }.recoverCatching { LocalDate.parse(route.startedAt.take(10)) }.getOrDefault(LocalDate.MIN)
 
 private fun formatDate(raw: String, en: Boolean): String = runCatching {
@@ -419,8 +514,8 @@ private fun formatDate(raw: String, en: Boolean): String = runCatching {
 }.getOrDefault(raw.take(10))
 
 @Composable
-private fun WeeklyReviewCard(data: DashboardData?, en: Boolean) {
-    HedefitCard(Modifier.fillMaxWidth(), onClick = {}) {
+private fun WeeklyReviewCard(data: DashboardData?, en: Boolean, onClick: () -> Unit) {
+    HedefitCard(Modifier.fillMaxWidth(), onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.size(48.dp).background(HedefitColors.Sleep.copy(alpha = .14f), CircleShape), contentAlignment = Alignment.Center) {
                 Icon(Icons.Default.AutoAwesome, null, tint = HedefitColors.Sleep)
@@ -432,4 +527,25 @@ private fun WeeklyReviewCard(data: DashboardData?, en: Boolean) {
             Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = HedefitColors.TextSecondary)
         }
     }
+}
+
+@Composable
+private fun WeeklyReviewDialog(data: DashboardData?, en: Boolean, onDismiss: () -> Unit) {
+    val sessions = data?.sessions.orEmpty()
+    val minutes = sessions.sumOf { it.durationSeconds } / 60
+    val completed = sessions.sumOf { it.completedExercises }
+    val planned = sessions.sumOf { it.totalExercises }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (en) "Weekly Review" else "Haftalık Değerlendirme") },
+        text = {
+            if (sessions.isEmpty()) Text(if (en) "Complete your first workout to unlock a personal weekly review." else "Kişisel haftalık değerlendirmeni görmek için ilk antrenmanını tamamla.")
+            else Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(if (en) "${sessions.size} workouts • $minutes minutes" else "${sessions.size} antrenman • $minutes dakika", style = MaterialTheme.typography.titleLarge, color = HedefitColors.Lime)
+                Text(if (en) "$completed of $planned planned movements were completed." else "Planlanan $planned hareketin $completed tanesi tamamlandı.", color = HedefitColors.TextSecondary)
+                Text(if (en) "Use your fatigue and pain feedback to keep next week progressive but sustainable." else "Gelecek haftayı ilerleyici ama sürdürülebilir tutmak için yorgunluk ve ağrı geri bildirimlerini kullan.", color = HedefitColors.TextSecondary)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(if (en) "Close" else "Kapat") } },
+    )
 }

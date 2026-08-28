@@ -1,5 +1,10 @@
 package com.hedefit.app.ui.screens
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -21,15 +27,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
@@ -51,18 +51,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
-import com.hedefit.app.ui.components.HedefitCard
-import com.hedefit.app.ui.components.PrimaryButton
 import com.hedefit.app.ui.components.ScreenContainer
+import com.hedefit.app.ui.components.FitCoachRobotAvatar
 import com.hedefit.app.ui.theme.HedefitColors
 import com.hedefit.app.ui.state.ChatMessageState
 import com.hedefit.app.data.model.DashboardData
-import com.hedefit.app.coach.LocalCoachState
 
 @Composable
 fun CoachScreen(
@@ -76,11 +74,9 @@ fun CoachScreen(
     language: String = "tr",
     coachName: String = if (language == "en") "Fit Coach" else "Fit Koç",
     onCoachNameChange: (String) -> Unit = {},
-    localCoach: LocalCoachState? = null,
-    localCoachEnabled: Boolean = false,
-    onLocalCoachEnabledChange: (Boolean) -> Unit = {},
-    onPrepareLocalCoach: () -> Unit = {},
-    onRemoveLocalCoach: () -> Unit = {},
+    onClearChat: () -> Unit = {},
+    usageUsed: Int? = null,
+    usageLimit: Int? = null,
 ) {
     val en = language == "en"
     var input by remember { mutableStateOf("") }
@@ -92,20 +88,21 @@ fun CoachScreen(
     }
 
     ScreenContainer(padding) {
-        Column(Modifier.fillMaxSize().padding(top = 10.dp, bottom = 8.dp)) {
-            CoachHeader(en, coachName, onCoachNameChange, localCoachEnabled && localCoach?.ready == true)
-            LocalCoachCard(en, localCoach, localCoachEnabled, onLocalCoachEnabledChange, onPrepareLocalCoach, onRemoveLocalCoach)
-            Spacer(Modifier.height(8.dp))
-            if (expanded) {
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    CoachConversation(messages, busy, input, { input = it }, send, onSendMessage, onOpenPlan, data, Modifier.weight(1.25f), en, coachName)
-                    Column(Modifier.weight(.75f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        RecoveryContext(data)
-                        QuickActions(en, onSendMessage)
-                        MessageAllowance()
-                    }
-                }
-            } else {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Column(
+                Modifier.fillMaxSize()
+                    .widthIn(max = if (expanded) 920.dp else 760.dp)
+                    .padding(top = 6.dp, bottom = 8.dp),
+            ) {
+                CoachHeader(
+                    en = en,
+                    coachName = coachName,
+                    onCoachNameChange = onCoachNameChange,
+                    onClearChat = onClearChat,
+                    usageUsed = usageUsed,
+                    usageLimit = usageLimit,
+                )
+                Spacer(Modifier.height(6.dp))
                 CoachConversation(messages, busy, input, { input = it }, send, onSendMessage, onOpenPlan, data, Modifier.weight(1f), en, coachName)
             }
         }
@@ -113,66 +110,42 @@ fun CoachScreen(
 }
 
 @Composable
-private fun LocalCoachCard(
+private fun CoachHeader(
     en: Boolean,
-    state: LocalCoachState?,
-    enabled: Boolean,
-    onEnabledChange: (Boolean) -> Unit,
-    onPrepare: () -> Unit,
-    onRemove: () -> Unit,
+    coachName: String,
+    onCoachNameChange: (String) -> Unit,
+    onClearChat: () -> Unit,
+    usageUsed: Int?,
+    usageLimit: Int?,
 ) {
-    val supported = state?.supported == true
-    HedefitCard(Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            Box(Modifier.size(38.dp).background(HedefitColors.Lime.copy(alpha = .16f), CircleShape), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.SmartToy, null, tint = HedefitColors.Lime)
-            }
-            Column(Modifier.weight(1f)) {
-                Text(if (en) "Smart Fit Coach" else "Akıllı Fit Koç", style = MaterialTheme.typography.titleSmall)
-                val detail = when {
-                    !supported -> if (en) "Requires Android 11 and a 64-bit device" else "Android 11 ve 64-bit cihaz gerektirir"
-                    state?.downloading == true -> if (state.totalBytes > 0) "Qwen 1.7B · %${(state.progress * 100).toInt()}" else "Qwen 1.7B indiriliyor…"
-                    state?.ready == true -> if (en) "Qwen 1.7B · on this device" else "Qwen 1.7B · cihazında çalışıyor"
-                    state?.installed == true -> if (en) "Qwen 1.7B is ready to start" else "Qwen 1.7B başlatılmaya hazır"
-                    else -> if (en) "Download Qwen 1.7B · 1.8 GB" else "Qwen 1.7B indir · 1,8 GB"
-                }
-                Text(detail, color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-                state?.error?.let { Text(it, color = HedefitColors.Coral, style = MaterialTheme.typography.labelSmall) }
-            }
-            when {
-                !supported -> Unit
-                state?.downloading == true -> Text("%${(state.progress * 100).toInt()}", color = HedefitColors.Lime, style = MaterialTheme.typography.labelLarge)
-                state?.ready == true -> {
-                    androidx.compose.material3.Switch(checked = enabled, onCheckedChange = onEnabledChange)
-                    IconButton(onClick = onRemove) { Icon(Icons.Default.Delete, if (en) "Remove local model" else "Yerel modeli sil", tint = HedefitColors.TextSecondary) }
-                }
-                else -> IconButton(onClick = onPrepare) { Icon(Icons.Default.Download, if (en) "Download Qwen" else "Qwen indir", tint = HedefitColors.Lime) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CoachHeader(en: Boolean, coachName: String, onCoachNameChange: (String) -> Unit, local: Boolean) {
     var menuOpen by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
     var draftName by remember(coachName) { mutableStateOf(coachName) }
-    Row(Modifier.fillMaxWidth().height(62.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(44.dp).background(HedefitColors.Lime, CircleShape), contentAlignment = Alignment.Center) {
-            Text(coachInitials(coachName), color = HedefitColors.OnLime, fontWeight = FontWeight.Black)
-        }
-        Spacer(Modifier.size(11.dp))
+    var clearOpen by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
+        FitCoachRobotAvatar(Modifier.size(48.dp))
+        Spacer(Modifier.size(10.dp))
         Column(Modifier.weight(1f)) {
             Text(coachName, style = MaterialTheme.typography.titleLarge)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.size(7.dp).background(Color(0xFF35D04F), CircleShape))
-                Text(if (local) if (en) "On device" else "Cihazında" else if (en) "Online" else "Çevrimiçi", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    if (en) "Cloud AI" else "Bulut AI",
+                    color = HedefitColors.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                usageLimit?.let { limit ->
+                    val label = usageUsed?.let { used -> if (en) "${(limit - used).coerceAtLeast(0)} questions left today" else "Bugün ${(limit - used).coerceAtLeast(0)} soru hakkın kaldı" }
+                        ?: if (en) "$limit questions daily" else "Günlük $limit soru hakkı"
+                    Text(label, color = HedefitColors.Lime, style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
         Box {
             IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, if (en) "More" else "Diğer", tint = HedefitColors.TextPrimary) }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(text = { Text(if (en) "Rename coach" else "Koçun adını değiştir") }, onClick = { menuOpen = false; draftName = coachName; renameOpen = true })
+                DropdownMenuItem(text = { Text(if (en) "Clear chat" else "Sohbeti temizle") }, onClick = { menuOpen = false; clearOpen = true })
             }
         }
     }
@@ -182,6 +155,13 @@ private fun CoachHeader(en: Boolean, coachName: String, onCoachNameChange: (Stri
         text = { OutlinedTextField(draftName, { draftName = it.take(24) }, label = { Text(if (en) "Name" else "İsim") }, singleLine = true) },
         dismissButton = { TextButton(onClick = { renameOpen = false }) { Text(if (en) "Cancel" else "Vazgeç") } },
         confirmButton = { Button(enabled = draftName.trim().length >= 2, onClick = { onCoachNameChange(draftName.trim()); renameOpen = false }, colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Text(if (en) "Save" else "Kaydet") } },
+    )
+    if (clearOpen) AlertDialog(
+        onDismissRequest = { clearOpen = false },
+        title = { Text(if (en) "Clear this chat?" else "Sohbet temizlensin mi?") },
+        text = { Text(if (en) "Messages on this device will be removed." else "Bu cihazdaki sohbet mesajları kaldırılacak.") },
+        dismissButton = { TextButton(onClick = { clearOpen = false }) { Text(if (en) "Cancel" else "Vazgeç") } },
+        confirmButton = { Button(onClick = { onClearChat(); clearOpen = false }, colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Coral, contentColor = Color.White)) { Text(if (en) "Clear" else "Temizle") } },
     )
 }
 
@@ -203,28 +183,23 @@ private fun CoachConversation(
 ) {
     val listState = rememberLazyListState()
     LaunchedEffect(messages.size, busy) {
-        val itemCount = messages.size + (if (messages.size <= 2) 3 else 0) + (if (busy) 1 else 0)
+        val itemCount = messages.size + (if (messages.size <= 1) 1 else 0) + (if (busy) 1 else 0)
         if (itemCount > 0) listState.scrollToItem(itemCount - 1)
     }
     Column(modifier) {
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(),
             state = listState,
-            contentPadding = PaddingValues(vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(top = 18.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             items(messages) { message -> MessageBubble(message, coachName) }
-            if (messages.size <= 2) {
-                item { RecoveryContext(data) }
-                item { PrimaryButton(if (en) "Open plan" else "Planı Aç", onOpenPlan, icon = Icons.Default.FitnessCenter) }
-                item { QuickActions(en, onQuickSend) }
+            if (messages.size <= 1) {
+                item { QuickActions(en, data, onQuickSend, onOpenPlan) }
             }
-            if (busy) item { Text(if (en) "$coachName is thinking…" else "$coachName düşünüyor…", color = HedefitColors.Lime, modifier = Modifier.padding(start = 48.dp)) }
+            if (busy && messages.lastOrNull()?.user != false) item { ThinkingIndicator(coachName, en) }
         }
         Composer(input, onInput, onSend, busy, en)
-        if (!androidx.compose.ui.platform.LocalInspectionMode.current) {
-            Text(if (en) "Unlimited chat" else "Sınırsız sohbet", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 7.dp))
-        }
     }
 }
 
@@ -236,67 +211,77 @@ private fun MessageBubble(message: ChatMessageState, coachName: String) {
         verticalAlignment = Alignment.Top,
     ) {
         if (!message.user) {
-            Box(Modifier.size(36.dp).background(HedefitColors.Lime, CircleShape), contentAlignment = Alignment.Center) {
-                Text(coachInitials(coachName), color = HedefitColors.OnLime, fontWeight = FontWeight.Black, style = MaterialTheme.typography.labelMedium)
-            }
-            Spacer(Modifier.size(8.dp))
+            FitCoachRobotAvatar(Modifier.size(38.dp))
+            Spacer(Modifier.size(10.dp))
         }
         Box(
-            Modifier.fillMaxWidth(if (message.user) .82f else .9f)
-                .background(
-                    if (message.user) HedefitColors.Lime.copy(alpha = .88f) else HedefitColors.Surface,
-                    RoundedCornerShape(
-                        topStart = if (message.user) 18.dp else 5.dp,
-                        topEnd = if (message.user) 5.dp else 18.dp,
-                        bottomStart = 18.dp,
-                        bottomEnd = 18.dp,
-                    ),
-                ).padding(15.dp),
+            Modifier.fillMaxWidth(if (message.user) .82f else 1f)
+                .then(if (message.user) Modifier.background(HedefitColors.SurfaceHigh, RoundedCornerShape(22.dp)) else Modifier)
+                .padding(if (message.user) 14.dp else 2.dp),
         ) {
-            Text(message.text, color = if (message.user) HedefitColors.OnLime else HedefitColors.TextPrimary, style = MaterialTheme.typography.bodyLarge)
+            Text(message.text, color = HedefitColors.TextPrimary, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
 
 @Composable
-private fun RecoveryContext(data: DashboardData?) {
-    val sleep = data?.sleepMinutes ?: 0
-    val fatigue = data?.sessions?.firstOrNull()?.fatigue
-    HedefitCard(Modifier.fillMaxWidth()) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ContextMetric(Icons.Default.Bedtime, "Uyku", "${sleep / 60} sa ${sleep % 60} dk", if (sleep >= 420) "İyi" else "Takip et", HedefitColors.Sleep, Modifier.weight(1f))
-            Box(Modifier.height(82.dp).size(width = 1.dp, height = 82.dp).background(HedefitColors.Divider))
-            ContextMetric(Icons.Default.Speed, "Yorgunluk", "${fatigue ?: "—"} / 5", if (fatigue != null && fatigue <= 3) "Düşük" else "Kontrollü", HedefitColors.Coral, Modifier.weight(1f))
-        }
+private fun QuickActions(en: Boolean, data: DashboardData?, onSelect: (String) -> Unit, onOpenPlan: () -> Unit) {
+    val hasPlan = data?.workouts?.isNotEmpty() == true
+    val actions = if (en) {
+        listOf(
+            if (hasPlan) "Review my workout plan" else "Suggest a workout",
+            "Review my nutrition",
+            "Summarize today's goals",
+        )
+    } else {
+        listOf(
+            if (hasPlan) "Antrenman programımı değerlendir" else "Antrenman önerisi ver",
+            "Beslenmemi değerlendir",
+            "Bugünkü hedeflerimi özetle",
+        )
     }
-}
-
-@Composable
-private fun ContextMetric(icon: ImageVector, label: String, value: String, state: String, tint: Color, modifier: Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            Icon(icon, null, tint = tint, modifier = Modifier.size(18.dp))
-            Text(label, color = tint, style = MaterialTheme.typography.labelLarge)
-        }
-        Text(value, style = MaterialTheme.typography.headlineSmall)
-        Text(state, color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
-private fun QuickActions(en: Boolean, onSelect: (String) -> Unit) {
-    val actions = if (en) listOf("Suggest a workout", "Review my nutrition", "Summarize today's goals") else listOf("Antrenman önerisi ver", "Beslenmemi değerlendir", "Bugünkü hedeflerimi özetle")
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.End) {
+    Column(Modifier.fillMaxWidth().padding(start = 42.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Text(if (en) "How can I help?" else "Nasıl yardımcı olabilirim?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         actions.forEach { action ->
             Row(
-                Modifier.background(HedefitColors.SurfaceHigh, RoundedCornerShape(22.dp)).clickable { onSelect(action) }
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                Modifier.fillMaxWidth().background(HedefitColors.SurfaceHigh, RoundedCornerShape(18.dp)).clickable { onSelect(action) }
+                    .padding(horizontal = 15.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(Icons.Default.FitnessCenter, null, tint = HedefitColors.Lime, modifier = Modifier.size(17.dp))
-                Text(action, style = MaterialTheme.typography.bodyMedium)
+                Text(action, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             }
+        }
+        TextButton(onClick = onOpenPlan) { Text(if (en) "Open my plan" else "Planımı aç", color = HedefitColors.Lime) }
+    }
+}
+
+@Composable
+private fun ThinkingIndicator(coachName: String, en: Boolean) {
+    val transition = rememberInfiniteTransition(label = "coach-thinking")
+    val dots = List(3) { index ->
+        transition.animateFloat(
+            initialValue = .28f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 520, delayMillis = index * 130),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "thinking-dot-$index",
+        )
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        FitCoachRobotAvatar(Modifier.size(38.dp))
+        Spacer(Modifier.size(10.dp))
+        Row(
+            Modifier.background(HedefitColors.SurfaceHigh, RoundedCornerShape(18.dp)).padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            dots.forEach { dot -> Box(Modifier.size(7.dp).alpha(dot.value).background(HedefitColors.Lime, CircleShape)) }
+            Spacer(Modifier.size(3.dp))
+            Text(if (en) "Thinking" else "Düşünüyor", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -310,7 +295,8 @@ private fun Composer(input: String, onInput: (String) -> Unit, onSend: () -> Uni
         onValueChange = onInput,
         modifier = Modifier.fillMaxWidth(),
         placeholder = { Text(if (en) "Ask something..." else "Bir şey sor...") },
-        singleLine = true,
+        minLines = 1,
+        maxLines = 5,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
         keyboardActions = KeyboardActions(onSend = { submit() }),
         shape = RoundedCornerShape(26.dp),
@@ -318,7 +304,7 @@ private fun Composer(input: String, onInput: (String) -> Unit, onSend: () -> Uni
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val enabled = input.isNotBlank() && !busy
                 Box(Modifier.size(42.dp).background(if (enabled) HedefitColors.Lime else HedefitColors.Divider, CircleShape).clickable(enabled = enabled, onClick = submit), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Send, "Gönder", tint = if (enabled) HedefitColors.OnLime else HedefitColors.TextSecondary)
+                    Icon(Icons.AutoMirrored.Filled.Send, if (en) "Send" else "Gönder", tint = if (enabled) HedefitColors.OnLime else HedefitColors.TextSecondary)
                 }
                 Spacer(Modifier.size(5.dp))
             }
@@ -330,14 +316,4 @@ private fun Composer(input: String, onInput: (String) -> Unit, onSend: () -> Uni
             unfocusedBorderColor = HedefitColors.Divider,
         ),
     )
-}
-
-@Composable
-private fun MessageAllowance() {
-    HedefitCard(Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Sınırsız sohbet", style = MaterialTheme.typography.titleMedium)
-            Text("Fit Koç için günlük soru sınırı yok.", color = HedefitColors.TextSecondary)
-        }
-    }
 }

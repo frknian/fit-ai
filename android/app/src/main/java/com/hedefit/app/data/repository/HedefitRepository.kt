@@ -12,14 +12,19 @@ import com.hedefit.app.data.model.ProfileUpdateData
 import com.hedefit.app.data.model.WorkoutExerciseData
 import com.hedefit.app.data.model.WorkoutSessionData
 import com.hedefit.app.data.model.RouteActivityData
+import com.hedefit.app.data.model.ActivityRoutePointData
 import com.hedefit.app.data.model.WorkoutSetInput
 import com.hedefit.app.data.model.WorkoutFeedbackData
 import com.hedefit.app.data.model.WorkoutScheduleData
 import com.hedefit.app.data.model.WorkoutProgramData
 import com.hedefit.app.data.model.FavoriteMealData
+import com.hedefit.app.data.model.asRepeatFood
 import com.hedefit.app.data.model.FoodSearchData
 import com.hedefit.app.data.model.ExerciseCatalogData
+import com.hedefit.app.data.model.DailyStepData
 import com.hedefit.app.data.model.PreviousSetData
+import com.hedefit.app.data.model.WorkoutExercisePerformanceData
+import com.hedefit.app.data.model.WorkoutSetPerformanceData
 import com.hedefit.app.health.HealthSnapshot
 import com.hedefit.app.data.network.HedefitApiClient
 import com.hedefit.app.data.network.SupabaseRestClient
@@ -43,12 +48,29 @@ class HedefitRepository(
     private val api: HedefitApiClient,
 ) {
     private val rawHttp = com.hedefit.app.data.network.JsonHttpClient()
-    suspend fun saveRoute(snapshot: RouteSnapshot, activityType: String) {
-        val points = JSONArray().also { array -> snapshot.points.forEach { point -> array.put(JSONObject().put("lat", point.latitude).put("lng", point.longitude).put("alt", point.altitude).put("time", point.recordedAt)) } }
-        rest.insert("route_activities", JSONObject()
-            .put("id", snapshot.id).put("user_id", requireNotNull(auth.userId())).put("activity_type", activityType)
+    suspend fun saveRoute(snapshot: RouteSnapshot, activityType: String, title: String) {
+        saveRoutePayload(routePayload(snapshot, activityType, title))
+    }
+
+    fun routePayload(snapshot: RouteSnapshot, activityType: String, title: String): JSONObject {
+        val points = JSONArray().also { array -> snapshot.points.forEach { point -> array.put(JSONObject().put("lat", point.latitude).put("lng", point.longitude).put("alt", point.altitude).put("time", point.recordedAt).put("accuracy", point.accuracyMeters).put("speed", point.speedMetersPerSecond ?: JSONObject.NULL).put("bearing", point.bearingDegrees ?: JSONObject.NULL)) } }
+        val calories = ((snapshot.distanceMeters / 1_000.0) * when (activityType) { "Bisiklet" -> 28.0; "Koşu", "Trail Koşusu" -> 62.0; else -> 45.0 }).toInt().coerceAtLeast(0)
+        return JSONObject()
+            .put("id", snapshot.id).put("activity_type", activityType)
+            .put("title", title.trim().take(80))
             .put("started_at", Instant.ofEpochMilli(snapshot.startedAt).toString()).put("ended_at", Instant.ofEpochMilli(snapshot.stoppedAt).toString())
-            .put("duration_seconds", snapshot.durationSeconds).put("distance_meters", snapshot.distanceMeters).put("route_points", points))
+            .put("duration_seconds", snapshot.elapsedDurationSeconds).put("moving_duration_seconds", snapshot.durationSeconds)
+            .put("distance_meters", snapshot.distanceMeters).put("average_pace_seconds_per_km", snapshot.paceSecondsPerKm ?: JSONObject.NULL)
+            .put("average_speed_kmh", snapshot.averageSpeedKmh).put("calories", calories).put("status", "completed").put("route_points", points)
+    }
+
+    suspend fun saveRoutePayload(payload: JSONObject) {
+        rest.insert("route_activities", JSONObject(payload.toString()).put("user_id", requireNotNull(auth.userId())))
+    }
+
+    suspend fun deleteRoute(id: String) {
+        require(id.matches(Regex("^[0-9a-fA-F-]{36}$"))) { "Geçersiz rota kaydı." }
+        rest.delete("route_activities", "id=eq.$id&user_id=eq.${requireNotNull(auth.userId())}")
     }
     suspend fun loadDashboard(date: LocalDate = LocalDate.now()): DashboardData = coroutineScope {
         val userId = requireNotNull(auth.userId())
@@ -58,6 +80,7 @@ class HedefitRepository(
         val nutritionCall = async { api.get("/api/nutrition/logs?date=$date").requireSuccess("Beslenme günlüğü yüklenemedi.").jsonObject() }
         val goalCall = async { optionalSelect("nutrition_goals", "select=*&user_id=eq.$userId&limit=1") }
         val stepsCall = async { optionalSelect("daily_steps", "select=steps&user_id=eq.$userId&local_date=eq.$date&limit=1") }
+        val stepHistoryCall = async { optionalSelect("daily_steps", "select=local_date,steps&user_id=eq.$userId&local_date=gte.${date.minusDays(29)}&local_date=lte.$date&order=local_date.asc") }
         val waterCall = async { optionalSelect("water_logs", "select=milliliters&user_id=eq.$userId&local_date=eq.$date&limit=1") }
         val sleepCall = async { optionalSelect("sleep_logs", "select=minutes&user_id=eq.$userId&local_date=eq.$date&limit=1") }
         val streakCall = async { optionalSelect("user_streaks", "select=current_streak&user_id=eq.$userId&limit=1") }
@@ -65,7 +88,11 @@ class HedefitRepository(
         val scheduleCall = async { optionalSelect("workout_schedule", "select=*&user_id=eq.$userId&scheduled_date=gte.${date.minusDays(7)}&scheduled_date=lte.${date.plusDays(21)}&order=scheduled_date.asc") }
         val favoritesCall = async { optionalSelect("favorite_meals", "select=*&user_id=eq.$userId&order=updated_at.desc&limit=30") }
         val programsCall = async { optionalSelect("workout_program_collections", "select=*&user_id=eq.$userId&order=updated_at.desc&limit=50") }
-        val routesCall = async { optionalSelect("route_activities", "select=id,activity_type,started_at,ended_at,duration_seconds,distance_meters&user_id=eq.$userId&order=started_at.desc&limit=100") }
+        val routesCall = async { optionalSelect("route_activities", "select=*&user_id=eq.$userId&order=started_at.desc&limit=100") }
+        val exerciseLogsCall = async { optionalSelect("workout_exercise_logs", "select=id,session_id,exercise_id,exercise_name,completed_at&user_id=eq.$userId&completed_at=gte.${date.minusDays(14)}T00:00:00Z&order=completed_at.desc&limit=200") }
+        val setLogsCall = async { optionalSelect("workout_set_logs", "select=exercise_log_id,set_number,weight_kg,reps,duration_seconds,rpe,created_at&user_id=eq.$userId&created_at=gte.${date.minusDays(14)}T00:00:00Z&order=created_at.desc&limit=1000") }
+        val xpEventsCall = async { optionalSelect("xp_events", "select=amount,occurred_at&user_id=eq.$userId&order=occurred_at.desc&limit=5000") }
+        val achievementsCall = async { optionalSelect("user_achievements", "select=achievement_id,unlocked_at&user_id=eq.$userId") }
 
         val profileJson = profileCall.await().optJSONObject(0)
         val rawProfile = if (profileJson == null) {
@@ -73,12 +100,30 @@ class HedefitRepository(
             rest.upsert("profiles", JSONObject().put("id", userId).put("display_name", displayName), "id")
             parseProfile(null, userId)
         } else parseProfile(profileJson, userId)
-        val profile = rawProfile.copy(avatarUrl = if (rawProfile.avatarPath != null) signedAvatarUrl(rawProfile.avatarPath) else null)
+        // Fotoğraf bağlantısı geçici olarak üretilemese bile bütün ana ekranın
+        // yüklenmesini engelleme. Cihaz önbelleği avatarı göstermeye devam eder.
+        val profile = rawProfile.copy(avatarUrl = rawProfile.avatarPath?.let { path -> runCatching { signedAvatarUrl(path) }.getOrNull() })
         val workouts = parseWorkouts(planCall.await().optJSONObject(0)?.optJSONArray("workouts") ?: JSONArray())
         val sessions = parseSessions(sessionsCall.await())
         val nutritionLogs = parseNutritionLogs(nutritionCall.await().optJSONArray("logs") ?: JSONArray())
         val nutritionGoal = parseNutritionGoal(goalCall.await().optJSONObject(0))
         val measurements = parseMeasurements(measurementsCall.await())
+
+        val xpRows = xpEventsCall.await()
+        val weekStart = date.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+        val totalXp = (0 until xpRows.length()).sumOf { xpRows.optJSONObject(it)?.optInt("amount") ?: 0 }
+        val weeklyXp = (0 until xpRows.length()).sumOf { index ->
+            val row = xpRows.optJSONObject(index)
+            val occurred = row?.optString("occurred_at")?.let { value -> runCatching { Instant.parse(value).atZone(ZoneId.systemDefault()).toLocalDate() }.getOrNull() }
+            if (occurred != null && !occurred.isBefore(weekStart) && !occurred.isAfter(date)) row.optInt("amount") else 0
+        }
+        val achievementRows = achievementsCall.await()
+        val unlocked = buildMap {
+            for (index in 0 until achievementRows.length()) achievementRows.optJSONObject(index)?.let { row ->
+                val day = runCatching { Instant.parse(row.optString("unlocked_at")).atZone(ZoneId.systemDefault()).toLocalDate() }.getOrNull()
+                if (day != null) put(row.optString("achievement_id"), day)
+            }
+        }
 
         DashboardData(
             profile = profile,
@@ -97,7 +142,28 @@ class HedefitRepository(
             favoriteMeals = parseFavorites(favoritesCall.await()),
             workoutPrograms = parseWorkoutPrograms(programsCall.await()),
             routeActivities = parseRouteActivities(routesCall.await()),
+            exercisePerformance = parseExercisePerformance(exerciseLogsCall.await(), setLogsCall.await()),
+            stepHistory = parseStepHistory(stepHistoryCall.await()),
+            gamificationTotalXp = totalXp.takeIf { xpRows.length() > 0 },
+            gamificationWeeklyXp = weeklyXp.takeIf { xpRows.length() > 0 },
+            unlockedAchievements = unlocked,
         )
+    }
+
+    suspend fun syncGamificationPreferences(stepGoal: Int, waterGoalMl: Int, weeklyActivityGoal: Int, timezone: String) {
+        val userId = requireNotNull(auth.userId())
+        runCatching {
+            rest.upsert(
+                "gamification_preferences",
+                JSONObject().put("user_id", userId)
+                    .put("daily_step_goal", stepGoal.coerceIn(1_000, 100_000))
+                    .put("daily_water_goal_ml", waterGoalMl.coerceIn(250, 10_000))
+                    .put("weekly_activity_goal", weeklyActivityGoal.coerceIn(1, 7))
+                    .put("timezone", timezone)
+                    .put("updated_at", Instant.now().toString()),
+                "user_id",
+            )
+        }
     }
 
     suspend fun loadNutritionLogs(date: LocalDate): List<NutritionLogData> =
@@ -105,6 +171,14 @@ class HedefitRepository(
 
     suspend fun loadNutritionHistory(): List<NutritionLogData> =
         parseNutritionLogs(api.get("/api/nutrition/logs").requireSuccess("Beslenme geçmişi yüklenemedi.").jsonObject().optJSONArray("logs") ?: JSONArray())
+
+    private fun parseStepHistory(rows: JSONArray): List<DailyStepData> = buildList {
+        for (index in 0 until rows.length()) {
+            val row = rows.optJSONObject(index) ?: continue
+            val date = runCatching { LocalDate.parse(row.optString("local_date")) }.getOrNull() ?: continue
+            add(DailyStepData(date, row.optInt("steps").coerceAtLeast(0)))
+        }
+    }
 
     suspend fun accountStatus(): String {
         val userId = requireNotNull(auth.userId())
@@ -246,9 +320,16 @@ class HedefitRepository(
 
     suspend fun syncHealth(snapshot: HealthSnapshot) {
         val userId = requireNotNull(auth.userId())
-        rest.upsert("daily_steps", JSONObject().put("user_id", userId).put("local_date", snapshot.date.toString()).put("steps", snapshot.steps).put("source", "device").put("synced_at", Instant.now().toString()), "user_id,local_date")
-        if (snapshot.sleepMinutes > 0) rest.upsert("sleep_logs", JSONObject().put("user_id", userId).put("local_date", snapshot.date.toString()).put("minutes", snapshot.sleepMinutes).put("quality", if (snapshot.sleepMinutes >= 420) "iyi" else "orta"), "user_id,local_date")
+        optionalHealthUpsert("daily_steps", JSONObject().put("user_id", userId).put("local_date", snapshot.date.toString()).put("steps", snapshot.steps).put("source", "health_connect").put("synced_at", Instant.now().toString()), "user_id,local_date")
+        if (snapshot.sleepMinutes > 0) optionalHealthUpsert("sleep_logs", JSONObject().put("user_id", userId).put("local_date", snapshot.date.toString()).put("minutes", snapshot.sleepMinutes).put("quality", if (snapshot.sleepMinutes >= 420) "iyi" else "orta"), "user_id,local_date")
         snapshot.weightKg?.let { weight -> rest.upsert("body_measurements", JSONObject().put("id", UUID.randomUUID().toString()).put("user_id", userId).put("measured_at", snapshot.date.toString()).put("weight_kg", weight), "user_id,measured_at") }
+    }
+
+    private suspend fun optionalHealthUpsert(table: String, row: JSONObject, onConflict: String) {
+        runCatching { rest.upsert(table, row, onConflict) }.onFailure { error ->
+            val message = error.message.orEmpty()
+            if (!message.contains("Could not find the table", ignoreCase = true) && !message.contains("PGRST205", ignoreCase = true)) throw error
+        }
     }
 
     suspend fun saveBodyMeasurement(measurement: BodyMeasurementData): BodyMeasurementData {
@@ -272,8 +353,8 @@ class HedefitRepository(
         return clean
     }
 
-    suspend fun searchFoods(query: String): List<FoodSearchData> {
-        val response = api.get("/api/nutrition/foods?q=${java.net.URLEncoder.encode(query.trim(), Charsets.UTF_8.name())}").requireSuccess("Besin kataloğu aranamadı.").jsonObject()
+    suspend fun searchFoods(query: String, locale: String = "tr"): List<FoodSearchData> {
+        val response = api.get("/api/nutrition/foods?q=${java.net.URLEncoder.encode(query.trim(), Charsets.UTF_8.name())}&locale=${if (locale == "en") "en" else "tr"}").requireSuccess("Besin kataloğu aranamadı.").jsonObject()
         val array = response.optJSONArray("items") ?: JSONArray()
         return buildList { for (index in 0 until array.length()) array.optJSONObject(index)?.let { item -> add(parseFoodSearch(item)) } }
     }
@@ -281,6 +362,25 @@ class HedefitRepository(
     suspend fun addCatalogFood(food: FoodSearchData, grams: Double, meal: String, inputMethod: String = "search"): NutritionLogData {
         val body = catalogFoodPayload(food, grams, meal, inputMethod)
         return parseNutritionLog(api.post("/api/nutrition/logs", body).requireSuccess("Besin kaydedilemedi.").jsonObject().getJSONObject("log"))
+    }
+
+    suspend fun removeNutritionLog(id: String) {
+        api.delete("/api/nutrition/logs/$id").requireSuccess("Besin kaldırılamadı.")
+    }
+
+    /** Re-scales a saved item from its own catalogue/estimate values and can move it between meals. */
+    suspend fun updateNutritionLog(log: NutritionLogData, grams: Double, meal: String): NutritionLogData {
+        val previousGrams = (log.grams ?: 100.0).coerceAtLeast(1.0)
+        val ratio = grams / previousGrams
+        val body = JSONObject()
+            .put("mealType", meal)
+            .put("portionGrams", grams)
+            .put("calories", (log.calories * ratio).toInt())
+            .put("protein", log.protein * ratio)
+            .put("carbohydrates", log.carbs * ratio)
+            .put("fat", log.fat * ratio)
+            .put("fiber", log.fiber * ratio)
+        return parseNutritionLog(api.patch("/api/nutrition/logs/${log.id}", body).requireSuccess("Besin güncellenemedi.").jsonObject().getJSONObject("log"))
     }
 
     fun catalogFoodPayload(food: FoodSearchData, grams: Double, meal: String, inputMethod: String = "search"): JSONObject {
@@ -303,11 +403,7 @@ class HedefitRepository(
     suspend fun removeFavorite(id: String) = rest.delete("favorite_meals", "id=eq.$id&user_id=eq.${requireNotNull(auth.userId())}")
 
     suspend fun repeatFavorite(favorite: FavoriteMealData): NutritionLogData {
-        val ratio = 100.0 / favorite.grams.coerceAtLeast(1.0)
-        val food = FoodSearchData(favorite.id, favorite.name, null, 100.0, (favorite.calories * ratio).toInt(), favorite.protein * ratio, favorite.carbs * ratio, favorite.fat * ratio, favorite.fiber * ratio,
-            (favorite.micros["sugar"] ?: 0.0) * ratio, (favorite.micros["sodiumMg"] ?: 0.0) * ratio, (favorite.micros["potassiumMg"] ?: 0.0) * ratio,
-            (favorite.micros["calciumMg"] ?: 0.0) * ratio, (favorite.micros["ironMg"] ?: 0.0) * ratio, (favorite.micros["vitaminCMg"] ?: 0.0) * ratio, true, "favorite")
-        return addCatalogFood(food, favorite.grams, favorite.meal, "favorite")
+        return addCatalogFood(favorite.asRepeatFood(), favorite.grams, favorite.meal, "favorite")
     }
 
     suspend fun scheduleWorkout(date: LocalDate, time: String, status: String = "planned", originalDate: String? = null): WorkoutScheduleData {
@@ -344,6 +440,8 @@ class HedefitRepository(
                 category = item.optString("category"),
                 imageUrls = item.optJSONArray("images")?.let { values -> List(values.length()) { values.optString(it) }.filter(String::isNotBlank) }.orEmpty(),
                 secondaryMuscles = item.optJSONArray("secondaryMuscles")?.let { values -> List(values.length()) { values.optString(it) } }.orEmpty(),
+                force = item.optString("force"),
+                mechanic = item.optString("mechanic"),
             ))
         } }
     }
@@ -362,12 +460,12 @@ class HedefitRepository(
         rest.upsert("workout_plans", JSONObject().put("user_id", requireNotNull(auth.userId())).put("workouts", raw).put("updated_at", Instant.now().toString()), "user_id")
     }
 
-    suspend fun saveProgram(name: String, source: String, focusArea: String, workouts: List<WorkoutExerciseData>, id: String = UUID.randomUUID().toString()): WorkoutProgramData {
+    suspend fun saveProgram(name: String, source: String, focusArea: String, workouts: List<WorkoutExerciseData>, id: String = UUID.randomUUID().toString(), showOnHome: Boolean = false): WorkoutProgramData {
         val userId = requireNotNull(auth.userId())
         rest.update("workout_program_collections", "user_id=eq.$userId&is_active=eq.true", JSONObject().put("is_active", false).put("updated_at", Instant.now().toString()))
         val row = rest.upsert("workout_program_collections", JSONObject()
             .put("id", id).put("user_id", userId).put("name", name.trim().take(80)).put("source", source)
-            .put("focus_area", focusArea).put("exercises", workoutsJson(workouts)).put("is_active", true).put("updated_at", Instant.now().toString()), "id")
+            .put("focus_area", focusArea).put("exercises", workoutsJson(workouts)).put("is_active", true).put("show_on_home", showOnHome).put("updated_at", Instant.now().toString()), "id")
         saveWorkoutPlan(workouts)
         return parseWorkoutProgram(row)
     }
@@ -378,6 +476,16 @@ class HedefitRepository(
         rest.update("workout_program_collections", "id=eq.${SupabaseRestClient.encode(program.id)}&user_id=eq.$userId", JSONObject().put("is_active", true).put("updated_at", Instant.now().toString()))
         saveWorkoutPlan(program.exercises)
         return program.copy(isActive = true)
+    }
+
+    suspend fun setProgramHomeVisibility(program: WorkoutProgramData, showOnHome: Boolean): WorkoutProgramData {
+        val userId = requireNotNull(auth.userId())
+        rest.update(
+            "workout_program_collections",
+            "id=eq.${SupabaseRestClient.encode(program.id)}&user_id=eq.$userId",
+            JSONObject().put("show_on_home", showOnHome).put("updated_at", Instant.now().toString()),
+        )
+        return program.copy(showOnHome = showOnHome)
     }
 
     suspend fun deleteProgram(program: WorkoutProgramData): WorkoutProgramData? {
@@ -436,6 +544,12 @@ class HedefitRepository(
     }
 
     suspend fun sendChat(messages: List<Pair<String, Boolean>>, data: DashboardData?, locale: String = "tr"): ChatReplyData {
+        localNutritionEvaluation(messages.lastOrNull { it.second }?.first.orEmpty(), data, locale)?.let { answer ->
+            return ChatReplyData(answer, "local", null, null)
+        }
+        localProgramEvaluation(messages.lastOrNull { it.second }?.first.orEmpty(), data, locale)?.let { answer ->
+            return ChatReplyData(answer, "local", null, null)
+        }
         val bodyMessages = JSONArray()
         messages.takeLast(12).forEach { (text, user) ->
             bodyMessages.put(JSONObject().put("role", if (user) "user" else "assistant").put("text", text))
@@ -443,15 +557,125 @@ class HedefitRepository(
         val signals = JSONObject()
         data?.let {
             signals.put("profile", JSONObject()
+                .put("age", it.profile.age ?: JSONObject.NULL)
+                .put("sex", it.profile.gender)
                 .put("heightCm", it.profile.heightCm ?: JSONObject.NULL)
-                .put("weightKg", it.profile.weightKg ?: JSONObject.NULL))
-            signals.put("today", JSONObject().put("workoutCompleted", it.sessions.any { session -> localDate(session.completedAt) == LocalDate.now() }))
-            signals.put("activity", JSONObject().put("workoutsThisWeek", it.sessions.count { session -> localDate(session.completedAt) >= LocalDate.now().minusDays(7) }))
+                .put("weightKg", it.profile.weightKg ?: JSONObject.NULL)
+                .put("environment", it.profile.environment)
+                .put("equipment", it.profile.equipment)
+                .put("assessmentAnswers", JSONArray(it.profile.historyAnswers.take(20))))
+            val goalType = when {
+                it.profile.goal.contains("yağ", true) -> "fatLoss"
+                it.profile.goal.contains("kilo ver", true) || it.profile.goal.contains("zayıf", true) -> "lose"
+                it.profile.goal.contains("kas", true) || it.profile.goal.contains("kilo al", true) -> "gain"
+                else -> "maintain"
+            }
+            signals.put("goal", JSONObject().put("goalType", goalType).put("targetWeightKg", it.profile.targetWeightKg ?: JSONObject.NULL))
+            val totals = it.nutritionLogs.fold(doubleArrayOf(0.0, 0.0, 0.0, 0.0)) { sum, log ->
+                sum.apply { this[0] += log.calories; this[1] += log.protein; this[2] += log.carbs; this[3] += log.fat }
+            }
+            signals.put("today", JSONObject()
+                .put("totals", JSONObject().put("calories", totals[0]).put("protein", totals[1]).put("carbs", totals[2]).put("fat", totals[3]))
+                .put("steps", it.steps).put("waterMl", it.waterMl).put("sleepMinutes", it.sleepMinutes)
+                .put("workoutCompleted", it.sessions.any { session -> localDate(session.completedAt) == LocalDate.now() })
+                .put("foods", JSONArray(it.nutritionLogs.take(30).map { log ->
+                    JSONObject().put("meal", log.meal).put("name", log.name).put("calories", log.calories)
+                        .put("protein", log.protein).put("carbs", log.carbs).put("fat", log.fat)
+                })))
+            signals.put("measurements", JSONArray(it.measurements.takeLast(30).map { measurement ->
+                JSONObject().put("measuredAt", measurement.date.take(10)).put("weightKg", measurement.weightKg ?: JSONObject.NULL)
+            }))
+            signals.put("activity", JSONObject()
+                .put("workoutsThisWeek", it.sessions.count { session -> localDate(session.completedAt) >= LocalDate.now().minusDays(7) })
+                .put("streakDays", it.streakDays))
+            signals.put("training", JSONObject()
+                .put("activeExercises", JSONArray(it.workouts.take(20).map { exercise ->
+                    JSONObject().put("name", exercise.name).put("area", exercise.area).put("sets", exercise.sets).put("reps", exercise.reps)
+                }))
+                .put("recentSessions", JSONArray(it.sessions.take(4).map { session ->
+                    JSONObject().put("completedAt", session.completedAt).put("exerciseNames", JSONArray(session.exerciseNames.take(12)))
+                        .put("durationMinutes", session.durationSeconds / 60).put("fatigue", session.fatigue ?: JSONObject.NULL)
+                }))
+                .put("recentPerformance", JSONArray(it.exercisePerformance.take(20).map { performance ->
+                    JSONObject().put("exerciseId", performance.exerciseId ?: JSONObject.NULL).put("exerciseName", performance.exerciseName)
+                        .put("sets", JSONArray(performance.sets.map { set -> JSONObject().put("weightKg", set.weightKg ?: JSONObject.NULL).put("reps", set.reps ?: JSONObject.NULL).put("rpe", set.rpe ?: JSONObject.NULL) }))
+                })))
         }
         val response = api.post("/api/chat", JSONObject().put("messages", bodyMessages).put("signals", signals).put("locale", if (locale == "en") "en" else "tr"))
             .requireSuccess("Fit Koç yanıt veremedi.").jsonObject()
+        if (response.optString("source") in setOf("fallback", "unavailable")) error(response.optString("notice", "Çevrimiçi Fit Koç geçici olarak kullanılamıyor."))
         val usage = response.optJSONObject("usage")
-        return ChatReplyData(response.optString("text"), response.optString("source"), usage?.intOrNull("used"), usage?.intOrNull("limit"))
+        return ChatReplyData(response.optString("text").replace("**", "").replace("__", ""), response.optString("source"), usage?.intOrNull("used"), usage?.intOrNull("limit"))
+    }
+
+    private fun localNutritionEvaluation(question: String, data: DashboardData?, locale: String): String? {
+        val normalized = question.lowercase(java.util.Locale("tr", "TR"))
+        val requested = normalized.contains("beslenmemi değerlendir") || normalized.contains("beslenmem nasıl") || normalized.contains("review my nutrition") || normalized.contains("evaluate my nutrition")
+        if (!requested) return null
+        val dashboard = data ?: return if (locale == "en") "I can't see today's nutrition data yet. Open Nutrition, add what you ate, then ask me again." else "Bugünkü beslenme verini henüz göremiyorum. Beslenme sayfasından yediklerini ekledikten sonra tekrar sor."
+        val logs = dashboard.nutritionLogs
+        if (logs.isEmpty()) return if (locale == "en") "You haven't logged a meal today, so I can't make a reliable assessment yet. Add your meals first; even approximate portions are enough to start." else "Bugün kayıtlı öğün görünmüyor; bu yüzden güvenilir bir değerlendirme yapamam. Önce yediklerini ekle, yaklaşık porsiyon yazman başlangıç için yeterli."
+
+        val calories = logs.sumOf { it.calories }
+        val protein = logs.sumOf { it.protein }.toInt()
+        val carbs = logs.sumOf { it.carbs }.toInt()
+        val fat = logs.sumOf { it.fat }.toInt()
+        val goal = dashboard.nutritionGoal
+        val calorieGap = goal.calories - calories
+        val proteinGap = (goal.protein - protein).coerceAtLeast(0)
+        val strongestProtein = logs.maxByOrNull { it.protein }?.takeIf { it.protein >= 10 }?.name
+
+        if (locale == "en") {
+            val energy = if (calorieGap >= 0) "You have about $calorieGap kcal remaining." else "You are about ${-calorieGap} kcal over your target."
+            val proteinText = if (proteinGap > 0) "Protein is $protein / ${goal.protein} g, leaving a $proteinGap g gap." else "You reached your protein target with $protein g."
+            val next = when {
+                proteinGap >= 30 -> "For the next meal, prioritize a clear protein source such as 150–200 g chicken, fish, lean meat, or a yogurt-based option."
+                calorieGap > 350 -> "Your protein is close; use the remaining energy for a balanced meal with vegetables and a measured carbohydrate portion."
+                else -> "Keep the rest of the day light and avoid adding calories just to fill the target."
+            }
+            return "Today's $calories / ${goal.calories} kcal. $energy $proteinText Carbohydrate is $carbs / ${goal.carbs} g and fat is $fat / ${goal.fat} g. ${strongestProtein?.let { "Your strongest logged protein source is $it. " } ?: ""}$next"
+        }
+
+        val energy = if (calorieGap >= 0) "Yaklaşık $calorieGap kcal hakkın kaldı." else "Hedefini yaklaşık ${-calorieGap} kcal aşmışsın."
+        val proteinText = if (proteinGap > 0) "Protein $protein / ${goal.protein} g; $proteinGap g eksiğin var." else "Protein hedefini $protein g ile tamamlamışsın."
+        val next = when {
+            proteinGap >= 30 -> "Sonraki öğünde 150–200 g tavuk, balık, yağsız et veya yoğurt temelli net bir protein kaynağına öncelik ver."
+            calorieGap > 350 -> "Protein hedefin yakın; kalan enerjiyi sebze ve ölçülü bir karbonhidrat porsiyonuyla dengeli tamamla."
+            else -> "Günün kalanını hafif tut; yalnız hedefi doldurmak için fazladan kalori ekleme."
+        }
+        return "Bugün $calories / ${goal.calories} kcal aldın. $energy $proteinText Karbonhidrat $carbs / ${goal.carbs} g, yağ $fat / ${goal.fat} g. ${strongestProtein?.let { "Kayıtlarındaki en güçlü protein kaynağı $it. " } ?: ""}$next"
+    }
+
+    private fun localProgramEvaluation(question: String, data: DashboardData?, locale: String): String? {
+        val normalized = question.lowercase(java.util.Locale("tr", "TR"))
+        val requested = normalized.contains("antrenman programımı değerlendir") || normalized.contains("programımı değerlendir") || normalized.contains("review my workout plan") || normalized.contains("evaluate my workout plan")
+        if (!requested) return null
+        val dashboard = data ?: return if (locale == "en") "I can't see your active workout plan yet." else "Aktif antrenman programını henüz göremiyorum."
+        val workouts = dashboard.workouts
+        if (workouts.isEmpty()) return if (locale == "en") "You don't have an active plan yet. Create one first, then I can assess its movements and volume." else "Aktif programın henüz yok. Önce program oluştur; ardından hareketlerini ve hacmini değerlendirebilirim."
+        val totalSets = workouts.sumOf { it.sets }
+        val areas = workouts.groupBy { it.area.ifBlank { if (locale == "en") "Full body" else "Tüm vücut" } }
+            .entries.sortedByDescending { it.value.sumOf { exercise -> exercise.sets } }
+            .take(5)
+            .joinToString(" • ") { "${it.key}: ${it.value.sumOf { exercise -> exercise.sets }} set" }
+        val weeklySessions = dashboard.sessions.count { session -> localDate(session.completedAt) >= LocalDate.now().minusDays(6) }
+        val fatigue = dashboard.sessions.firstOrNull()?.fatigue
+        if (locale == "en") {
+            val load = when {
+                totalSets < 9 -> "The session volume is light; add work only if you can recover well."
+                totalSets > 24 -> "The session volume is high; prioritize form and recovery before adding more."
+                else -> "The session volume is in a practical range for a focused day."
+            }
+            val recovery = fatigue?.let { if (it >= 4) "Your latest fatigue is $it/5, so keep the next session moderate." else "Your latest fatigue is $it/5, which supports normal progression." } ?: "Rate your fatigue after the next workout to personalize progression."
+            return "Your active program has ${workouts.size} movements and $totalSets working sets. Distribution: $areas. You completed $weeklySessions workout${if (weeklySessions == 1) "" else "s"} in the last 7 days. $load $recovery"
+        }
+        val load = when {
+            totalSets < 9 -> "Seans hacmi hafif; toparlanman iyiyse kademeli ekleme düşünebilirsin."
+            totalSets > 24 -> "Seans hacmi yüksek; yeni set eklemeden önce form ve toparlanmayı önceliklendir."
+            else -> "Seans hacmi odaklı bir antrenman günü için uygun aralıkta."
+        }
+        val recovery = fatigue?.let { if (it >= 4) "Son yorgunluk puanın $it/5; sonraki seansı orta zorlukta tut." else "Son yorgunluk puanın $it/5; normal ilerlemeye uygunsun." } ?: "Bir sonraki antrenman sonunda yorgunluğunu puanla; yük önerisi daha kişisel hâle gelir."
+        return "Aktif programında ${workouts.size} hareket ve toplam $totalSets çalışma seti var. Dağılım: $areas. Son 7 günde $weeklySessions antrenman tamamladın. $load $recovery"
     }
 
     private fun parseProfile(json: JSONObject?, userId: String): ProfileData {
@@ -517,6 +741,7 @@ class HedefitRepository(
         focusArea = item.optString("focus_area"),
         exercises = parseWorkouts(item.optJSONArray("exercises") ?: JSONArray()),
         isActive = item.optBoolean("is_active"),
+        showOnHome = item.optBoolean("show_on_home"),
     )
 
     private fun parseSessions(array: JSONArray): List<WorkoutSessionData> = buildList {
@@ -527,7 +752,33 @@ class HedefitRepository(
                 durationSeconds = item.optInt("duration_seconds"), calories = item.optInt("calories"),
                 completedExercises = item.optInt("completed_exercises"), totalExercises = item.optInt("total_exercises"),
                 fatigue = item.intOrNull("fatigue"),
+                exerciseNames = item.optJSONArray("exercise_names")?.let { values -> List(values.length()) { values.optString(it) }.filter(String::isNotBlank) }.orEmpty(),
+                difficulty = item.stringOrNull("difficulty"),
+                painAreas = item.optJSONArray("pain_areas")?.let { values -> List(values.length()) { values.optString(it) }.filter(String::isNotBlank) }.orEmpty(),
             ))
+        }
+    }
+
+    private fun parseExercisePerformance(exerciseLogs: JSONArray, setLogs: JSONArray): List<WorkoutExercisePerformanceData> {
+        val setsByLog = buildMap<String, MutableList<WorkoutSetPerformanceData>> {
+            for (index in 0 until setLogs.length()) {
+                val item = setLogs.optJSONObject(index) ?: continue
+                val logId = item.optString("exercise_log_id")
+                getOrPut(logId) { mutableListOf() }.add(WorkoutSetPerformanceData(
+                    setNumber = item.optInt("set_number"), weightKg = item.doubleOrNull("weight_kg"),
+                    reps = item.intOrNull("reps"), durationSeconds = item.intOrNull("duration_seconds"), rpe = item.intOrNull("rpe"),
+                ))
+            }
+        }
+        return buildList {
+            for (index in 0 until exerciseLogs.length()) {
+                val item = exerciseLogs.optJSONObject(index) ?: continue
+                add(WorkoutExercisePerformanceData(
+                    sessionId = item.optString("session_id"), exerciseId = item.stringOrNull("exercise_id"),
+                    exerciseName = item.optString("exercise_name"), completedAt = item.optString("completed_at"),
+                    sets = setsByLog[item.optString("id")].orEmpty().sortedBy(WorkoutSetPerformanceData::setNumber),
+                ))
+            }
         }
     }
 
@@ -537,10 +788,22 @@ class HedefitRepository(
             add(RouteActivityData(
                 id = item.optString("id"),
                 activityType = item.optString("activity_type", "walk"),
+                title = item.optString("title").ifBlank { item.optString("activity_type", "Aktivite") },
                 startedAt = item.optString("started_at"),
                 endedAt = item.optString("ended_at"),
                 durationSeconds = item.optInt("duration_seconds"),
+                movingDurationSeconds = item.optInt("moving_duration_seconds", item.optInt("duration_seconds")),
                 distanceMeters = item.optDouble("distance_meters"),
+                averagePaceSecondsPerKm = item.intOrNull("average_pace_seconds_per_km"),
+                averageSpeedKmh = item.optDouble("average_speed_kmh"),
+                calories = item.optInt("calories"),
+                status = item.optString("status", "completed"),
+                routePoints = item.optJSONArray("route_points")?.let { points -> buildList {
+                    for (pointIndex in 0 until points.length()) points.optJSONObject(pointIndex)?.let { point -> add(ActivityRoutePointData(
+                        latitude = point.optDouble("lat"), longitude = point.optDouble("lng"), recordedAt = point.optLong("time"),
+                        accuracyMeters = point.optDouble("accuracy"), altitudeMeters = point.doubleOrNull("alt"),
+                    )) }
+                } }.orEmpty(),
             ))
         }
     }

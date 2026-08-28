@@ -8,7 +8,7 @@ import { hasRemoteProvider, parseImageDataUrl } from "../../../lib/ai/providers/
 import { generateCoachObject } from "../../../lib/ai/coach.ts";
 import { loadMemories } from "../../../lib/ai/memory.ts";
 import { checkAndConsumeUsage, refundUsage, usageLimitExceeded } from "../../../lib/usage-limits.ts";
-import { PROMPT_CATALOG_LIMIT, getExercisesForProfile } from "../../../lib/exercise-service.ts";
+import { PROMPT_CATALOG_LIMIT, getExerciseById, getExercisesForProfile } from "../../../lib/exercise-service.ts";
 import { normalizeExercise } from "../../../lib/exercise-service.ts";
 import { translateExerciseLabel, translateExerciseName, turkishExerciseInstructions } from "../../../lib/exercise-translations.ts";
 
@@ -159,8 +159,15 @@ export function profileSignals(payload: Record<string, unknown>) {
   };
 }
 
-function buildLocalPlan(signals: ReturnType<typeof profileSignals>, catalog: unknown[], locale: "tr" | "en"): GeneratedPlan {
-  const normalized = catalog.map(normalizeExercise).filter((item) => item !== null);
+export function buildLocalPlan(signals: ReturnType<typeof profileSignals>, catalog: unknown[], locale: "tr" | "en"): GeneratedPlan {
+  // Prompt kataloğu token maliyetini düşürmek için category/mechanic gibi
+  // alanları taşımaz. Yerel planlayıcı bunları varsayılan değerlerle uydurursa
+  // stretching hareketleri "strength" sanılır ve alfabetik ilk kayıtlar plana
+  // dolar. Bilinen kimlikleri tam, doğrulanmış katalog kaydıyla zenginleştir.
+  const normalized = catalog.map((value) => {
+    const compact = normalizeExercise(value);
+    return compact ? getExerciseById(compact.id) ?? compact : null;
+  }).filter((item) => item !== null);
   const pain = signals.painAreas.toLocaleLowerCase("tr-TR");
   const unsafeForPain = (name: string) => {
     const folded = name.toLocaleLowerCase("en-US");
@@ -170,7 +177,29 @@ function buildLocalPlan(signals: ReturnType<typeof profileSignals>, catalog: unk
     return false;
   };
   const painFiltered = normalized.filter((exercise) => !unsafeForPain(exercise.name));
-  const pool = painFiltered.length >= signals.exerciseCount ? painFiltered : normalized;
+  const conditioning = signals.primaryGoal === "Kondisyon";
+  const goalFiltered = painFiltered.filter((exercise) => conditioning
+    ? exercise.category !== "stretching"
+    : ["strength", "powerlifting", "olympic weightlifting"].includes(exercise.category));
+  const candidatePool = goalFiltered.length >= signals.exerciseCount ? goalFiltered : painFiltered;
+  const preferredStyle = signals.preferredStyle.toLocaleLowerCase("tr-TR");
+  const musclePriority = new Set(["quadriceps", "hamstrings", "glutes", "chest", "lats", "middle back", "shoulders"]);
+  const foundationPattern = /squat|leg press|bench press|push-up|barbell row|dumbbell row|lat pulldown|pull-up|deadlift|hip thrust|glute bridge|shoulder press/i;
+  const score = (exercise: (typeof candidatePool)[number]) => {
+    const categoryScore = conditioning
+      ? ({ cardio: 70, plyometrics: 55, strength: 45, powerlifting: 25, "olympic weightlifting": 25, strongman: 20 }[exercise.category] ?? 0)
+      : ({ strength: 70, powerlifting: 55, "olympic weightlifting": 40, strongman: 25, plyometrics: 15, cardio: 10 }[exercise.category] ?? 0);
+    const equipment = exercise.equipment?.toLocaleLowerCase("en-US") ?? "";
+    const styleScore = /ağırlık|kuvvet|weight|strength/.test(preferredStyle)
+      ? (equipment && equipment !== "body only" ? 8 : 0)
+      : /koşu|hiit|cardio/.test(preferredStyle) && ["cardio", "plyometrics"].includes(exercise.category) ? 8 : 0;
+    return categoryScore
+      + (exercise.mechanic === "compound" ? 20 : 0)
+      + (foundationPattern.test(exercise.name) ? 18 : 0)
+      + (musclePriority.has(exercise.primaryMuscles[0] || "") ? 10 : 0)
+      + styleScore;
+  };
+  const pool = [...candidatePool].sort((left, right) => score(right) - score(left) || left.name.localeCompare(right.name));
   const selected: typeof pool = [];
   const usedMuscles = new Set<string>();
   for (const exercise of pool) {
@@ -190,8 +219,8 @@ function buildLocalPlan(signals: ReturnType<typeof profileSignals>, catalog: unk
   const sets = beginner ? 2 : signals.sessionMinutes >= 45 ? 4 : 3;
   const reps = signals.primaryGoal === "Kondisyon" || signals.primaryGoal === "Kilo verme" ? "12–15" : "8–12";
   const restSeconds = signals.primaryGoal === "Kondisyon" || signals.primaryGoal === "Kilo verme" ? 45 : beginner ? 75 : 90;
-  const daysTr = ["Pazartesi", "Çarşamba", "Cuma", "Cumartesi", "Pazar"];
-  const daysEn = ["Monday", "Wednesday", "Friday", "Saturday", "Sunday"];
+  const daysTr = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"];
+  const daysEn = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const scheduleDays = (locale === "en" ? daysEn : daysTr).slice(0, signals.weeklyDays);
 
   return {
@@ -265,17 +294,36 @@ export async function POST(request: Request) {
   // istemcide ikinci kez uygulanmamalı. Yedek olmadan katalogsuz bir istemci
   // modele boş liste gönderip uydurma hareket kimlikleri alırdı.
   const clientCatalog = Array.isArray(payload.exerciseCatalog) ? payload.exerciseCatalog : [];
-  const exerciseCatalog = clientCatalog.length
-    ? clientCatalog.slice(0, PROMPT_CATALOG_LIMIT)
-    : getExercisesForProfile(text(payload.environment) === "Salon", text(payload.equipment));
+  const environment = text(payload.environment);
+  const equipment = text(payload.equipment);
+  const history = Array.isArray(payload.history) ? payload.history.map(text) : [];
+  const trainingStyles = history[QUESTION.trainingStyles] || "";
+  const verifiedClientCatalog = clientCatalog.slice(0, PROMPT_CATALOG_LIMIT).map((value) => {
+    const compact = normalizeExercise(value);
+    const atlasExercise = compact ? getExerciseById(compact.id) : null;
+    return atlasExercise ? {
+      id: atlasExercise.id,
+      name: atlasExercise.name,
+      level: atlasExercise.level,
+      equipment: atlasExercise.equipment || undefined,
+      primaryMuscles: atlasExercise.primaryMuscles,
+    } : null;
+  }).filter((exercise) => exercise !== null);
+  const exerciseCatalog = verifiedClientCatalog.length
+    ? verifiedClientCatalog
+    : getExercisesForProfile(/salon|gym/i.test(environment), equipment, environment, trainingStyles);
   const locale = payload.locale === "en" ? "en" : "tr";
   const profile = { ...payload };
   delete profile.photoDataUrl;
   delete profile.exerciseCatalog;
   delete profile.locale;
   const signals = profileSignals(payload);
+  // Hareket seçimi her zaman doğrulanmış Hareket Atlası'nda kalır. OpenAI,
+  // 15 cevabı yorumlayıp açıklama ve ilerleme metnini kişiselleştirebilir;
+  // katalog dışı bir hareket ya da yanlış ekipman öneremez.
+  const atlasPlan = buildLocalPlan(signals, exerciseCatalog, locale);
   if (!hasRemoteProvider()) {
-    return Response.json({ ...buildLocalPlan(signals, exerciseCatalog, locale), profileFingerprint: signals.fingerprint, model: "hedefit-deterministic-v1", fallback: true });
+    return Response.json({ ...atlasPlan, profileFingerprint: signals.fingerprint, model: "hedefit-deterministic-v1", fallback: true });
   }
   const usage = await checkAndConsumeUsage(request, "plan", auth.user.id);
   if ("error" in usage) return usage.error;
@@ -379,7 +427,20 @@ Tam olarak ${signals.exerciseCount} farklı hareket seç. Her workout için kata
       if (Number.isFinite(usage.limit)) await refundUsage(request, "plan");
       return Response.json({ ...buildLocalPlan(signals, exerciseCatalog, locale), profileFingerprint: signals.fingerprint, model: "hedefit-deterministic-v1", fallback: true });
     }
-    return Response.json({ ...plan, profileFingerprint: signals.fingerprint, model: result.model });
+    // Uzak modelin metinsel koçluğunu korurken programın kendisini Atlas'tan
+    // gelen güvenli, ekipman ve sakatlık filtreli seçimle sabit tut.
+    return Response.json({
+      ...atlasPlan,
+      title: plan.title || atlasPlan.title,
+      profileSummary: plan.profileSummary || atlasPlan.profileSummary,
+      rationale: plan.rationale || atlasPlan.rationale,
+      safetyNote: plan.safetyNote || atlasPlan.safetyNote,
+      analysis: plan.analysis || atlasPlan.analysis,
+      progression: plan.progression?.length ? plan.progression : atlasPlan.progression,
+      profileFingerprint: signals.fingerprint,
+      model: result.model,
+      atlasLocked: true,
+    });
   } catch (error) {
     console.error("AI plan generation error", error);
     if (Number.isFinite(usage.limit)) await refundUsage(request, "plan");

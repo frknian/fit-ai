@@ -2,6 +2,7 @@ import { authenticateRequest } from "../../../../lib/api-auth.ts";
 import { estimateAiTextNutrition } from "../../../../lib/ai-nutrition-estimator.ts";
 import { hasRemoteProvider } from "../../../../lib/ai/providers/openai-compatible.ts";
 import { containsPromptInjection } from "../../../../lib/nutrition-parser.ts";
+import { matchDefaultFood } from "../../../../lib/default-food-catalog.ts";
 import { rateLimit, tooManyRequests } from "../../../../lib/rate-limit.ts";
 import { checkAndConsumeUsage, refundUsage, usageLimitExceeded } from "../../../../lib/usage-limits.ts";
 
@@ -21,6 +22,34 @@ export async function POST(request: Request) {
   }
   if (!Number.isFinite(grams) || grams <= 0 || grams > 5000) {
     return Response.json({ error: "Gramaj 1–5000 gram arasında olmalı." }, { status: 400 });
+  }
+  const catalogueFood = matchDefaultFood(query);
+  if (catalogueFood) {
+    const ratio = grams / 100;
+    return Response.json({
+      items: [{
+        query: catalogueFood.name,
+        estimatedGrams: grams,
+        confidence: 0.85,
+        needsConfirmation: false,
+        nutrition: {
+          calories: Math.round(catalogueFood.calories * ratio),
+          protein: catalogueFood.protein * ratio,
+          carbohydrates: catalogueFood.carbohydrates * ratio,
+          fat: catalogueFood.fat * ratio,
+          fiber: catalogueFood.fiber * ratio,
+          sugar: 0,
+          sodiumMg: 0,
+          potassiumMg: 0,
+          calciumMg: 0,
+          ironMg: 0,
+          vitaminCMg: 0,
+        },
+      }],
+      confidence: 0.85,
+      isEstimated: true,
+      warnings: ["Değerler temel Hedefit kataloğundan hesaplandı."],
+    });
   }
   if (!hasRemoteProvider()) {
     return Response.json({ error: "AI besin hesaplama servisi yapılandırılmamış." }, { status: 503 });

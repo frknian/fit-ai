@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:configure="com.hedefit.app.widgets.CustomWidgetConfigActivity"
+    android:initialLayout="@layout/widget_hedefit"
+    android:previewLayout="@layout/widget_preview_custom"
+    android:minWidth="180dp"
+    android:minHeight="100dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:widgetFeatures="configuration_optional|reconfigurable" />

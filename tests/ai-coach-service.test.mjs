@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { providerRegistry } from "../lib/ai/providers/registry.ts";
-import { deterministicLocalProvider } from "../lib/ai/providers/deterministic-local.ts";
 import { generateCoachResponse, extractMemories } from "../lib/ai/coach.ts";
 
 const SILENT = { sink: () => {} };
@@ -33,7 +32,7 @@ const SIGNALS = {
 };
 
 test("koç yanıtı deterministik gerçekleri modele KESİN olarak iletir", async () => {
-  providerRegistry.reset([deterministicLocalProvider, fakeRemote()]);
+  providerRegistry.reset([fakeRemote()]);
   const result = await generateCoachResponse({
     messages: [{ role: "user", text: "bugün spor yapmalı mıyım?" }],
     signals: SIGNALS,
@@ -65,19 +64,13 @@ test("güvenlik katmanı acil durumda HİÇBİR sağlayıcıya gitmez", async ()
   assert.match(result.text, /112|acil/i);
 });
 
-test("uzak sağlayıcı çökerse yerel sağlayıcı sayılarla birlikte yanıtlar", async () => {
-  providerRegistry.reset([deterministicLocalProvider, fakeRemote({ throws: new Error("500 internal") })]);
-  const result = await generateCoachResponse({
+test("uzak sağlayıcı çökerse açık hata döner", async () => {
+  providerRegistry.reset([fakeRemote({ throws: new Error("500 internal") })]);
+  await assert.rejects(() => generateCoachResponse({
     messages: [{ role: "user", text: "bugün ne yapmalıyım?" }],
     signals: SIGNALS,
     policy: SILENT,
-  });
-
-  assert.equal(result.provider, "local-deterministic");
-  assert.equal(result.fallbackUsed, true);
-  // Yerel yanıt da deterministik motorun sayılarını kullanır — şablon ama boş değil.
-  assert.match(result.text, /7230|adım/i);
-  assert.match(result.text, /kcal/);
+  }));
 });
 
 test("hafıza bağlama girer ve modele iletilir", async () => {

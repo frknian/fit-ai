@@ -12,6 +12,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -38,7 +40,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.FitnessCenter
@@ -103,6 +104,13 @@ import com.hedefit.app.ui.model.ExerciseUi
 import com.hedefit.app.ui.model.WorkoutDayUi
 import com.hedefit.app.ui.model.weeklyWorkouts
 import com.hedefit.app.ui.theme.HedefitColors
+import com.hedefit.app.ui.state.prescribedStartingReps
+import com.hedefit.app.ui.state.canFinishWorkout
+import com.hedefit.app.ui.state.savedWorkoutSet
+import com.hedefit.app.ui.state.toSavedWorkoutSet
+import com.hedefit.app.ui.state.validateWorkoutReps
+import com.hedefit.app.ui.state.validateWorkoutRest
+import com.hedefit.app.ui.state.validateWorkoutSets
 import com.hedefit.app.data.model.WorkoutExerciseData
 import com.hedefit.app.data.model.WorkoutSetInput
 import com.hedefit.app.data.model.WorkoutFeedbackData
@@ -125,7 +133,6 @@ fun WorkoutPlanScreen(
     generating: Boolean,
     onGeneratePlan: () -> Unit,
     onStartWorkout: () -> Unit,
-    onOpenCalendar: () -> Unit,
     onOpenLibrary: () -> Unit,
     onGenerateRegional: (String, String) -> Unit,
     onLoadRegional: (String) -> Unit,
@@ -133,8 +140,10 @@ fun WorkoutPlanScreen(
     onSelectProgram: (WorkoutProgramData) -> Unit,
     onRemoveProgram: (WorkoutProgramData) -> Unit,
     onUpdateExercise: (WorkoutExerciseData) -> Unit,
+    onReplaceExercise: (String, WorkoutExerciseData) -> Unit,
     onRemoveExercise: (String) -> Unit,
     onMoveExercise: (String, Int) -> Unit,
+    onLoadReplacementOptions: (WorkoutExerciseData) -> Unit,
     language: String = "tr",
 ) {
     val en = language == "en"
@@ -144,6 +153,7 @@ fun WorkoutPlanScreen(
     var removingProgram by remember { mutableStateOf<WorkoutProgramData?>(null) }
     var editingExercise by remember { mutableStateOf<WorkoutExerciseData?>(null) }
     var previewExercise by remember { mutableStateOf<WorkoutExerciseData?>(null) }
+    var replacingExercise by remember { mutableStateOf<WorkoutExerciseData?>(null) }
     val activeProgram = programs.firstOrNull { it.isActive }
     if (showRegional) {
         BackHandler {
@@ -167,14 +177,7 @@ fun WorkoutPlanScreen(
             contentPadding = PaddingValues(top = 16.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(if (en) "My Workout" else "Antrenmanım", style = MaterialTheme.typography.headlineMedium)
-                    }
-                    IconButton(onClick = onOpenCalendar) { Icon(Icons.Default.CalendarMonth, "Takvim", tint = HedefitColors.Lime) }
-                }
-            }
+            item { Text(if (en) "My Workout" else "Antrenmanım", style = MaterialTheme.typography.headlineMedium) }
             item {
                 HedefitCard(Modifier.fillMaxWidth(), onClick = onOpenLibrary) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -186,9 +189,9 @@ fun WorkoutPlanScreen(
             }
             item { SectionTitle(if (en) "Create a program" else "Program oluştur") }
             item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ProgramTypeTile(Icons.Default.FitnessCenter, if (en) "Body part" else "Bölgesel", if (en) "5 moves" else "5 hareket", HedefitColors.Lime, Modifier.weight(1f)) { showRegional = true }
-                ProgramTypeTile(Icons.Default.Person, if (en) "My own" else "Kendim", if (en) "From atlas" else "Atlas'tan", HedefitColors.Sleep, Modifier.weight(1f)) { showCustomName = true }
-                ProgramTypeTile(Icons.Default.AutoAwesome, if (en) "Fit Coach" else "Fit Koç", if (en) "From test" else "Testten", HedefitColors.Warning, Modifier.weight(1f), if (generating) ({}) else onGeneratePlan)
+                ProgramTypeTile(Icons.Default.FitnessCenter, if (en) "Body part" else "Bölgesel", HedefitColors.Lime, Modifier.weight(1f)) { showRegional = true }
+                ProgramTypeTile(Icons.Default.Person, if (en) "My own" else "Kendim", HedefitColors.Sleep, Modifier.weight(1f)) { showCustomName = true }
+                ProgramTypeTile(Icons.Default.AutoAwesome, if (en) "Fit Coach" else "Fit Koç", HedefitColors.Warning, Modifier.weight(1f), if (generating) ({}) else onGeneratePlan)
             } }
             if (programs.isNotEmpty()) {
                 item { SectionTitle(if (en) "My programs" else "Programlarım") }
@@ -242,7 +245,21 @@ fun WorkoutPlanScreen(
             onDismiss = { editingExercise = null },
             onMove = { onMoveExercise(exercise.id, it); editingExercise = null },
             onRemove = { onRemoveExercise(exercise.id); editingExercise = null },
+            onReplace = { replacingExercise = exercise; editingExercise = null; onLoadReplacementOptions(exercise) },
         ) { onUpdateExercise(it); editingExercise = null }
+    }
+    replacingExercise?.let { exercise ->
+        ExerciseReplacementDialog(
+            exercise = exercise,
+            candidates = regionalExercises.filter { it.id != exercise.id }.take(24),
+            loading = regionalLoading,
+            en = en,
+            onDismiss = { replacingExercise = null },
+            onReplace = { selected ->
+                onReplaceExercise(exercise.id, exercise.copy(id = selected.id, name = selected.name, area = selected.primaryMuscles.firstOrNull() ?: exercise.area))
+                replacingExercise = null
+            },
+        )
     }
     previewExercise?.let { exercise ->
         AlertDialog(
@@ -262,11 +279,11 @@ fun WorkoutPlanScreen(
 }
 
 @Composable
-private fun ProgramTypeTile(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, tint: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    HedefitCard(modifier.height(126.dp), onClick = onClick, contentPadding = PaddingValues(13.dp)) {
+private fun ProgramTypeTile(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, tint: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    HedefitCard(modifier.height(108.dp), onClick = onClick, contentPadding = PaddingValues(13.dp)) {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
             Box(Modifier.size(42.dp).background(tint.copy(alpha = .16f), CircleShape), contentAlignment = Alignment.Center) { Icon(icon, null, tint = tint) }
-            Column { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium); Text(subtitle, maxLines = 1, color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall) }
+            Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -313,20 +330,58 @@ private fun EditableProgramRow(exercise: WorkoutExerciseData, en: Boolean, onPre
 }
 
 @Composable
-private fun WorkoutExerciseEditorDialog(exercise: WorkoutExerciseData, en: Boolean, canMoveUp: Boolean, canMoveDown: Boolean, onDismiss: () -> Unit, onMove: (Int) -> Unit, onRemove: () -> Unit, onSave: (WorkoutExerciseData) -> Unit) {
+private fun WorkoutExerciseEditorDialog(exercise: WorkoutExerciseData, en: Boolean, canMoveUp: Boolean, canMoveDown: Boolean, onDismiss: () -> Unit, onMove: (Int) -> Unit, onRemove: () -> Unit, onReplace: () -> Unit, onSave: (WorkoutExerciseData) -> Unit) {
     var sets by remember(exercise) { mutableStateOf(exercise.sets.toString()) }
     var reps by remember(exercise) { mutableStateOf(exercise.reps) }
     var rest by remember(exercise) { mutableStateOf(exercise.restSeconds.toString()) }
+    var submitted by remember(exercise) { mutableStateOf(false) }
+    val setsError = if (submitted) validateWorkoutSets(sets) else null
+    val repsError = if (submitted) validateWorkoutReps(reps) else null
+    val restError = if (submitted) validateWorkoutRest(rest) else null
     AlertDialog(onDismissRequest = onDismiss, title = { Text(exercise.name) }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(sets, { sets = it.filter(Char::isDigit).take(2) }, label = { Text(if (en) "Sets" else "Set") }, singleLine = true)
-        OutlinedTextField(reps, { reps = it.take(12) }, label = { Text(if (en) "Reps" else "Tekrar") }, singleLine = true)
-        OutlinedTextField(rest, { rest = it.filter(Char::isDigit).take(3) }, label = { Text(if (en) "Rest (seconds)" else "Dinlenme (saniye)") }, singleLine = true)
+        OutlinedTextField(sets, { sets = it.filter(Char::isDigit).take(2) }, label = { Text(if (en) "Sets" else "Set") }, singleLine = true, isError = setsError != null, supportingText = setsError?.let { ({ Text(if (en) "Sets must be between 1 and 10." else it) }) })
+        OutlinedTextField(reps, { reps = it.take(12) }, label = { Text(if (en) "Reps" else "Tekrar") }, singleLine = true, isError = repsError != null, supportingText = repsError?.let { ({ Text(if (en) "Enter a repetition target." else it) }) })
+        OutlinedTextField(rest, { rest = it.filter(Char::isDigit).take(3) }, label = { Text(if (en) "Rest (seconds)" else "Dinlenme (saniye)") }, singleLine = true, isError = restError != null, supportingText = restError?.let { ({ Text(if (en) "Rest must be between 15 and 300 seconds." else it) }) })
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             IconButton(enabled = canMoveUp, onClick = { onMove(-1) }) { Icon(Icons.Default.KeyboardArrowUp, if (en) "Move up" else "Yukarı taşı", tint = HedefitColors.Lime) }
             IconButton(enabled = canMoveDown, onClick = { onMove(1) }) { Icon(Icons.Default.KeyboardArrowDown, if (en) "Move down" else "Aşağı taşı", tint = HedefitColors.Lime) }
             IconButton(onClick = onRemove) { Icon(Icons.Default.DeleteOutline, if (en) "Remove" else "Programdan çıkar", tint = HedefitColors.Coral) }
         }
-    } }, dismissButton = { TextButton(onClick = onDismiss) { Text(if (en) "Cancel" else "Vazgeç") } }, confirmButton = { Button(onClick = { onSave(exercise.copy(sets = sets.toIntOrNull()?.coerceIn(1, 10) ?: exercise.sets, reps = reps.ifBlank { exercise.reps }, restSeconds = rest.toIntOrNull()?.coerceIn(15, 300) ?: exercise.restSeconds)) }, colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Text(if (en) "Save" else "Kaydet") } })
+        TextButton(onClick = onReplace) { Text(if (en) "Replace movement" else "Hareketi değiştir", color = HedefitColors.Lime) }
+    } }, dismissButton = { TextButton(onClick = onDismiss) { Text(if (en) "Cancel" else "Vazgeç") } }, confirmButton = { Button(onClick = {
+        submitted = true
+        if (validateWorkoutSets(sets) == null && validateWorkoutReps(reps) == null && validateWorkoutRest(rest) == null) {
+            onSave(exercise.copy(sets = requireNotNull(sets.toIntOrNull()), reps = reps.trim(), restSeconds = requireNotNull(rest.toIntOrNull())))
+        }
+    }, colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Text(if (en) "Save" else "Kaydet") } })
+}
+
+@Composable
+private fun ExerciseReplacementDialog(exercise: WorkoutExerciseData, candidates: List<ExerciseCatalogData>, loading: Boolean, en: Boolean, onDismiss: () -> Unit, onReplace: (ExerciseCatalogData) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (en) "Same-muscle alternatives" else "Aynı bölge için alternatif hareketler") },
+        text = {
+            if (loading) Text(if (en) "Loading matching movements…" else "Uygun hareketler yükleniyor…")
+            else if (candidates.isEmpty()) Text(if (en) "No same-muscle alternative was found." else "Bu bölge için alternatif hareket bulunamadı.")
+            else LazyColumn(Modifier.height(330.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(candidates, key = { it.id }) { candidate ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onReplace(candidate) }.padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        ExerciseMedia(candidate.imageUrls.firstOrNull(), candidate.name, Modifier.size(46.dp).clip(RoundedCornerShape(12.dp)))
+                        Column(Modifier.weight(1f)) {
+                            Text(candidate.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                            Text(candidate.equipment, color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(if (en) "Close" else "Kapat") } },
+    )
 }
 
 @Composable
@@ -350,13 +405,13 @@ private fun RegionalProgramBrowser(
         ) {
             item { UtilityHeader(selectedRegion?.second ?: if (en) "Body-part atlas" else "Bölgesel hareketler", onBack) }
             if (selectedRegion == null) {
-                item { Text(if (en) "Choose a region to see every matching movement." else "Bir bölgeye dokun; o bölgenin tüm hareketleri açılsın.", color = HedefitColors.TextSecondary) }
+                item { Text(if (en) "Choose a region." else "Bir bölge seç.", color = HedefitColors.TextSecondary) }
                 items(regions.chunked(2)) { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         row.forEach { region ->
-                            HedefitCard(Modifier.weight(1f).height(126.dp), onClick = { onSelectRegion(region.key to region.label) }) {
+                            HedefitCard(Modifier.weight(1f).height(104.dp), onClick = { onSelectRegion(region.key to region.label) }) {
                                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-                                    Box(Modifier.size(40.dp).background(HedefitColors.Lime.copy(alpha = .14f), CircleShape), contentAlignment = Alignment.Center) { Text(region.emoji, style = MaterialTheme.typography.titleLarge) }
+                                    Box(Modifier.size(36.dp).background(HedefitColors.Lime.copy(alpha = .14f), CircleShape), contentAlignment = Alignment.Center) { Text(region.emoji, style = MaterialTheme.typography.titleMedium) }
                                     Text(region.label, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
                             }
@@ -369,14 +424,13 @@ private fun RegionalProgramBrowser(
                     HedefitCard(Modifier.fillMaxWidth()) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Column(Modifier.weight(1f)) {
-                                Text(if (loading) (if (en) "Loading movements…" else "Hareketler yükleniyor…") else if (en) "${exercises.size} matching movements" else "${exercises.size} uygun hareket", style = MaterialTheme.typography.titleLarge)
-                                Text(if (en) "Primary muscle • strength catalog" else "Ana kas • kuvvet kataloğu", color = HedefitColors.TextSecondary)
+                                Text(if (loading) (if (en) "Loading movements…" else "Hareketler yükleniyor…") else if (en) "${exercises.size} movements" else "${exercises.size} hareket", style = MaterialTheme.typography.titleLarge)
                             }
                             if (loading) androidx.compose.material3.CircularProgressIndicator(Modifier.size(28.dp), color = HedefitColors.Lime, strokeWidth = 3.dp)
                         }
                     }
                 }
-                if (!loading && exercises.isNotEmpty()) item { PrimaryButton(if (en) "Create a 5-movement ${selectedRegion.second} program" else "5 hareketlik ${selectedRegion.second} programı oluştur", { onCreateProgram(selectedRegion.first, selectedRegion.second) }, icon = Icons.Default.Add) }
+                if (!loading && exercises.isNotEmpty()) item { PrimaryButton(if (en) "Create ${selectedRegion.second} program" else "${selectedRegion.second} programı oluştur", { onCreateProgram(selectedRegion.first, selectedRegion.second) }, icon = Icons.Default.Add) }
                 if (!loading && exercises.isEmpty()) item { Text(if (en) "No movement was found for this region." else "Bu bölge için hareket bulunamadı.", color = HedefitColors.TextSecondary) }
                 items(exercises, key = { it.id }) { exercise ->
                     HedefitCard(Modifier.fillMaxWidth(), onClick = { selectedExercise = exercise }) {
@@ -384,7 +438,7 @@ private fun RegionalProgramBrowser(
                             ExerciseMedia(exercise.imageUrls.firstOrNull(), exercise.name, Modifier.size(68.dp).clip(RoundedCornerShape(16.dp)))
                             Column(Modifier.weight(1f)) {
                                 Text(exercise.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                                Text("${exercise.equipment} • ${exercise.level}", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                                Text(exercise.equipment, color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -398,26 +452,8 @@ private fun RegionalProgramBrowser(
             title = { Text(exercise.name) },
             text = { LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 item { ExerciseMotionPlayer(exercise.imageUrls, exercise.name, Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(18.dp))) }
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text(if (en) "Muscles involved" else "Çalışan kas grupları", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            (if (en) "Main target · " else "Ana hedef · ") + exercise.primaryMuscles.joinToString(),
-                            color = HedefitColors.Lime,
-                        )
-                        Text(
-                            if (exercise.secondaryMuscles.isEmpty()) {
-                                if (en) "Supporting muscles · No additional group listed" else "Yardımcı kaslar · Ek grup belirtilmemiş"
-                            } else {
-                                (if (en) "Supporting muscles · " else "Yardımcı kaslar · ") + exercise.secondaryMuscles.joinToString()
-                            },
-                            color = HedefitColors.TextSecondary,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
                 item { Text(if (en) "How to perform" else "Nasıl yapılır?", style = MaterialTheme.typography.titleMedium) }
-                items(exercise.instructions.size) { index -> Text("${index + 1}. ${exercise.instructions[index]}") }
+                items(exercise.instructions.take(3).size) { index -> Text("${index + 1}. ${exercise.instructions[index]}") }
             } },
             confirmButton = { TextButton(onClick = { selectedExercise = null }) { Text(if (en) "Close" else "Kapat") } },
         )
@@ -428,15 +464,9 @@ private data class MuscleRegion(val key: String, val label: String, val emoji: S
 
 /** The 17 distinct muscles stored in exercises.json, plus the useful aggregate back entry. */
 private fun regionalMuscleRegions(en: Boolean) = if (en) listOf(
-    MuscleRegion("chest", "Chest", "🫁"), MuscleRegion("back", "Back · all", "🔙"),
-    MuscleRegion("lats", "Lats", "🪽"), MuscleRegion("middle back", "Mid back", "🧩"), MuscleRegion("lower back", "Lower back", "↕️"), MuscleRegion("traps", "Traps", "🪨"), MuscleRegion("neck", "Neck", "🧣"),
-    MuscleRegion("shoulders", "Shoulders", "🏋️"), MuscleRegion("biceps", "Front arm · biceps", "💪"), MuscleRegion("triceps", "Back arm · triceps", "🦾"), MuscleRegion("forearms", "Forearm & wrist", "✊"), MuscleRegion("abdominals", "Abs", "🎯"),
-    MuscleRegion("quadriceps", "Front thigh · quads", "🦵"), MuscleRegion("hamstrings", "Back thigh · hamstrings", "🦿"), MuscleRegion("glutes", "Glutes", "🍑"), MuscleRegion("calves", "Calves", "🧦"), MuscleRegion("adductors", "Inner thigh · adductors", "↔️"), MuscleRegion("abductors", "Outer hip · abductors", "↗️"),
+    MuscleRegion("chest", "Chest", "🫁"), MuscleRegion("back", "Back", "🧍"), MuscleRegion("lats", "Lats", "🤸"), MuscleRegion("traps", "Traps", "🙆"), MuscleRegion("neck", "Neck", "🙋"), MuscleRegion("shoulders", "Shoulders", "🤷"), MuscleRegion("biceps", "Front arm", "💪"), MuscleRegion("triceps", "Back arm", "🦾"), MuscleRegion("forearms", "Wrist", "✋"), MuscleRegion("abdominals", "Abs", "🧘"), MuscleRegion("legs", "Leg", "🦵"), MuscleRegion("glutes", "Hip", "🧍‍♀️"), MuscleRegion("calves", "Calf", "🦿"), MuscleRegion("abductors", "Outer hip", "🕺"),
 ) else listOf(
-    MuscleRegion("chest", "Göğüs", "🫁"), MuscleRegion("back", "Sırt · tümü", "🔙"),
-    MuscleRegion("lats", "Kanat sırtı (lat)", "🪽"), MuscleRegion("middle back", "Orta sırt (romboid)", "🧩"), MuscleRegion("lower back", "Bel (erektör spinae)", "↕️"), MuscleRegion("traps", "Trapez", "🪨"), MuscleRegion("neck", "Boyun", "🧣"),
-    MuscleRegion("shoulders", "Omuz (deltoid)", "🏋️"), MuscleRegion("biceps", "Ön kol (biseps)", "💪"), MuscleRegion("triceps", "Arka kol (triseps)", "🦾"), MuscleRegion("forearms", "Bilek ve ön kol", "✊"), MuscleRegion("abdominals", "Karın", "🎯"),
-    MuscleRegion("quadriceps", "Ön uyluk (kuadriseps)", "🦵"), MuscleRegion("hamstrings", "Arka uyluk (hamstring)", "🦿"), MuscleRegion("glutes", "Kalça (gluteal)", "🍑"), MuscleRegion("calves", "Baldır", "🧦"), MuscleRegion("adductors", "İç uyluk (addüktör)", "↔️"), MuscleRegion("abductors", "Dış kalça (abdüktör)", "↗️"),
+    MuscleRegion("chest", "Göğüs", "🫁"), MuscleRegion("back", "Sırt", "🧍"), MuscleRegion("lats", "Kanat", "🤸"), MuscleRegion("traps", "Trapez", "🙆"), MuscleRegion("neck", "Boyun", "🙋"), MuscleRegion("shoulders", "Omuz", "🤷"), MuscleRegion("biceps", "Ön kol", "💪"), MuscleRegion("triceps", "Arka kol", "🦾"), MuscleRegion("forearms", "Bilek", "✋"), MuscleRegion("abdominals", "Karın", "🧘"), MuscleRegion("legs", "Bacak", "🦵"), MuscleRegion("glutes", "Kalça", "🧍‍♀️"), MuscleRegion("calves", "Baldır", "🦿"), MuscleRegion("abductors", "Dış kalça", "🕺"),
 )
 
 @Composable
@@ -527,24 +557,34 @@ fun ActiveWorkoutScreen(
     onFinish: (durationSeconds: Int, calories: Int, sets: List<WorkoutSetInput>, feedback: WorkoutFeedbackData) -> Unit,
 ) {
     val en = language == "en"
-    BackHandler(onBack = onBack)
     val context = LocalContext.current
     var paused by rememberSaveable { mutableStateOf(false) }
     var prepared by rememberSaveable { mutableStateOf(false) }
-    var weight by rememberSaveable { mutableIntStateOf(80) }
-    var reps by rememberSaveable { mutableIntStateOf(10) }
+    var weight by rememberSaveable { mutableIntStateOf(0) }
+    var weightTouched by rememberSaveable { mutableStateOf(false) }
+    var reps by rememberSaveable { mutableIntStateOf(prescribedStartingReps(exercises.firstOrNull()?.reps)) }
     var rpe by rememberSaveable { mutableIntStateOf(7) }
     var setType by rememberSaveable { mutableStateOf("normal") }
     var note by rememberSaveable { mutableStateOf("") }
     var exerciseIndex by rememberSaveable { mutableIntStateOf(0) }
     var currentSet by rememberSaveable { mutableIntStateOf(1) }
     var restSeconds by rememberSaveable { mutableIntStateOf(0) }
+    var timerSeconds by rememberSaveable { mutableIntStateOf(0) }
+    var timerRunning by rememberSaveable { mutableStateOf(false) }
     val startedAt by rememberSaveable { mutableLongStateOf(System.currentTimeMillis()) }
-    var showFeedback by remember { mutableStateOf(false) }
+    var showFeedback by rememberSaveable { mutableStateOf(false) }
+    var showNoSetsWarning by rememberSaveable { mutableStateOf(false) }
+    var showExitConfirmation by rememberSaveable { mutableStateOf(false) }
     var personalRecord by rememberSaveable { mutableStateOf(false) }
-    val completedSets = remember { mutableStateListOf<WorkoutSetInput>() }
+    var completedSetStates by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
     val exercise = exercises.getOrNull(exerciseIndex)
     val totalSets = exercise?.sets?.coerceAtLeast(1) ?: 1
+
+    BackHandler { showExitConfirmation = true }
+
+    LaunchedEffect(exercise?.id, previousPerformance) {
+        if (!weightTouched) weight = exercise?.let { previousPerformance[it.id]?.firstOrNull()?.weightKg?.toInt() } ?: 0
+    }
 
     DisposableEffect(context) {
         val activity = context as? Activity
@@ -568,25 +608,54 @@ fun ActiveWorkoutScreen(
         }
     }
 
+    LaunchedEffect(timerSeconds, timerRunning, paused) {
+        if (timerRunning && timerSeconds > 0 && !paused) {
+            delay(1_000)
+            timerSeconds--
+            if (timerSeconds == 0) {
+                timerRunning = false
+                vibrate(context)
+                speech.speak(if (en) "Timer complete" else "Süre tamamlandı", TextToSpeech.QUEUE_FLUSH, null, "workout-timer-finished")
+            }
+        }
+    }
+
     fun recordSetAndContinue() {
         val current = exercise ?: return
         val old = previousPerformance[current.id]?.getOrNull(currentSet - 1)
         personalRecord = old != null && ((old.weightKg != null && weight > old.weightKg) || (weight.toDouble() >= (old.weightKg ?: weight.toDouble()) && reps > (old.reps ?: reps)))
-        completedSets += WorkoutSetInput(current.id, current.name, exerciseIndex + 1, currentSet, weight.toDouble(), reps, null, rpe, setType, note)
+        val completed = WorkoutSetInput(current.id, current.name, exerciseIndex + 1, currentSet, weight.toDouble(), reps, null, rpe, setType, note)
+        completedSetStates = ArrayList(completedSetStates).apply { add(completed.toSavedWorkoutSet()) }
         vibrate(context)
         note = ""
         setType = "normal"
         if (currentSet < totalSets) {
             currentSet++
-            restSeconds = current.restSeconds.coerceIn(15, 300)
+            restSeconds = smartRestSeconds(current, rpe)
         } else if (exerciseIndex < exercises.lastIndex) {
             exerciseIndex++
             currentSet = 1
             val nextPrevious = previousPerformance[exercises[exerciseIndex].id]?.firstOrNull()
-            weight = nextPrevious?.weightKg?.toInt() ?: weight
-            reps = nextPrevious?.reps ?: exercises[exerciseIndex].reps.filter(Char::isDigit).take(2).toIntOrNull() ?: 10
+            weightTouched = false
+            weight = nextPrevious?.weightKg?.toInt() ?: 0
+            reps = nextPrevious?.reps ?: prescribedStartingReps(exercises[exerciseIndex].reps)
             restSeconds = 0
         } else showFeedback = true
+    }
+
+    fun skipExercise() {
+        if (exerciseIndex < exercises.lastIndex) {
+            exerciseIndex++
+            currentSet = 1
+            weightTouched = false
+            weight = previousPerformance[exercises[exerciseIndex].id]?.firstOrNull()?.weightKg?.toInt() ?: 0
+            reps = prescribedStartingReps(exercises[exerciseIndex].reps)
+            restSeconds = 0
+        } else if (!canFinishWorkout(completedSetStates.size)) {
+            showNoSetsWarning = true
+        } else {
+            showFeedback = true
+        }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(HedefitColors.Background)) {
@@ -596,7 +665,7 @@ fun ActiveWorkoutScreen(
             Modifier.fillMaxSize().padding(safePadding).padding(horizontal = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ActiveTopBar(onBack, paused, en) { paused = !paused }
+            ActiveTopBar({ showExitConfirmation = true }, paused, en) { paused = !paused }
             if (paused) HedefitCard(Modifier.fillMaxWidth().widthIn(max = 1040.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Pause, null, tint = HedefitColors.Warning)
@@ -612,12 +681,13 @@ fun ActiveWorkoutScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ActiveWorkoutHero(currentSet, exercise, Modifier.weight(1.1f).fillMaxHeight(.9f))
-                    ActiveControls(weight, reps, rpe, setType, note, restSeconds, currentSet, totalSets, exerciseIndex, exercises.size, previousPerformance[exercise?.id].orEmpty(), Modifier.weight(.9f),
-                        onWeight = { weight = (weight + it).coerceAtLeast(0) },
+                    ActiveControls(weight, reps, rpe, setType, note, restSeconds, timerSeconds, timerRunning, currentSet, totalSets, exerciseIndex, exercises.size, previousPerformance[exercise?.id].orEmpty(), Modifier.weight(.9f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 20.dp),
+                        onWeight = { weightTouched = true; weight = (weight + it).coerceAtLeast(0) },
                         onReps = { reps = (reps + it).coerceAtLeast(1) },
                         onRpe = { rpe = it }, onSetType = { setType = it }, onNote = { note = it },
                         onRest = { restSeconds = 0 }, onComplete = ::recordSetAndContinue,
-                        onSkipExercise = { if (exerciseIndex < exercises.lastIndex) { exerciseIndex++; currentSet = 1; restSeconds = 0 } else showFeedback = true },
+                        onTimer = { seconds -> timerSeconds = seconds; timerRunning = seconds > 0 }, onToggleTimer = { timerRunning = !timerRunning },
+                        onSkipExercise = ::skipExercise,
                         saving = saving || paused, personalRecord = personalRecord,
                     )
                 }
@@ -629,12 +699,13 @@ fun ActiveWorkoutScreen(
                 ) {
                     item { ActiveWorkoutHero(currentSet, exercise, Modifier.fillMaxWidth()) }
                     item {
-                        ActiveControls(weight, reps, rpe, setType, note, restSeconds, currentSet, totalSets, exerciseIndex, exercises.size, previousPerformance[exercise?.id].orEmpty(), Modifier.fillMaxWidth(),
-                            onWeight = { weight = (weight + it).coerceAtLeast(0) },
+                        ActiveControls(weight, reps, rpe, setType, note, restSeconds, timerSeconds, timerRunning, currentSet, totalSets, exerciseIndex, exercises.size, previousPerformance[exercise?.id].orEmpty(), Modifier.fillMaxWidth(),
+                            onWeight = { weightTouched = true; weight = (weight + it).coerceAtLeast(0) },
                             onReps = { reps = (reps + it).coerceAtLeast(1) },
                             onRpe = { rpe = it }, onSetType = { setType = it }, onNote = { note = it },
                             onRest = { restSeconds = 0 }, onComplete = ::recordSetAndContinue,
-                            onSkipExercise = { if (exerciseIndex < exercises.lastIndex) { exerciseIndex++; currentSet = 1; restSeconds = 0 } else showFeedback = true },
+                            onTimer = { seconds -> timerSeconds = seconds; timerRunning = seconds > 0 }, onToggleTimer = { timerRunning = !timerRunning },
+                            onSkipExercise = ::skipExercise,
                             saving = saving || paused, personalRecord = personalRecord,
                         )
                     }
@@ -645,9 +716,22 @@ fun ActiveWorkoutScreen(
 
     if (showFeedback) WorkoutFeedbackDialog(saving, onDismiss = { showFeedback = false }) { feedback ->
         val duration = ((System.currentTimeMillis() - startedAt) / 1000).toInt().coerceAtLeast(1)
-        onFinish(duration, (duration / 60 * 7).coerceAtLeast(60), completedSets.toList(), feedback)
+        onFinish(duration, (duration / 60 * 7).coerceAtLeast(60), completedSetStates.mapNotNull(::savedWorkoutSet), feedback)
     }
+    if (showNoSetsWarning) AlertDialog(
+        onDismissRequest = { showNoSetsWarning = false },
+        title = { Text(if (en) "No completed sets" else "Tamamlanan set yok") },
+        text = { Text(if (en) "Complete at least one set before finishing the workout." else "Antrenmanı bitirmeden önce en az bir set tamamla.") },
+        confirmButton = { TextButton(onClick = { showNoSetsWarning = false }) { Text(if (en) "Continue workout" else "Antrenmana devam et", color = HedefitColors.Lime) } },
+    )
     if (!prepared) WarmupDialog(en) { prepared = true }
+    if (showExitConfirmation) AlertDialog(
+        onDismissRequest = { showExitConfirmation = false },
+        title = { Text(if (en) "Leave workout?" else "Antrenmandan çıkılsın mı?") },
+        text = { Text(if (en) "Your unfinished sets will be discarded." else "Tamamlanmamış antrenmanındaki setler silinecek.") },
+        dismissButton = { TextButton(onClick = { showExitConfirmation = false }) { Text(if (en) "Keep training" else "Antrenmana devam et") } },
+        confirmButton = { TextButton(onClick = onBack) { Text(if (en) "Leave and discard" else "Çık ve sil", color = HedefitColors.Coral) } },
+    )
 }
 
 @Composable
@@ -685,6 +769,8 @@ private fun ActiveControls(
     setType: String,
     note: String,
     restSeconds: Int,
+    timerSeconds: Int,
+    timerRunning: Boolean,
     currentSet: Int,
     totalSets: Int,
     exerciseIndex: Int,
@@ -697,6 +783,8 @@ private fun ActiveControls(
     onSetType: (String) -> Unit,
     onNote: (String) -> Unit,
     onRest: () -> Unit,
+    onTimer: (Int) -> Unit,
+    onToggleTimer: () -> Unit,
     onComplete: () -> Unit,
     onSkipExercise: () -> Unit,
     saving: Boolean,
@@ -713,6 +801,9 @@ private fun ActiveControls(
                     Spacer(Modifier.width(9.dp))
                     Text("Önceki: ${old.weightKg?.let { "${it.toInt()} kg" } ?: "vücut ağırlığı"} × ${old.reps ?: "—"} • RPE ${old.rpe ?: "—"}", color = HedefitColors.TextSecondary)
                 }
+            }
+            progressiveOverloadTip(old, currentSet)?.let { tip ->
+                Text(tip, color = HedefitColors.Lime, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
             }
         }
         if (personalRecord) HedefitCard(Modifier.fillMaxWidth()) {
@@ -746,13 +837,30 @@ private fun ActiveControls(
                     }
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Nabzını düşür, nefesini ve formunu hazırla.", color = HedefitColors.TextSecondary)
+                    Text("Akıllı süre: hareketin zorluğu ve RPE'ye göre ayarlandı.", color = HedefitColors.TextSecondary)
                     OutlineAction("Dinlenmeyi Atla", onRest)
                 }
             }
         }
+        HedefitCard(Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Kronometre", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    Text("%02d:%02d".format(timerSeconds / 60, timerSeconds % 60), color = HedefitColors.Lime, style = MaterialTheme.typography.headlineSmall)
+                }
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    items(listOf(30, 60, 90, 120)) { seconds ->
+                        FilterChip(selected = timerSeconds == seconds, onClick = { onTimer(seconds) }, label = { Text("${seconds / 60}:${"%02d".format(seconds % 60)}") })
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlineAction(if (timerRunning) "Duraklat" else "Başlat", onToggleTimer, modifier = Modifier.weight(1f))
+                    OutlineAction("Sıfırla", { onTimer(0) }, modifier = Modifier.weight(1f))
+                }
+            }
+        }
         OutlinedTextField(note, onNote, label = { Text("Set notu (isteğe bağlı)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-        OutlineAction("Plaka Hesaplayıcı", onClick = { showPlateCalculator = true })
+        if (weight >= 15) OutlineAction("Plaka Hesaplayıcı", onClick = { showPlateCalculator = true })
         PrimaryButton(if (saving) "Kaydediliyor…" else if (currentSet >= totalSets && exerciseIndex >= exerciseCount - 1) "Antrenmanı Değerlendir" else "Seti Tamamla", if (saving || restSeconds > 0) ({}) else onComplete, icon = Icons.Default.Check)
         HedefitCard(Modifier.fillMaxWidth(), onClick = onSkipExercise) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -795,7 +903,7 @@ private fun PlateCalculatorDialog(targetWeight: Int, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Plaka Hesaplayıcı") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Hedef: $targetWeight kg", color = HedefitColors.Lime, style = MaterialTheme.typography.titleLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf(15, 20).forEach { value -> FilterChip(barWeight == value, { barWeight = value }, label = { Text("$value kg bar") }) } }
             Text(if (plates.isEmpty()) "Yalnızca barı kullan." else "Her tarafa: ${plates.joinToString(" + ") { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() }} kg", color = HedefitColors.TextSecondary)
@@ -853,6 +961,23 @@ private fun imageForExercise(name: String): Int {
         "leg press" in folded -> R.drawable.exercise_leg_press
         "curl" in folded -> R.drawable.exercise_curl
         else -> R.drawable.exercise_bench_press
+    }
+}
+
+private fun smartRestSeconds(exercise: WorkoutExerciseData, rpe: Int): Int {
+    val name = exercise.name.lowercase()
+    val compound = listOf("squat", "bench", "deadlift", "row", "press", "pull-up", "barbell").any { it in name }
+    val base = if (compound) 120 else 75
+    return (base + if (rpe >= 9) 30 else if (rpe <= 5) -15 else 0).coerceIn(60, 150)
+}
+
+private fun progressiveOverloadTip(previous: PreviousSetData, currentSet: Int): String? {
+    val weight = previous.weightKg ?: return null
+    val reps = previous.reps ?: return null
+    return when {
+        reps >= 12 && (previous.rpe ?: 8) <= 8 -> "Yük önerisi: $weight kg yerine ${if (weight >= 50) weight + 2.5 else weight + 1.25} kg ile 8–10 dene."
+        reps < 12 -> "Yük önerisi: $weight kg ile ${reps + 1} tekrar hedefle."
+        else -> "Yük önerisi: $weight kg ile formu koruyarak tekrar et."
     }
 }
 

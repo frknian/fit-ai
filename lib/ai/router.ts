@@ -15,10 +15,10 @@ import { providerRegistry } from "./providers/registry.ts";
 import { classifyError, consoleEventSink, createEvent, type AiEventSink } from "./telemetry.ts";
 import type { AIProvider, AiObjectRequest, AiObjectResponse, AiRequest, AiResponse } from "./types.ts";
 
-export type RoutingMode = "auto" | "local" | "remote";
+export type RoutingMode = "auto" | "remote";
 
 export type RoutingPolicy = {
-  /** "auto" = yerel öncelikli, "local" = yalnız yerel, "remote" = yalnız uzak. */
+  /** "auto" ve "remote" bulut OpenAI sağlayıcısını kullanır. */
   mode?: RoutingMode;
   sink?: AiEventSink;
 };
@@ -27,14 +27,12 @@ export type RoutingPolicy = {
  * Varsayılan yönlendirme modu, `AI_ROUTING_MODE` ile işletmeci tarafından
  * ezilebilir. Kullanılan senaryolar:
  *
- *   local  — sağlayıcı kotası dolduğunda/olay anında ücretli çağrıyı tamamen
- *            kesip uygulamayı güvenli şablon yanıtlarla ayakta tutmak
- *   remote — yerel katmanı devre dışı bırakıp yalnız modeli ölçmek
+ *   remote — yalnız bulut sağlayıcısını kullan
  *
  */
 function defaultMode(): RoutingMode | undefined {
   const mode = process.env.AI_ROUTING_MODE;
-  return mode === "local" || mode === "remote" || mode === "auto" ? mode : undefined;
+  return mode === "remote" || mode === "auto" ? mode : undefined;
 }
 
 /** Sağlayıcı bu kategoriyi normal sırada işleyebilir mi? */
@@ -49,15 +47,13 @@ function supportsAsLastResort(provider: AIProvider, request: AiRequest): boolean
 }
 
 function allowedByMode(provider: AIProvider, mode: RoutingPolicy["mode"]): boolean {
-  if (mode === "local") return provider.kind === "local";
   if (mode === "remote") return provider.kind === "remote";
   return true;
 }
 
 /**
  * İstek için denenecek sağlayıcı zinciri. `needsObject` true ise
- * `generateObject` uygulamayan sağlayıcılar (ör. deterministik yerel) elenir —
- * şema gerektiren bir işi yapamayan sağlayıcıyı denemek boşuna gecikmedir.
+ * `generateObject` uygulamayan sağlayıcılar şema gerektiren işlerde elenir.
  */
 export async function selectProviders(request: AiRequest, policy: RoutingPolicy = {}, needsObject = false): Promise<AIProvider[]> {
   const preferred: AIProvider[] = [];
@@ -99,7 +95,6 @@ async function runChain<TResponse extends { provider: string; model: string; lat
         latencyMs: response.latencyMs,
         inputTokens: response.usage?.inputTokens,
         outputTokens: response.usage?.outputTokens,
-        ...(provider.kind === "local" && provider.id !== "local-deterministic" ? { runtime: "litert-lm" as const } : {}),
       }));
       return { ...response, fallbackUsed };
     } catch (error) {

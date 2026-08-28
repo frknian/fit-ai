@@ -9,8 +9,19 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.time.Instant
 
 data class AuthUser(val id: String, val email: String, val emailVerified: Boolean)
+
+data class RegistrationLegalAcceptance(
+    val kvkkNoticeAccepted: Boolean,
+    val privacyPolicyAccepted: Boolean,
+) {
+    fun requireComplete() {
+        require(kvkkNoticeAccepted) { "KVKK Aydınlatma Metni'ni onaylamalısın." }
+        require(privacyPolicyAccepted) { "Gizlilik Politikası'nı onaylamalısın." }
+    }
+}
 
 data class AuthSession(
     val accessToken: String,
@@ -87,12 +98,14 @@ class AuthRepository(
         return parseSession(response.jsonObject()).also(::save)
     }
 
-    suspend fun signUp(email: String, password: String): SignUpResult {
+    suspend fun signUp(email: String, password: String, legalAcceptance: RegistrationLegalAcceptance): SignUpResult {
+        legalAcceptance.requireComplete()
         val response = http.request(
             url = authUrl("signup"),
             method = "POST",
             headers = authHeaders(),
-            body = JSONObject().put("email", email.trim()).put("password", password).toString(),
+            body = JSONObject().put("email", email.trim()).put("password", password)
+                .put("data", legalAcceptancePayload()).toString(),
         ).requireSuccess("Kayıt oluşturulamadı.")
         val json = response.jsonObject()
         return if (json.stringOrNull("access_token") != null) {
@@ -100,7 +113,8 @@ class AuthRepository(
         } else SignUpResult.VerificationRequired
     }
 
-    suspend fun signInWithGoogle(idToken: String, nonce: String): AuthSession {
+    suspend fun signInWithGoogle(idToken: String, nonce: String, legalAcceptance: RegistrationLegalAcceptance? = null): AuthSession {
+        legalAcceptance?.requireComplete()
         val response = http.request(
             url = authUrl("token?grant_type=id_token"),
             method = "POST",
@@ -111,8 +125,31 @@ class AuthRepository(
                 .put("nonce", nonce)
                 .toString(),
         ).requireSuccess("Google ile giriş yapılamadı.")
-        return parseSession(response.jsonObject()).also(::save)
+        val session = parseSession(response.jsonObject()).also(::save)
+        if (legalAcceptance != null) {
+            try {
+                saveRegistrationLegalAcceptance()
+            } catch (error: Throwable) {
+                clearLocalSession()
+                throw error
+            }
+        }
+        return session
     }
+
+    private suspend fun saveRegistrationLegalAcceptance() {
+        http.request(
+            url = authUrl("user"),
+            method = "PUT",
+            headers = authHeaders() + ("Authorization" to "Bearer ${validAccessToken()}"),
+            body = JSONObject().put("data", legalAcceptancePayload()).toString(),
+        ).requireSuccess("Yasal onay kaydedilemedi.")
+    }
+
+    private fun legalAcceptancePayload() = JSONObject()
+        .put("kvkk_notice_version", LEGAL_DOCUMENT_VERSION)
+        .put("privacy_policy_version", LEGAL_DOCUMENT_VERSION)
+        .put("legal_accepted_at", Instant.now().toString())
 
 
     suspend fun validAccessToken(forceRefresh: Boolean = false): String = refreshMutex.withLock {
@@ -173,4 +210,8 @@ class AuthRepository(
 
     private fun authUrl(path: String) = "${BuildConfig.SUPABASE_URL.trimEnd('/')}/auth/v1/$path"
     private fun authHeaders() = mapOf("apikey" to BuildConfig.SUPABASE_ANON_KEY, "Content-Type" to "application/json")
+
+    private companion object {
+        const val LEGAL_DOCUMENT_VERSION = "2026-08-25"
+    }
 }

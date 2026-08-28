@@ -7,15 +7,17 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.hedefit.app.R
 
 enum class AppDestination(val label: String, val icon: ImageVector) {
     Home("Ana Sayfa", Icons.Default.Home),
     Workout("Antrenman", Icons.Default.FitnessCenter),
-    Coach("Fit Koç", Icons.AutoMirrored.Filled.Chat),
     Nutrition("Beslenme", Icons.Default.Restaurant),
     Progress("İlerleme", Icons.Default.BarChart),
+    Game("Görevler", Icons.Default.SportsEsports),
+    Coach("Fit Koç", Icons.AutoMirrored.Filled.Chat),
     ;
 
     fun localizedLabel(language: String) = if (language != "en") label else when (this) {
@@ -23,6 +25,7 @@ enum class AppDestination(val label: String, val icon: ImageVector) {
         Workout -> "Workout"
         Coach -> "Fit Coach"
         Nutrition -> "Nutrition"
+        Game -> "Tasks"
         Progress -> "Progress"
     }
 }

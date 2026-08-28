@@ -23,6 +23,8 @@ export function extractWeeklyDays(value: unknown, fallback = 2) {
   const text = typeof value === "string" ? value : "";
   if (text.includes("5+")) return 5;
   if (text.includes("3–4") || text.includes("3-4")) return 3;
+  const explicitDays = text.match(/\b([1-7])\s*(?:gün|day)/i);
+  if (explicitDays) return Number(explicitDays[1]);
   if (text.includes("0")) return 2;
   return fallback;
 }

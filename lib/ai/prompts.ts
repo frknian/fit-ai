@@ -18,6 +18,8 @@ export type PromptInput = {
   factsJson?: string;
   memoryLines?: string[];
   knowledgeLines?: string[];
+  /** Hareket atlasından seçilmiş, modelin uydurmadan önerebileceği hareketler. */
+  atlasLines?: string[];
   conversationSummary?: string;
   safetyInstruction?: string;
   /** Cihaz üstü model: kısa üslup + bilgi bölümü atlanır (prefill süresi TTFT'yi belirliyor). */
@@ -44,8 +46,8 @@ const COMPACT_STYLE = {
 };
 
 const STYLE = {
-  tr: "Yanıtın en fazla 140 kelime olsun; açık, uygulanabilir ve sıcak bir dille yaz. Gereksiz uyarı yığma, kullanıcıyı bunaltma. Kullanıcının yazdığı dilde yanıtla.",
-  en: "Keep your answer under 140 words; be clear, actionable and warm. Don't pile on unnecessary warnings. Reply in the language the user writes in.",
+  tr: "ChatGPT kalitesinde; doğru, bağlama uygun, açık, uygulanabilir ve sıcak cevap ver. Kullanıcının sorduğu kası, egzersizi veya yemeği doğrudan ele al; alakasız konuya geçme. Gerektiğinde tek bir kısa takip sorusu sor. Markdown, yıldız, çift yıldız ve kod biçimi kullanma; okunaklı düz metin yaz. Kullanıcının yazdığı dilde yanıtla.",
+  en: "Give a high-quality, accurate, context-aware, actionable and warm answer. Address the exact muscle, exercise, or food asked about and ask at most one useful follow-up question when needed. Use readable plain text without Markdown, asterisks or code formatting. Reply in the language the user writes in.",
 };
 
 const SCOPE = {
@@ -75,6 +77,11 @@ const MEMORY_RULE = {
   en: "<memory> holds lasting preferences the user stated earlier. Shape your advice around them (e.g. don't keep suggesting an exercise they dislike), but don't recite them in every reply.",
 };
 
+const ATLAS_RULE = {
+  tr: "<atlas> varsa, hareket önerilerini yalnız bu listeden seç; hareket adı uydurma. Kullanıcının ortamı/ekipmanı bu seçkiye zaten uygulanmıştır.",
+  en: "When <atlas> is present, choose exercise recommendations only from that list; do not invent exercise names. The user's environment and equipment are already applied.",
+};
+
 /**
  * Sohbet DIŞI görevlerin (haftalık değerlendirme, hedef analizi, plan üretimi,
  * öğün önerisi) sistem promptu.
@@ -91,6 +98,7 @@ export function buildTaskSystemPrompt(input: PromptInput & { domainRules: string
   const { locale } = input;
   const hasMemory = Boolean(input.memoryLines?.length);
   const hasKnowledge = Boolean(input.knowledgeLines?.length);
+  const hasAtlas = Boolean(input.atlasLines?.length);
   const untrustedTags = [hasMemory && "<memory>", hasKnowledge && "<knowledge>"]
     .filter(Boolean)
     .join(locale === "en" ? " and " : " ve ");
@@ -99,6 +107,7 @@ export function buildTaskSystemPrompt(input: PromptInput & { domainRules: string
     input.domainRules,
     FACTS_RULE[locale],
     hasMemory ? MEMORY_RULE[locale] : "",
+    hasAtlas ? ATLAS_RULE[locale] : "",
     untrustedTags ? UNTRUSTED_RULE[locale](untrustedTags) : "",
     input.safetyInstruction,
   ].filter(Boolean);
@@ -119,6 +128,7 @@ export function buildCoachSystemPrompt(input: PromptInput): string {
   const { locale } = input;
   const hasMemory = Boolean(input.memoryLines?.length);
   const hasKnowledge = Boolean(input.knowledgeLines?.length);
+  const hasAtlas = Boolean(input.atlasLines?.length);
   const untrustedTags = [hasMemory && "<memory>", hasKnowledge && "<knowledge>"]
     .filter(Boolean)
     .join(locale === "en" ? " and " : " ve ");
@@ -129,6 +139,7 @@ export function buildCoachSystemPrompt(input: PromptInput): string {
     SCOPE[locale],
     FACTS_RULE[locale],
     hasMemory ? MEMORY_RULE[locale] : "",
+    hasAtlas ? ATLAS_RULE[locale] : "",
     untrustedTags ? UNTRUSTED_RULE[locale](untrustedTags) : "",
     // Eylem talimatı YALNIZ uzak modele gider. Cihaz üstü model (compact)
     // hem yapılandırılmış çıktıda güvenilir değil hem de her ek talimat
@@ -141,6 +152,7 @@ export function buildCoachSystemPrompt(input: PromptInput): string {
     + section("facts", input.factsJson)
     + section("memory", input.memoryLines)
     + section("knowledge", input.knowledgeLines)
+    + section("atlas", input.atlasLines)
     + section("conversation_summary", input.conversationSummary);
 }
 

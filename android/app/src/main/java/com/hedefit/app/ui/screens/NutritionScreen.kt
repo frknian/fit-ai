@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,14 +27,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.EggAlt
 import androidx.compose.material.icons.filled.LocalDining
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RamenDining
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.SoupKitchen
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.AlertDialog
@@ -59,6 +67,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.hedefit.app.ui.components.HedefitCard
@@ -69,18 +78,19 @@ import com.hedefit.app.ui.components.ProgressRing
 import com.hedefit.app.ui.components.ScreenContainer
 import com.hedefit.app.ui.components.SectionTitle
 import com.hedefit.app.ui.theme.HedefitColors
+import com.hedefit.app.ui.validation.validateFoodGrams
 import com.hedefit.app.data.model.DashboardData
 import com.hedefit.app.data.model.NutritionGoalData
 import com.hedefit.app.data.model.NutritionLogData
 import com.hedefit.app.data.model.FoodSearchData
 import com.hedefit.app.data.model.FavoriteMealData
+import kotlinx.coroutines.delay
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-
-private data class MealUi(val name: String, val time: String, val calories: Int, val detail: String, val icon: ImageVector, val tint: Color)
 
 @Composable
 fun NutritionScreen(
@@ -90,13 +100,18 @@ fun NutritionScreen(
     busy: Boolean,
     foodSearchBusy: Boolean,
     foodResults: List<FoodSearchData>,
+    foodSearchQuery: String?,
     onAddWithAi: (food: String, grams: Double, meal: String) -> Unit,
     onSearchFoods: (String) -> Unit,
     onAddCatalogFood: (FoodSearchData, Double, String) -> Unit,
     onAddFavorite: (NutritionLogData) -> Unit,
+    onRemoveNutritionLog: (NutritionLogData) -> Unit,
+    onUpdateNutritionLog: (NutritionLogData, Double, String) -> Unit,
     onRemoveFavorite: (String) -> Unit,
     onRepeatFavorite: (FavoriteMealData) -> Unit,
     onAddWater: (Int) -> Unit,
+    waterGoalMl: Int,
+    onWaterGoalChange: (Int) -> Unit,
     language: String = "tr",
     openMealComposer: Boolean = false,
     onMealComposerOpened: () -> Unit = {},
@@ -129,81 +144,288 @@ fun NutritionScreen(
             item { NutritionHeader(en) { showCalendar = true } }
             item { DateSelector(selectedDate, en, onSelectDate) }
             if (!canLog) item { HistoricalDayNotice(selectedDate, en) }
-            if (expanded) {
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.Top) {
-                        Column(Modifier.weight(.85f), verticalArrangement = Arrangement.spacedBy(15.dp)) {
-                            CalorieCard(logs, data?.nutritionGoal ?: NutritionGoalData(), if (canLog) data?.activeCalories ?: 0 else 0, en)
-                            MealEntryCard(en, busy, canLog, { showFoodSearch = true }, onAddWithAi)
-                            WaterQuickAdd(data?.waterMl ?: 0, onAddWater, en, canLog)
-                            MicroNutrientCard(logs, en)
-                            NutritionTip(en)
-                        }
-                        Column(Modifier.weight(1.15f), verticalArrangement = Arrangement.spacedBy(15.dp)) {
-                            SectionTitle(if (en) "Meals" else "Öğünler", if (en) "View all" else "Tümünü Gör")
-                            FavoriteMeals(data?.favoriteMeals.orEmpty(), onRepeatFavorite, onRemoveFavorite, en)
-                            MealList(logs, onAddFavorite, en)
-                        }
-                    }
-                }
-            } else {
-                item { CalorieCard(logs, data?.nutritionGoal ?: NutritionGoalData(), if (canLog) data?.activeCalories ?: 0 else 0, en) }
-                item { MealEntryCard(en, busy, canLog, { showFoodSearch = true }, onAddWithAi) }
-                item { WaterQuickAdd(data?.waterMl ?: 0, onAddWater, en, canLog) }
-                item { MicroNutrientCard(logs, en) }
-                if (!data?.favoriteMeals.isNullOrEmpty()) item { FavoriteMeals(data?.favoriteMeals.orEmpty(), onRepeatFavorite, onRemoveFavorite, en) }
-                item { SectionTitle(if (en) "Meals" else "Öğünler") }
-                item { MealList(logs, onAddFavorite, en) }
-                item { NutritionTip(en) }
+            item { CalorieCard(logs, data?.nutritionGoal ?: NutritionGoalData(), if (canLog) data?.activeCalories ?: 0 else 0, en) }
+            item { MicroNutrientCard(logs, en) }
+            item {
+                MealEntryCard(
+                    en = en,
+                    busy = busy,
+                    enabled = canLog,
+                    results = foodResults,
+                    searching = foodSearchBusy,
+                    searchedQuery = foodSearchQuery,
+                    onSearch = onSearchFoods,
+                    onOpenCatalog = { showFoodSearch = true },
+                    onAddWithAi = onAddWithAi,
+                    onAddCatalog = onAddCatalogFood,
+                    recentLogs = logs,
+                    favorites = data?.favoriteMeals.orEmpty(),
+                )
             }
+            item { SectionTitle(if (en) "Meals" else "Öğünler") }
+            item { MealList(logs, onAddFavorite, onRemoveNutritionLog, onUpdateNutritionLog, busy, en) }
+            if (!data?.favoriteMeals.isNullOrEmpty()) item { FavoriteMeals(data?.favoriteMeals.orEmpty(), onRepeatFavorite, onRemoveFavorite, en) }
+            item { NutritionTip(en) }
+            item { WaterQuickAdd(data?.waterMl ?: 0, waterGoalMl, onAddWater, onWaterGoalChange, en, canLog) }
         }
     }
 
-    if (showFoodSearch) FoodSearchDialog(foodResults, foodSearchBusy, busy, en, onDismiss = { showFoodSearch = false }, onSearch = onSearchFoods, onAdd = { item, amount, type -> onAddCatalogFood(item, amount, type); showFoodSearch = false })
+    if (showFoodSearch) FoodSearchDialog(foodResults, foodSearchBusy, foodSearchQuery, busy, en, onDismiss = { showFoodSearch = false }, onSearch = onSearchFoods, onAdd = { item, amount, type -> onAddCatalogFood(item, amount, type); showFoodSearch = false })
     if (showCalendar) NutritionCalendarDialog(selectedDate, (historyLogs + logs).distinctBy { it.id }, en, dateLoading, onDismiss = { showCalendar = false }, onSelect = { onSelectDate(it); showCalendar = false })
 }
 
 @Composable
-private fun MealEntryCard(en: Boolean, busy: Boolean, enabled: Boolean, onOpenCatalog: () -> Unit, onAdd: (String, Double, String) -> Unit) {
+private fun MealEntryCard(
+    en: Boolean,
+    busy: Boolean,
+    enabled: Boolean,
+    results: List<FoodSearchData>,
+    searching: Boolean,
+    searchedQuery: String?,
+    onSearch: (String) -> Unit,
+    onOpenCatalog: () -> Unit,
+    onAddWithAi: (String, Double, String) -> Unit,
+    onAddCatalog: (FoodSearchData, Double, String) -> Unit,
+    recentLogs: List<NutritionLogData>,
+    favorites: List<FavoriteMealData>,
+) {
     var name by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("100") }
     var unit by remember { mutableStateOf("g") }
-    var unitWeight by remember { mutableStateOf("100") }
-    var meal by remember { mutableStateOf("Atıştırmalık") }
+    var manuallySelectedUnit by remember { mutableStateOf(false) }
+    var selectedFood by remember { mutableStateOf<FoodSearchData?>(null) }
+    var meal by remember { mutableStateOf(smartMealForCurrentTime()) }
     var showRecipe by remember { mutableStateOf(false) }
     val numericAmount = amount.replace(',', '.').toDoubleOrNull()
-    val grams = when (unit) { "porsiyon", "adet" -> numericAmount?.times(unitWeight.replace(',', '.').toDoubleOrNull() ?: 0.0); else -> numericAmount }
+    val unitGrams = when (unit) { "adet" -> 100.0; "porsiyon" -> 200.0; else -> 1.0 }
+    val grams = numericAmount?.times(unitGrams)
+    val inferredUnit = smartFoodUnit(name)
+    val cleanName = name.trim()
+    val suggestions = if (cleanName.length >= 2 && searchedQuery == cleanName) results.take(4) else emptyList()
+
+    LaunchedEffect(cleanName, searching, searchedQuery) {
+        if (cleanName.length >= 2 && !searching && cleanName != searchedQuery) {
+            delay(300)
+            onSearch(cleanName)
+        }
+    }
+    LaunchedEffect(inferredUnit) {
+        if (!manuallySelectedUnit && name.isNotBlank() && unit != inferredUnit) {
+            unit = inferredUnit
+            amount = defaultAmountForUnit(inferredUnit)
+        }
+    }
+
     HedefitCard(Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Restaurant, null, tint = HedefitColors.Lime); Spacer(Modifier.width(8.dp))
-                Text(if (en) "Add a meal" else "Öğün ekle", style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.weight(1f)); TextButton(enabled = enabled, onClick = { showRecipe = true }) { Text(if (en) "Recipe" else "Tarif") }; TextButton(enabled = enabled, onClick = onOpenCatalog) { Text(if (en) "Catalog" else "Katalog") }
+                Box(Modifier.size(42.dp).background(HedefitColors.Lime.copy(alpha = .14f), RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Restaurant, null, tint = HedefitColors.Lime)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(if (en) "Smart meal entry" else "Akıllı öğün ekle", style = MaterialTheme.typography.titleLarge)
+                    Text(if (en) "Search, select a unit and scale instantly" else "Yaz, birimi seç; değerler otomatik hesaplansın", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                }
+                IconButton(enabled = enabled, onClick = onOpenCatalog, modifier = Modifier.background(HedefitColors.SurfaceHigh, CircleShape)) {
+                    Icon(Icons.Default.MenuBook, if (en) "Food catalogue" else "Besin kataloğu", tint = HedefitColors.Lime)
+                }
+                Spacer(Modifier.width(6.dp))
+                IconButton(enabled = enabled, onClick = { showRecipe = true }, modifier = Modifier.background(HedefitColors.SurfaceHigh, CircleShape)) {
+                    Icon(Icons.Default.SoupKitchen, if (en) "Add recipe" else "Tarif ekle", tint = HedefitColors.Warning)
+                }
             }
-            OutlinedTextField(name, { name = it.take(80) }, modifier = Modifier.fillMaxWidth(), placeholder = { Text(if (en) "Meal name" else "Öğün adı, örn. tavuklu pilav") }, singleLine = true, colors = nutritionFieldColors())
+            OutlinedTextField(
+                value = name,
+                onValueChange = {
+                    val parsed = parseNaturalFoodEntry(it)
+                    name = parsed.name.take(80)
+                    if (parsed.amount != null) amount = parsed.amount.cleanNumber()
+                    if (parsed.unit != null) {
+                        unit = parsed.unit
+                        manuallySelectedUnit = false
+                    }
+                    if (selectedFood?.name != name) selectedFood = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(if (en) "Start typing a food…" else "Besin yazmaya başla…") },
+                leadingIcon = { Icon(Icons.Default.Search, null, tint = HedefitColors.TextSecondary) },
+                trailingIcon = { if (searching) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = HedefitColors.Lime) },
+                singleLine = true,
+                colors = nutritionFieldColors(),
+            )
+            if (suggestions.isNotEmpty()) {
+                Column(Modifier.fillMaxWidth().background(HedefitColors.SurfaceHigh, RoundedCornerShape(14.dp)).padding(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    suggestions.forEach { food ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                selectedFood = food
+                                name = food.name
+                                manuallySelectedUnit = false
+                                unit = smartFoodUnit(food.name)
+                                amount = defaultAmountForUnit(unit)
+                            }.padding(horizontal = 10.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(food.name, fontWeight = FontWeight.SemiBold)
+                                Text("${food.calories} kcal / 100 g${food.brand?.let { " • $it" }.orEmpty()}", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (food.verified) Icon(Icons.Default.Verified, null, tint = HedefitColors.Lime, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+            val recent = recentLogs.sortedByDescending { it.date }.distinctBy { it.name.lowercase(Locale("tr")) }.take(3)
+            if (cleanName.length < 2 && (recent.isNotEmpty() || favorites.isNotEmpty())) {
+                Column(Modifier.fillMaxWidth().background(HedefitColors.SurfaceHigh, RoundedCornerShape(14.dp)).padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    if (recent.isNotEmpty()) {
+                        Text(if (en) "Recent" else "Son eklenenler", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            items(recent) { log ->
+                                FilterChip(selected = false, onClick = {
+                                    name = log.name; amount = (log.grams ?: 100.0).cleanNumber(); unit = "g"; manuallySelectedUnit = true
+                                }, label = { Text(log.name) })
+                            }
+                        }
+                    }
+                    if (favorites.isNotEmpty()) {
+                        Text(if (en) "Favourites" else "Favoriler", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            items(favorites.take(4)) { favorite ->
+                                FilterChip(selected = false, onClick = {
+                                    name = favorite.name; amount = favorite.grams.cleanNumber(); unit = "g"; manuallySelectedUnit = true
+                                }, label = { Text("♥ ${favorite.name}") })
+                            }
+                        }
+                    }
+                }
+            }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(listOf("g", "ml", "porsiyon", "adet")) { value -> FilterChip(unit == value, { unit = value; amount = if (value == "adet" || value == "porsiyon") "1" else "100" }, label = { Text(if (en && value == "porsiyon") "portion" else if (en && value == "adet") "piece" else value) }) }
+                items(listOf("g", "ml", "porsiyon", "adet")) { value ->
+                    FilterChip(
+                        selected = unit == value,
+                        onClick = { manuallySelectedUnit = true; unit = value; amount = defaultAmountForUnit(value) },
+                        label = { Text(if (en && value == "porsiyon") "portion" else if (en && value == "adet") "piece" else value) },
+                    )
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(amount, { amount = it.filter { c -> c.isDigit() || c == '.' || c == ',' }.take(7) }, Modifier.weight(1f), label = { Text(if (en) "Amount" else "Miktar") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), colors = nutritionFieldColors())
-                if (unit == "porsiyon" || unit == "adet") OutlinedTextField(unitWeight, { unitWeight = it.filter { c -> c.isDigit() || c == '.' || c == ',' }.take(7) }, Modifier.weight(1f), label = { Text(if (en) "g each" else "birimi (g)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), colors = nutritionFieldColors())
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IconButton(onClick = { amount = ((numericAmount ?: 1.0) - amountStep(unit)).coerceAtLeast(amountStep(unit)).cleanNumber() }, modifier = Modifier.background(HedefitColors.SurfaceHigh, CircleShape)) { Icon(Icons.Default.Remove, null) }
+                OutlinedTextField(
+                    amount,
+                    { amount = it.filter { c -> c.isDigit() || c == '.' || c == ',' }.take(7) },
+                    Modifier.weight(1f),
+                    label = { Text(if (en) "Amount ($unit)" else "Miktar ($unit)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    colors = nutritionFieldColors(),
+                )
+                IconButton(onClick = { amount = ((numericAmount ?: 0.0) + amountStep(unit)).cleanNumber() }, modifier = Modifier.background(HedefitColors.Lime, CircleShape)) { Icon(Icons.Default.Add, null, tint = HedefitColors.OnLime) }
             }
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(listOf("Kahvaltı", "Öğle yemeği", "Akşam yemeği", "Atıştırmalık")) { type -> FilterChip(meal == type, { meal = type }, label = { Text(mealLabel(type, en)) }) } }
-            Button(enabled = enabled && !busy && name.trim().length >= 2 && grams != null && grams > 0, onClick = { grams?.let { onAdd(name.trim(), it, meal); name = "" } }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Text(if (!enabled) (if (en) "Past day" else "Geçmiş gün") else if (busy) (if (en) "Adding…" else "Ekleniyor…") else if (en) "Add meal" else "Öğünü ekle") }
+            grams?.takeIf { it > 0 }?.let { totalGrams ->
+                val ratio = totalGrams / 100.0
+                Column(Modifier.fillMaxWidth().background(HedefitColors.Lime.copy(alpha = .08f), RoundedCornerShape(13.dp)).padding(11.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        when (unit) {
+                            "adet" -> if (en) "${amount} piece × 100 g = ${totalGrams.cleanNumber()} g" else "${amount} adet × 100 g = ${totalGrams.cleanNumber()} g"
+                            "porsiyon" -> if (en) "${amount} portion × 200 g = ${totalGrams.cleanNumber()} g" else "${amount} porsiyon × 200 g = ${totalGrams.cleanNumber()} g"
+                            "ml" -> if (en) "${amount} ml ≈ ${totalGrams.cleanNumber()} g" else "${amount} ml ≈ ${totalGrams.cleanNumber()} g"
+                            else -> "${totalGrams.cleanNumber()} g"
+                        },
+                        color = HedefitColors.Lime,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    selectedFood?.let { food ->
+                        Text(
+                            "${(food.calories * ratio).toInt()} kcal • P ${(food.protein * ratio).toInt()} g • K ${(food.carbs * ratio).toInt()} g • Y ${(food.fat * ratio).toInt()} g",
+                            color = HedefitColors.TextSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(listOf("Kahvaltı", "Öğle yemeği", "Akşam yemeği", "Atıştırmalık")) { type -> FilterChip(meal == type, { meal = type }, label = { Text(mealLabel(type, en)) }) }
+            }
+            Text(if (en) "Catalogue values are used first. If no match exists, AI estimates it and you can edit it from the meal card." else "Önce katalog değeri kullanılır. Eşleşme yoksa AI tahmin eder; öğün kartından her zaman düzenleyebilirsin.", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            Button(
+                enabled = enabled && !busy && cleanName.length >= 2 && grams != null && grams > 0,
+                onClick = {
+                    grams?.let { total ->
+                        // Search suggestions are never silently accepted: the user must tap one.
+                        // Otherwise the full phrase goes to the server, where exact catalogue
+                        // matches are used and compound dishes are analysed by AI.
+                        selectedFood?.takeIf { it.name == cleanName }?.let { onAddCatalog(it, total, meal) }
+                            ?: onAddWithAi(cleanName, total, meal)
+                        name = ""
+                        selectedFood = null
+                        unit = "g"
+                        amount = "100"
+                        manuallySelectedUnit = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime),
+            ) { Text(if (!enabled) (if (en) "Past day" else "Geçmiş gün") else if (busy) (if (en) "Adding…" else "Ekleniyor…") else if (en) "Add to ${mealLabel(meal, true)}" else "${mealLabel(meal, false)} öğününe ekle") }
         }
     }
     if (showRecipe) RecipeComposerDialog(en, busy, meal, onDismiss = { showRecipe = false }) { recipe, grams ->
         showRecipe = false
-        onAdd(recipe, grams, meal)
+        onAddWithAi(recipe, grams, meal)
     }
 }
+
+private fun smartMealForCurrentTime(): String = when (LocalTime.now().hour) {
+    in 4..10 -> "Kahvaltı"
+    in 11..14 -> "Öğle yemeği"
+    in 15..17 -> "Atıştırmalık"
+    else -> "Akşam yemeği"
+}
+
+private fun smartFoodUnit(name: String): String {
+    val clean = name.lowercase(Locale("tr"))
+    return when {
+        listOf("su", "süt", "ayran", "kefir", "meyve suyu", "kahve", "çay", "çorba").any(clean::contains) -> "ml"
+        listOf("yumurta", "elma", "muz", "portakal", "mandalina", "simit", "dilim", "bar").any(clean::contains) -> "adet"
+        listOf("pilav", "makarna", "salata", "yemek", "tabak", "kase", "menü").any(clean::contains) -> "porsiyon"
+        else -> "g"
+    }
+}
+
+private data class ParsedFoodEntry(val name: String, val amount: Double? = null, val unit: String? = null)
+
+/** Understands short Turkish entries such as "2 yumurta" and "250 ml ayran" before catalogue search. */
+private fun parseNaturalFoodEntry(value: String): ParsedFoodEntry {
+    val match = Regex("^\\s*(\\d+(?:[.,]\\d+)?)\\s*(g|gr|gram|ml|adet|tane|porsiyon|portion)?\\s+(.+)$", RegexOption.IGNORE_CASE).matchEntire(value.trim())
+        ?: return ParsedFoodEntry(value)
+    val amount = match.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return ParsedFoodEntry(value)
+    val food = match.groupValues[3].trim()
+    if (food.length < 2) return ParsedFoodEntry(value)
+    val explicitUnit = when (match.groupValues[2].lowercase(Locale("tr"))) {
+        "g", "gr", "gram" -> "g"
+        "ml" -> "ml"
+        "adet", "tane" -> "adet"
+        "porsiyon", "portion" -> "porsiyon"
+        else -> smartFoodUnit(food)
+    }
+    return ParsedFoodEntry(food, amount, explicitUnit)
+}
+
+private fun defaultAmountForUnit(unit: String) = if (unit == "adet" || unit == "porsiyon") "1" else "100"
+private fun amountStep(unit: String) = if (unit == "adet" || unit == "porsiyon") 1.0 else 10.0
+private fun Double.cleanNumber(): String = if (this % 1.0 == 0.0) toInt().toString() else "%.1f".format(Locale.US, this)
 
 @Composable
 private fun RecipeComposerDialog(en: Boolean, busy: Boolean, meal: String, onDismiss: () -> Unit, onAnalyze: (String, Double) -> Unit) {
     var title by remember { mutableStateOf("") }
     var ingredients by remember { mutableStateOf("") }
     var grams by remember { mutableStateOf("") }
+    var servings by remember { mutableStateOf("1") }
+    var eatenServings by remember { mutableStateOf("1") }
     val totalGrams = grams.replace(',', '.').toDoubleOrNull()
+    val totalServings = servings.toIntOrNull()
+    val eaten = eatenServings.replace(',', '.').toDoubleOrNull()
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(if (en) "Add recipe" else "Tarif ekle") },
@@ -212,15 +434,19 @@ private fun RecipeComposerDialog(en: Boolean, busy: Boolean, meal: String, onDis
                 Text(if (en) "Write the ingredients and amounts. Hedefit estimates the recipe's calories, macros, and micronutrients for the total portion." else "Malzemeleri ve miktarlarını yaz. Hedefit, tarifin toplam porsiyonu için kalori, makro ve mikro besin tahmini çıkarır.", color = HedefitColors.TextSecondary)
                 OutlinedTextField(title, { title = it.take(80) }, label = { Text(if (en) "Recipe name" else "Tarif adı") }, placeholder = { Text(if (en) "e.g. chicken pasta" else "örn. tavuklu makarna") }, singleLine = true)
                 OutlinedTextField(ingredients, { ingredients = it.take(850) }, label = { Text(if (en) "Ingredients and amounts" else "Malzemeler ve miktarları") }, placeholder = { Text(if (en) "150 g chicken, 80 g pasta, 1 tsp olive oil" else "150 g tavuk, 80 g makarna, 1 çay kaşığı zeytinyağı") }, minLines = 4, maxLines = 6)
-                OutlinedTextField(grams, { grams = it.filter { c -> c.isDigit() || c == '.' || c == ',' }.take(5) }, label = { Text(if (en) "Total portion (g)" else "Toplam porsiyon (g)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                Text(if (en) "This is an AI estimate; brands, recipes, and cooking oil can change the values." else "Bu bir yapay zekâ tahminidir; marka, tarif ve pişirme yağı değerleri değiştirebilir.", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(grams, { grams = it.filter { c -> c.isDigit() || c == '.' || c == ',' }.take(5) }, label = { Text(if (en) "Whole recipe weight (g)" else "Tarifin toplam ağırlığı (g)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(servings, { servings = it.filter(Char::isDigit).take(2) }, Modifier.weight(1f), label = { Text(if (en) "Recipe servings" else "Tarif porsiyonu") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    OutlinedTextField(eatenServings, { eatenServings = it.filter { c -> c.isDigit() || c == '.' || c == ',' }.take(4) }, Modifier.weight(1f), label = { Text(if (en) "You ate" else "Yediğin porsiyon") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                }
+                Text(if (en) "Each ingredient is calculated for the whole recipe, then divided by servings. Recipes remain editable after saving." else "Malzemeler önce toplam tarif için hesaplanır, sonra porsiyona bölünür. Kaydettikten sonra da düzenleyebilirsin.", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
             }
         },
         dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(if (en) "Cancel" else "Vazgeç") } },
         confirmButton = {
             Button(
-                enabled = !busy && title.trim().length >= 2 && ingredients.trim().length >= 4 && totalGrams != null && totalGrams in 1.0..5000.0,
-                onClick = { onAnalyze("${title.trim()}: ${ingredients.trim()}", totalGrams!!) },
+                enabled = !busy && title.trim().length >= 2 && ingredients.trim().length >= 4 && totalGrams != null && totalGrams in 1.0..5000.0 && totalServings != null && totalServings in 1..30 && eaten != null && eaten > 0 && eaten <= totalServings,
+                onClick = { onAnalyze("${title.trim()}: ${ingredients.trim()}. Toplam tarif: ${totalGrams!!.cleanNumber()} g, $totalServings porsiyon. Kaydedilen miktar: ${eaten!!.cleanNumber()} porsiyon.", totalGrams * eaten / totalServings!!) },
                 colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime),
             ) { Text(if (busy) (if (en) "Analyzing…" else "Analiz ediliyor…") else if (en) "Analyze recipe" else "Tarifi analiz et") }
         },
@@ -258,6 +484,7 @@ private fun CalorieCard(logs: List<NutritionLogData>, goal: NutritionGoalData, a
     val activityBonus = activeCalories.coerceIn(0, 600)
     val target = goal.calories + activityBonus
     HedefitCard(Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         BoxWithConstraints {
             val compact = maxWidth < 320.dp
             val ringSize = if (maxWidth < 500.dp) 132.dp else 160.dp
@@ -269,7 +496,7 @@ private fun CalorieCard(logs: List<NutritionLogData>, goal: NutritionGoalData, a
                             Text("$consumed", style = MaterialTheme.typography.headlineMedium)
                             Text(" / $target", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
                         }
-                        Text(if (en) "${target - consumed} kcal left" else "${target - consumed} kcal kaldı", color = HedefitColors.Lime, style = MaterialTheme.typography.labelLarge)
+                        Text(if (target >= consumed) (if (en) "${target - consumed} kcal left" else "${target - consumed} kcal kaldı") else (if (en) "${consumed - target} kcal over" else "${consumed - target} kcal aştın"), color = if (target >= consumed) HedefitColors.Lime else HedefitColors.Coral, style = MaterialTheme.typography.labelLarge)
                         if (activityBonus > 0) Text(if (en) "+$activityBonus activity" else "+$activityBonus aktivite", color = HedefitColors.Water, style = MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -293,46 +520,136 @@ private fun CalorieCard(logs: List<NutritionLogData>, goal: NutritionGoalData, a
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun MealList(logs: List<NutritionLogData>, onFavorite: (NutritionLogData) -> Unit, en: Boolean) {
-    val meals = logs.map { it.toMealUi() }
-    HedefitCard(Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (meals.isEmpty()) Text(if (en) "No meals logged today yet." else "Bugün henüz öğün kaydı yok.", color = HedefitColors.TextSecondary, modifier = Modifier.padding(vertical = 18.dp))
-            meals.forEachIndexed { index, meal ->
-                val log = logs[index]
-                Row(
-                    Modifier.fillMaxWidth().clickable { }.padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Box(Modifier.size(48.dp).background(meal.tint.copy(alpha = .14f), RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
-                        Icon(meal.icon, null, tint = meal.tint)
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(meal.name, style = MaterialTheme.typography.titleMedium)
-                        Text("${meal.time} • ${meal.detail}", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Text("${meal.calories} kcal", color = HedefitColors.Lime, fontWeight = FontWeight.Bold)
-                    IconButton(onClick = { onFavorite(log) }) { Icon(Icons.Default.Favorite, if (en) "Add to favourites" else "Favoriye ekle", tint = HedefitColors.Coral, modifier = Modifier.size(19.dp)) }
-                }
-                if (index < meals.lastIndex) Box(Modifier.fillMaxWidth().height(.6.dp).background(HedefitColors.Divider))
-            }
+        val kcalSummary = if (target >= consumed) (if (en) "${target - consumed} kcal remaining" else "Kalan ${target - consumed} kcal") else (if (en) "${consumed - target} kcal above target" else "Hedefin ${consumed - target} kcal üzerindesin")
+        val proteinGap = (goal.protein - protein).coerceAtLeast(0.0)
+        Text("$kcalSummary • ${if (proteinGap > 0) (if (en) "protein missing ${proteinGap.toInt()} g" else "protein eksik ${proteinGap.toInt()} g") else (if (en) "protein target reached" else "protein hedefi tamam")}", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
 
-private fun NutritionLogData.toMealUi(): MealUi {
-    val (icon, tint) = when (meal) {
-        "Kahvaltı" -> Icons.Default.EggAlt to HedefitColors.Warning
-        "Öğle yemeği" -> Icons.Default.RamenDining to HedefitColors.Lime
-        "Akşam yemeği" -> Icons.Default.LocalDining to HedefitColors.Coral
-        else -> Icons.Default.Restaurant to HedefitColors.Sleep
+@Composable
+private fun MealList(
+    logs: List<NutritionLogData>,
+    onFavorite: (NutritionLogData) -> Unit,
+    onRemove: (NutritionLogData) -> Unit,
+    onUpdate: (NutritionLogData, Double, String) -> Unit,
+    busy: Boolean,
+    en: Boolean,
+) {
+    var pendingRemoval by remember { mutableStateOf<NutritionLogData?>(null) }
+    var editing by remember { mutableStateOf<NutritionLogData?>(null) }
+    val mealTypes = listOf("Kahvaltı", "Öğle yemeği", "Akşam yemeği", "Atıştırmalık")
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        mealTypes.forEach { type ->
+            val entries = logs.filter { if (type == "Atıştırmalık") it.meal == type || it.meal !in mealTypes else it.meal == type }
+            val (icon, tint) = mealStyle(type)
+            HedefitCard(Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(42.dp).background(tint.copy(alpha = .14f), RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(icon, null, tint = tint) }
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(mealLabel(type, en), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(if (entries.isEmpty()) (if (en) "No food added" else "Henüz besin eklenmedi") else if (en) "${entries.size} foods" else "${entries.size} besin", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text("${entries.sumOf { it.calories }} kcal", color = tint, fontWeight = FontWeight.Black)
+                    }
+                    if (entries.isNotEmpty()) {
+                        TextButton(enabled = !busy, onClick = { onFavorite(entries.asSavedMeal(type)) }, modifier = Modifier.align(Alignment.End)) {
+                            Icon(Icons.Default.Favorite, null, tint = HedefitColors.Coral, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(5.dp))
+                            Text(if (en) "Save as a meal" else "Öğün olarak kaydet", color = HedefitColors.Coral)
+                        }
+                    }
+                    entries.forEachIndexed { index, log ->
+                        if (index == 0) Spacer(Modifier.height(4.dp))
+                        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(7.dp).background(tint, CircleShape))
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(log.name, fontWeight = FontWeight.SemiBold)
+                                Text("${log.grams?.cleanNumber() ?: "—"} g • P ${log.protein.toInt()} • K ${log.carbs.toInt()} • Y ${log.fat.toInt()}", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Text("${log.calories} kcal", color = HedefitColors.TextPrimary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                            IconButton(enabled = !busy, onClick = { editing = log }) { Icon(Icons.Default.Edit, if (en) "Edit or move food" else "Besini düzenle veya taşı", tint = HedefitColors.Lime, modifier = Modifier.size(18.dp)) }
+                            IconButton(onClick = { onFavorite(log) }) { Icon(Icons.Default.Favorite, if (en) "Add to favourites" else "Favoriye ekle", tint = HedefitColors.Coral, modifier = Modifier.size(18.dp)) }
+                            IconButton(enabled = !busy, onClick = { pendingRemoval = log }) {
+                                Icon(Icons.Default.DeleteOutline, if (en) "Remove food" else "Besini kaldır", tint = HedefitColors.TextSecondary, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        if (index < entries.lastIndex) Box(Modifier.fillMaxWidth().height(.6.dp).background(HedefitColors.Divider))
+                    }
+                }
+            }
+        }
     }
-    return MealUi(meal, "Bugün", calories, "${name}${grams?.let { " • ${it.toInt()} g" }.orEmpty()}", icon, tint)
+    pendingRemoval?.let { log ->
+        AlertDialog(
+            onDismissRequest = { if (!busy) pendingRemoval = null },
+            title = { Text(if (en) "Remove food?" else "Besin kaldırılsın mı?") },
+            text = { Text(if (en) "${log.name} will be removed from ${mealLabel(log.meal, true).lowercase()}." else "${log.name}, ${mealLabel(log.meal, false).lowercase()} öğününden kaldırılacak.") },
+            confirmButton = {
+                TextButton(enabled = !busy, onClick = { pendingRemoval = null; onRemove(log) }) {
+                    Text(if (en) "Remove" else "Kaldır", color = HedefitColors.Coral, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = { TextButton(enabled = !busy, onClick = { pendingRemoval = null }) { Text(if (en) "Cancel" else "Vazgeç") } },
+        )
+    }
+    editing?.let { log -> EditMealLogDialog(log, busy, en, onDismiss = { editing = null }, onSave = { grams, meal -> editing = null; onUpdate(log, grams, meal) }) }
+}
+
+/** A saved combination is kept as one reusable, fully calculated meal to make repeat logging one touch. */
+private fun List<NutritionLogData>.asSavedMeal(meal: String): NutritionLogData = NutritionLogData(
+    id = "saved-$meal",
+    date = LocalDate.now().toString(),
+    meal = meal,
+    name = "$meal paketi",
+    calories = sumOf { it.calories },
+    protein = sumOf { it.protein },
+    carbs = sumOf { it.carbs },
+    fat = sumOf { it.fat },
+    grams = sumOf { it.grams ?: 0.0 }.takeIf { it > 0 },
+    fiber = sumOf { it.fiber },
+    sugar = sumOf { it.sugar },
+    sodiumMg = sumOf { it.sodiumMg },
+    potassiumMg = sumOf { it.potassiumMg },
+    calciumMg = sumOf { it.calciumMg },
+    ironMg = sumOf { it.ironMg },
+    vitaminCMg = sumOf { it.vitaminCMg },
+)
+
+@Composable
+private fun EditMealLogDialog(log: NutritionLogData, busy: Boolean, en: Boolean, onDismiss: () -> Unit, onSave: (Double, String) -> Unit) {
+    var amount by remember(log.id) { mutableStateOf((log.grams ?: 100.0).cleanNumber()) }
+    var meal by remember(log.id) { mutableStateOf(log.meal) }
+    val grams = amount.replace(',', '.').toDoubleOrNull()
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(if (en) "Edit food" else "Besini düzenle") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(log.name, fontWeight = FontWeight.Bold)
+                OutlinedTextField(amount, { amount = it.filter { c -> c.isDigit() || c == '.' || c == ',' }.take(7) }, label = { Text(if (en) "Amount (g)" else "Miktar (g)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), colors = nutritionFieldColors())
+                Text(if (en) "Move to meal" else "Öğün değiştir", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(listOf("Kahvaltı", "Öğle yemeği", "Akşam yemeği", "Atıştırmalık")) { type ->
+                        FilterChip(selected = meal == type, onClick = { meal = type }, label = { Text(mealLabel(type, en)) })
+                    }
+                }
+                Text(if (en) "Calories and macros scale from the saved catalogue value." else "Kalori ve makrolar kayıtlı katalog değerine göre otomatik ölçeklenir.", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(if (en) "Cancel" else "Vazgeç") } },
+        confirmButton = { Button(enabled = !busy && grams != null && grams in 1.0..5000.0, onClick = { onSave(grams!!, meal) }, colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Icon(Icons.Default.SwapHoriz, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text(if (en) "Save" else "Kaydet") } },
+    )
+}
+
+private fun mealStyle(meal: String): Pair<ImageVector, Color> = when (meal) {
+    "Kahvaltı" -> Icons.Default.EggAlt to HedefitColors.Warning
+    "Öğle yemeği" -> Icons.Default.RamenDining to HedefitColors.Lime
+    "Akşam yemeği" -> Icons.Default.LocalDining to HedefitColors.Coral
+    else -> Icons.Default.Restaurant to HedefitColors.Sleep
 }
 
 private fun mealLabel(meal: String, en: Boolean) = if (!en) meal else when (meal) {
@@ -351,16 +668,21 @@ private fun nutritionFieldColors() = OutlinedTextFieldDefaults.colors(
 )
 
 @Composable
-private fun WaterQuickAdd(currentMl: Int, onAdd: (Int) -> Unit, en: Boolean, enabled: Boolean) {
+private fun WaterQuickAdd(currentMl: Int, goalMl: Int, onAdd: (Int) -> Unit, onGoalChange: (Int) -> Unit, en: Boolean, enabled: Boolean) {
     HedefitCard(Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.WaterDrop, null, tint = HedefitColors.Water)
                 Spacer(Modifier.width(9.dp))
-                Column(Modifier.weight(1f)) { Text(if (en) "Water" else "Su", style = MaterialTheme.typography.titleMedium); Text("${currentMl} / 2500 ml", color = HedefitColors.TextSecondary) }
-                Text("%${(currentMl / 25).coerceAtMost(100)}", color = HedefitColors.Water, fontWeight = FontWeight.Bold)
+                Column(Modifier.weight(1f)) { Text(if (en) "Water" else "Su", style = MaterialTheme.typography.titleMedium); Text("${currentMl} / $goalMl ml", color = HedefitColors.TextSecondary) }
+                Text("%${(currentMl * 100 / goalMl.coerceAtLeast(1)).coerceAtMost(100)}", color = HedefitColors.Water, fontWeight = FontWeight.Bold)
             }
-            Box(Modifier.fillMaxWidth().height(7.dp).background(HedefitColors.Divider, CircleShape)) { Box(Modifier.fillMaxWidth((currentMl / 2500f).coerceIn(0f, 1f)).height(7.dp).background(HedefitColors.Water, CircleShape)) }
+            Box(Modifier.fillMaxWidth().height(7.dp).background(HedefitColors.Divider, CircleShape)) { Box(Modifier.fillMaxWidth((currentMl / goalMl.toFloat()).coerceIn(0f, 1f)).height(7.dp).background(HedefitColors.Water, CircleShape)) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                Text(if (en) "Goal" else "Hedef", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
+                TextButton(onClick = { onGoalChange((goalMl - 250).coerceAtLeast(500)) }) { Text("−250") }
+                TextButton(onClick = { onGoalChange((goalMl + 250).coerceAtMost(10_000)) }) { Text("+250") }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 listOf(200, 300, 500).forEach { amount -> TextButton(enabled = enabled, onClick = { onAdd(amount) }, modifier = Modifier.weight(1f)) { Text("+$amount ml", color = HedefitColors.Water) } }
             }
@@ -450,8 +772,8 @@ private fun MicroNutrientCard(logs: List<NutritionLogData>, en: Boolean) {
             MacroBar(if (en) "Sugar" else "Şeker", "${sugar.toInt()} g", (sugar / 50).toFloat())
             MacroBar(if (en) "Sodium" else "Sodyum", "${sodium.toInt()} / 2300 mg", (sodium / 2300).toFloat())
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MicroValue(if (en) "Potassium" else "Potasyum", "${potassium.toInt()} mg", Modifier.weight(1f))
-                MicroValue(if (en) "Calcium" else "Kalsiyum", "${calcium.toInt()} mg", Modifier.weight(1f))
+                MicroValue(if (en) "Potassium" else "Potasyum", "${potassium.toInt()} / 3500 mg", Modifier.weight(1f))
+                MicroValue(if (en) "Calcium" else "Kalsiyum", "${calcium.toInt()} / 1000 mg", Modifier.weight(1f))
                 MicroValue(if (en) "Iron" else "Demir", "%.1f mg".format(iron), Modifier.weight(1f))
             }
             MicroValue(if (en) "Vitamin C" else "C Vitamini", "${vitaminC.toInt()} / 90 mg", Modifier.fillMaxWidth())
@@ -482,25 +804,61 @@ private fun FavoriteMeals(favorites: List<FavoriteMealData>, onRepeat: (Favorite
 }
 
 @Composable
-private fun FoodSearchDialog(results: List<FoodSearchData>, searching: Boolean, adding: Boolean, en: Boolean, onDismiss: () -> Unit, onSearch: (String) -> Unit, onAdd: (FoodSearchData, Double, String) -> Unit) {
+private fun FoodSearchDialog(results: List<FoodSearchData>, searching: Boolean, searchedQuery: String?, adding: Boolean, en: Boolean, onDismiss: () -> Unit, onSearch: (String) -> Unit, onAdd: (FoodSearchData, Double, String) -> Unit) {
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<FoodSearchData?>(null) }
     var grams by remember { mutableStateOf("100") }
+    var addAttempted by remember { mutableStateOf(false) }
     var meal by remember { mutableStateOf("Atıştırmalık") }
+    LaunchedEffect(query, searching, searchedQuery) {
+        val clean = query.trim()
+        if (clean.length >= 2 && !searching && clean != searchedQuery) {
+            delay(350)
+            onSearch(clean)
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (en) "Verified food catalogue" else "Doğrulanmış besin kataloğu") },
         text = { Column(Modifier.fillMaxWidth().heightIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), label = { Text(if (en) "Food or brand" else "Besin veya marka") }, trailingIcon = { IconButton(onClick = { onSearch(query) }) { Icon(Icons.Default.Search, if (en) "Search" else "Ara") } }, singleLine = true)
+            OutlinedTextField(
+                query,
+                { query = it.take(80) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(if (en) "Food or brand" else "Besin veya marka") },
+                trailingIcon = { IconButton(onClick = { onSearch(query.trim()) }) { Icon(Icons.Default.Search, if (en) "Search" else "Ara") } },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { if (query.trim().length >= 2) onSearch(query.trim()) }),
+            )
             if (searching) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally), color = HedefitColors.Lime)
+            if (!searching && searchedQuery != null && results.isEmpty()) {
+                Text(
+                    if (en) "No verified result for “$searchedQuery”. Try another name or brand."
+                    else "“$searchedQuery” için doğrulanmış sonuç bulunamadı. Farklı bir ad veya marka dene.",
+                    color = HedefitColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             selected?.let { food ->
                 HedefitCard {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row { Text(food.name, Modifier.weight(1f), fontWeight = FontWeight.Bold); if (food.verified) Icon(Icons.Default.Verified, "Doğrulanmış", tint = HedefitColors.Lime) }
                         Text("${food.calories} kcal • P ${food.protein.toInt()} • K ${food.carbs.toInt()} • Y ${food.fat.toInt()} • Lif ${food.fiber.toInt()}", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-                        OutlinedTextField(grams, { grams = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text(if (en) "Grams" else "Gram") }, singleLine = true)
+                        val gramsError = if (addAttempted) validateFoodGrams(grams) else null
+                        OutlinedTextField(
+                            grams,
+                            { grams = it.filter { c -> c.isDigit() || c == '.' } },
+                            label = { Text(if (en) "Grams" else "Gram") },
+                            singleLine = true,
+                            isError = gramsError != null,
+                            supportingText = gramsError?.let { error -> ({ Text(if (en) "Enter a value between 0 and 5000 grams." else error) }) },
+                        )
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf("Kahvaltı", "Öğle yemeği", "Akşam yemeği", "Atıştırmalık").forEach { type -> FilterChip(meal == type, { meal = type }, label = { Text(mealLabel(type, en), style = MaterialTheme.typography.labelMedium) }) } }
-                        Button(enabled = !adding, onClick = { grams.toDoubleOrNull()?.let { onAdd(food, it, meal) } }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Text(if (en) "Add to meal" else "Öğüne ekle") }
+                        Button(enabled = !adding, onClick = {
+                            addAttempted = true
+                            if (validateFoodGrams(grams) == null) onAdd(food, requireNotNull(grams.toDoubleOrNull()), meal)
+                        }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Text(if (en) "Add to meal" else "Öğüne ekle") }
                     }
                 }
             } ?: LazyColumn(Modifier.weight(1f, fill = false)) {

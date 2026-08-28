@@ -19,6 +19,7 @@
 import { formatKnowledge, staticKnowledgeRetriever, type KnowledgeChunk, type KnowledgeRetriever } from "./knowledge.ts";
 import { formatMemories, rankMemories, type UserMemory } from "./memory.ts";
 import { buildCoachSystemPrompt, type PromptInput } from "./prompts.ts";
+import { atlasLines } from "./exercise-atlas.ts";
 import type { CoachFacts } from "./intelligence.ts";
 import type { AiMessage } from "./types.ts";
 
@@ -33,6 +34,7 @@ export type UserCoachContext = {
   facts: CoachFacts;
   memories: UserMemory[];
   knowledge: KnowledgeChunk[];
+  atlas: string[];
   recentMessages: AiMessage[];
   conversationSummary?: string;
 };
@@ -71,6 +73,7 @@ export function factsJson(facts: CoachFacts): string {
     today: facts.today,
     trends: facts.trends,
     activity: facts.activity,
+    training: facts.training,
   };
   const payload: Record<string, unknown> = {};
   for (const [name, group] of Object.entries(groups)) {
@@ -97,6 +100,7 @@ export async function buildCoachContext(input: {
     facts: input.facts,
     memories: rankMemories(input.memories ?? [], MEMORY_BUDGET),
     knowledge,
+    atlas: atlasLines(question, input.facts.profile, input.locale === "en" ? "en" : "tr"),
     recentMessages: input.messages.slice(-RECENT_MESSAGE_BUDGET),
     conversationSummary: summarizeOlderMessages(input.messages),
   };
@@ -138,6 +142,7 @@ export function contextToSystemPrompt(context: UserCoachContext, options: { loca
     // yanıtının çekirdeği <facts> ve <memory>; genel bilgi metni mobilde bu
     // bedeli hak etmiyor.
     knowledgeLines: options.compact ? [] : formatKnowledge(context.knowledge),
+    atlasLines: context.atlas,
     conversationSummary: context.conversationSummary,
     safetyInstruction: options.safetyInstruction,
     compact: options.compact,

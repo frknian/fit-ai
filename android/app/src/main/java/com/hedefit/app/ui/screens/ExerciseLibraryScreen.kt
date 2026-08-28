@@ -28,7 +28,7 @@ import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExerciseLibraryScreen(items: List<ExerciseCatalogData>, loading: Boolean, language: String, onBack: () -> Unit, onSearch: (String, String, String, String, String, String, String, String, String) -> Unit, onUse: (ExerciseCatalogData) -> Unit) {
+fun ExerciseLibraryScreen(items: List<ExerciseCatalogData>, loading: Boolean, language: String, onBack: () -> Unit, onSearch: (String, String, String, String, String, String, String, String, String) -> Unit, onUse: (ExerciseCatalogData) -> Unit, onStart: (ExerciseCatalogData) -> Unit) {
     val en = language == "en"
     var query by remember { mutableStateOf("") }
     var muscle by remember { mutableStateOf("") }
@@ -144,7 +144,7 @@ fun ExerciseLibraryScreen(items: List<ExerciseCatalogData>, loading: Boolean, la
             item { MuscleConnections(exercise, en) }
             item { Text(if (en) "How to perform" else "Nasıl yapılır?", style = MaterialTheme.typography.titleMedium) }
             items(exercise.instructions.size) { index -> Text("${index + 1}. ${exercise.instructions[index]}") }
-        } }, dismissButton = { TextButton(onClick = { selected = null }) { Text(if (en) "Close" else "Kapat") } }, confirmButton = { Button(onClick = { onUse(exercise); selected = null }, colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Text(if (en) "Add to program" else "Programda kullan") } })
+        } }, dismissButton = { TextButton(onClick = { onUse(exercise); selected = null }) { Text(if (en) "Add to program" else "Programa ekle") } }, confirmButton = { Button(onClick = { onStart(exercise); selected = null }, colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Text(if (en) "Train now" else "Hemen çalış") } })
     }
     if (showCustom) CustomExerciseDialog(onDismiss = { showCustom = false }) { exercise -> onUse(exercise); showCustom = false }
 }
@@ -205,9 +205,7 @@ private fun muscleOptions(en: Boolean) = if (en) listOf(
     "shoulders" to "Shoulders", "biceps" to "Front arm · biceps", "triceps" to "Back arm · triceps", "forearms" to "Forearm & wrist", "abdominals" to "Abs",
     "glutes" to "Glutes", "quadriceps" to "Front thigh · quads", "hamstrings" to "Back thigh · hamstrings", "calves" to "Calves", "adductors" to "Inner thigh · adductors", "abductors" to "Outer hip · abductors",
 ) else listOf(
-    "" to "Tümü", "arms" to "Kollar · tümü", "back" to "Sırt · tümü", "legs" to "Bacaklar · tümü", "core" to "Merkez bölge · tümü", "hips" to "Kalça çevresi · tümü", "chest" to "Göğüs", "lats" to "Kanat sırtı (lat)", "middle back" to "Orta sırt (romboid)", "lower back" to "Bel (erektör spinae)", "traps" to "Trapez", "neck" to "Boyun",
-    "shoulders" to "Omuz (deltoid)", "biceps" to "Ön kol (biseps)", "triceps" to "Arka kol (triseps)", "forearms" to "Bilek ve ön kol", "abdominals" to "Karın",
-    "glutes" to "Kalça (gluteal)", "quadriceps" to "Ön uyluk (kuadriseps)", "hamstrings" to "Arka uyluk (hamstring)", "calves" to "Baldır", "adductors" to "İç uyluk (addüktör)", "abductors" to "Dış kalça (abdüktör)",
+    "" to "Tümü", "chest" to "Göğüs", "back" to "Sırt", "lats" to "Kanat", "traps" to "Trapez", "neck" to "Boyun", "shoulders" to "Omuz", "biceps" to "Ön kol", "triceps" to "Arka kol", "forearms" to "Bilek", "abdominals" to "Karın", "legs" to "Bacak", "glutes" to "Kalça", "calves" to "Baldır", "abductors" to "Dış kalça",
 )
 
 @Composable

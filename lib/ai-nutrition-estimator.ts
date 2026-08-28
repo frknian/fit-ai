@@ -145,6 +145,9 @@ SINIRLAR
   harcama tarafı ayrı hesaplanır.
 - Türk yemeklerinde yaygın ev tarifini, markalı üründe belirtilen markayı esas
   al. Marka belirtilmemişse uydurma.
+- Bu istek yalnız tek porsiyonun besin değerini tahmin eder. Kullanıcıya
+  günlük kalori/protein hedefi, BMI yorumu veya tedavi önerisi üretme; bunlar
+  uygulamanın profil tabanlı ve deterministik hedef motorunda hesaplanır.
 - Emin olamadığın yerde confidence değerini dürüstçe düşür.
 - name alanını mutlaka doğal Türkçe yaz; İngilizce yemek adı veya alternatif
   seçenek üretme. Kısa JSON dışında metin yazma.
@@ -155,9 +158,8 @@ export async function estimateAiTextNutrition(input: {
   grams: number;
   timeoutMs?: number;
 }) {
-  // Sağlayıcıya/modele özgü ayar BURADA YOK. "Kısa, yapılandırılmış çıktı"
-  // istemek yeterli; hangi modelin bunun için nasıl ayarlanacağı sağlayıcı
-  // katmanının işi (bkz. lib/ai/providers/openai-compatible.ts providerQuirks).
+  // Sağlayıcıya/modele özgü ayar burada yok; ucuz yapılandırılmış model
+  // merkezi AI_MODELS yapılandırmasından seçilir.
   // Kişiselleştirme YOK: "200 g pilav kaç kalori" sorusu kullanıcıya bağlı
   // değildir. Bu yüzden Coach Service'in bağlam/hafıza boru hattı değil,
   // doğrudan yönlendirici kullanılır — gereksiz bir hafıza okuması her öğün
@@ -165,13 +167,8 @@ export async function estimateAiTextNutrition(input: {
   const { object: generated } = await routeObject({
     system: NUTRITION_SYSTEM_PROMPT,
     prompt: `Yemek: <food>${input.foodName}</food>\nYenen miktar: ${input.grams} gram`,
-    // Kalori tahmini yüksek hacimli ve basit bir iştir; genel sohbet modeli
-    // yerine daha ucuz bir model kullanmak maliyeti belirgin düşürür. Bu bir
-    // VARSAYILAN AYARDIR (AI_BASE_URL gibi), sağlayıcıya dallanan mantık değil.
-    model: process.env.AI_NUTRITION_TEXT_MODEL || "kimi-k2.6",
     category: "structured_extraction",
     schema: textSchema,
-    temperature: 0.1,
     maxOutputTokens: 500,
     abortSignal: AbortSignal.timeout(input.timeoutMs || 20_000),
   });

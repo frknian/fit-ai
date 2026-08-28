@@ -18,9 +18,10 @@ istemcisini içerir. Önceki web arayüzü ve Capacitor kabukları kaldırılmı
 Backend Cloudflare Workers üzerinde yayınlanır:
 
 - Production API: `https://hedefit.frknian.workers.dev`
-- Fit Koç sohbeti, giriş yapmış ücretsiz ve premium kullanıcılar için günlük
-  soru sınırı olmadan çalışır. Kötüye kullanım koruması olarak kullanıcı başına
-  dakikada 20 istek sınırı korunur.
+- Fit Koç, plan türüne göre günlük kullanım kotası uygular. Görevlerden kazanılan
+  XP, ücretsiz hesapların günlük soru hakkını artırır: 300 XP'de +1, 500 XP'de
+  +2 ve sonrasında her 250 XP'de bir ek hak (en çok +5). Kötüye kullanım
+  koruması olarak kullanıcı başına kısa süreli istek sınırı korunur.
 
 Canlı dağıtım:
 
@@ -48,3 +49,15 @@ cd android
 
 Android istemcisinin ayrıntılı çalıştırma ve mimari notları için
 `android/README.md` dosyasına bak.
+
+## Görevler, başarımlar ve beslenme hedefleri
+
+Android uygulamasındaki Görevler ekranı; uyku, adım, antrenman, rota ve
+beslenme kayıtlarından gün bazlı değişen görevler üretir. Günlük görev toplamı
+100 XP, 24 başarımın her biri ise 100 XP'dir. Kalıcı XP ve Fit Koç ödülleri için
+`supabase/migrations/20260828180000_tasks_rewards.sql` migration'ını uygula.
+
+Beslenmede günlük kalori ve makro hedefleri, profil verisiyle deterministik
+olarak hesaplanır; OpenAI yalnız girilen bir porsiyonun besin değerini tahmin
+eder. Bu ayrım, genelleştirilmiş ve gereğinden yüksek protein hedeflerini
+önler.

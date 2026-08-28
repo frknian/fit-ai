@@ -76,6 +76,7 @@ class HedefitSyncWorker(context: Context, parameters: WorkerParameters) : Corout
                 when (operation.type) {
                     "workout" -> replayWorkout(repository, operation.payload)
                     "nutrition" -> HedefitApiClient(auth, http).post("/api/nutrition/logs", operation.payload).requireSuccess("Öğün eşitlenemedi.")
+                    "route" -> repository.saveRoutePayload(operation.payload)
                     else -> Unit
                 }
             }.isSuccess

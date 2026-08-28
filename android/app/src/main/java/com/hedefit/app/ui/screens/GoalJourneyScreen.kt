@@ -1,17 +1,14 @@
 package com.hedefit.app.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.MonitorWeight
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material3.Icon
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -39,11 +36,10 @@ import com.hedefit.app.ui.theme.HedefitColors
 import kotlin.math.abs
 
 @Composable
-fun GoalJourneyScreen(data: DashboardData, onBack: () -> Unit, onSetCurrentWeight: (Double) -> Unit, onSetGoalWeight: (Double) -> Unit, onCreateRegionalProgram: (String, String) -> Unit = { _, _ -> }, language: String = "tr", unitSystem: String = "metric") {
+fun GoalJourneyScreen(data: DashboardData, onBack: () -> Unit, onSetCurrentWeight: (Double) -> Unit, onSetGoalWeight: (Double) -> Unit, language: String = "tr", unitSystem: String = "metric") {
     val en = language == "en"
     var showCurrentEditor by remember { mutableStateOf(false) }
     var showGoalEditor by remember { mutableStateOf(false) }
-    var selectedFocus by remember { mutableStateOf("inner_thigh") }
     val current = data.measurements.lastOrNull()?.weightKg ?: data.profile.weightKg
     val target = data.profile.targetWeightKg
     val weeks = estimatedGoalWeeks(current, target)
@@ -73,31 +69,6 @@ fun GoalJourneyScreen(data: DashboardData, onBack: () -> Unit, onSetCurrentWeigh
                 item { JourneyValue(Icons.Default.Schedule, if (en) "Estimate" else "Tahmin", weeks?.let { if (en) "$it weeks" else "$it hafta" } ?: "—", Modifier.width(150.dp)) }
                 item { JourneyValue(Icons.Default.Insights, if (en) "Remaining" else "Kalan değişim", difference?.let { MeasurementUnits.formatWeight(it, unitSystem) } ?: "—", Modifier.width(150.dp)) }
             } }
-            item {
-                val focus = regionalFocuses(en).first { it.id == selectedFocus }
-                HedefitCard(Modifier.fillMaxWidth()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.FitnessCenter, null, tint = HedefitColors.Lime)
-                            Spacer(Modifier.width(9.dp))
-                            Column { Text(if (en) "Body-part focus" else "Bölgesel odak", style = MaterialTheme.typography.titleLarge); Text(if (en) "Strength plan + realistic body-composition estimate" else "Kuvvet planı + gerçekçi vücut kompozisyonu tahmini", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall) }
-                        }
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(regionalFocuses(en).size) { index ->
-                                val item = regionalFocuses(en)[index]
-                                val active = item.id == selectedFocus
-                                Text(item.label, Modifier.background(if (active) HedefitColors.Lime else HedefitColors.SurfaceHigh, androidx.compose.foundation.shape.RoundedCornerShape(18.dp)).clickable { selectedFocus = item.id }.padding(horizontal = 13.dp, vertical = 8.dp), color = if (active) HedefitColors.OnLime else HedefitColors.TextPrimary, style = MaterialTheme.typography.labelLarge)
-                            }
-                        }
-                        Text(
-                            if (en) "${focus.label} plan: train ${focus.muscleLabel.lowercase()} 2 times a week, then log your body measurements. Fat loss cannot be predicted for one body part; your overall target estimate is ${weeks?.let { "$it weeks" } ?: "set after choosing a target weight"}."
-                            else "${focus.label} planı: ${focus.muscleLabel.lowercase()} bölgesini haftada 2 kez çalıştır, sonra vücut ölçülerini kaydet. Yağ kaybı tek bir bölge için tahmin edilemez; genel hedefin için tahmin ${weeks?.let { "$it hafta" } ?: "hedef kilo belirlediğinde oluşur"}.",
-                            color = HedefitColors.TextSecondary,
-                        )
-                        Button(onClick = { onCreateRegionalProgram(focus.muscleKey, focus.label) }, colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Text(if (en) "Create a ${focus.label} program" else "${focus.label} programı oluştur") }
-                    }
-                }
-            }
             item { HedefitCard(Modifier.fillMaxWidth()) { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(if (en) "Body and target details" else "Vücut ve hedef detayları", style = MaterialTheme.typography.titleLarge)
                 GoalDetailRow(if (en) "BMI" else "VKİ", bmi?.let { "%.1f".format(it) } ?: "—")
@@ -129,19 +100,6 @@ fun GoalJourneyScreen(data: DashboardData, onBack: () -> Unit, onSetCurrentWeigh
         onSave = { onSetGoalWeight(it); showGoalEditor = false },
     )
 }
-
-private data class RegionalFocus(val id: String, val label: String, val muscleLabel: String, val muscleKey: String)
-private fun regionalFocuses(en: Boolean) = if (en) listOf(
-    RegionalFocus("inner_thigh", "Inner thigh", "adductors", "adductors"),
-    RegionalFocus("abs", "Abs", "abdominals", "abdominals"),
-    RegionalFocus("glutes", "Glutes", "glutes", "glutes"),
-    RegionalFocus("back", "Back", "back", "back"),
-) else listOf(
-    RegionalFocus("inner_thigh", "İç bacak", "iç bacak kasları", "adductors"),
-    RegionalFocus("abs", "Karın", "karın", "abdominals"),
-    RegionalFocus("glutes", "Kalça", "kalça", "glutes"),
-    RegionalFocus("back", "Sırt", "sırt", "back"),
-)
 
 @Composable
 private fun WeightEditDialog(currentValue: Double?, editingTarget: Boolean, en: Boolean, unitSystem: String, onDismiss: () -> Unit, onSave: (Double) -> Unit) {

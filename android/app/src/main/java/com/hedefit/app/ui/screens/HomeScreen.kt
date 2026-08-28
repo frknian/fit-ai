@@ -31,12 +31,15 @@ import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -69,6 +72,7 @@ import com.hedefit.app.ui.components.MetricCard
 import com.hedefit.app.ui.components.PrimaryButton
 import com.hedefit.app.ui.components.ProgressRing
 import com.hedefit.app.ui.components.ScreenContainer
+import com.hedefit.app.ui.components.AdBanner
 import com.hedefit.app.ui.components.SectionTitle
 import com.hedefit.app.ui.components.Sparkline
 import com.hedefit.app.ui.theme.HedefitColors
@@ -91,27 +95,34 @@ import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
+import com.hedefit.app.steps.StepSource
 
 @Composable
 fun HomeScreen(
     padding: PaddingValues,
     expanded: Boolean,
     data: DashboardData?,
+    avatarPreview: ByteArray?,
     loading: Boolean,
     error: String?,
     onRetry: () -> Unit,
     onSignOut: () -> Unit,
-    onStartWorkout: () -> Unit,
     onOpenProfile: () -> Unit,
     onOpenNotifications: () -> Unit,
+    onOpenCalendar: () -> Unit,
     onOpenRoute: () -> Unit,
     onOpenGoal: () -> Unit,
     onOpenProgram: (String?) -> Unit,
+    onProgramHomeVisibilityChange: (WorkoutProgramData, Boolean) -> Unit,
     unitSystem: String,
     stepGoal: Int,
     onStepGoalChange: (Int) -> Unit,
+    waterGoalMl: Int,
+    onWaterGoalChange: (Int) -> Unit,
     onAddWater: (Int) -> Unit,
     language: String,
+    stepSource: StepSource = StepSource.UNAVAILABLE,
+    showAds: Boolean = false,
 ) {
     val en = language == "en"
     var metricDialog by remember { mutableStateOf<String?>(null) }
@@ -121,22 +132,23 @@ fun HomeScreen(
             contentPadding = PaddingValues(top = 16.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { HomeHeader(data?.profile?.displayName ?: if (en) "Athlete" else "Sporcu", data?.profile?.avatarUrl, onOpenProfile, onOpenNotifications, en) }
+            item { HomeHeader(data?.profile?.displayName ?: if (en) "Athlete" else "Sporcu", data?.profile?.avatarUrl, avatarPreview, onOpenProfile, onOpenNotifications, onOpenCalendar, en) }
             if (data == null) {
                 item { HomeDataState(loading, error, onRetry) }
                 return@LazyColumn
             }
+            item { DailyMotivationCard(en) }
             item { GoalProjectionCard(data, onOpenGoal, en, unitSystem) }
             item { RouteLaunchCard(onOpenRoute, en, unitSystem) }
-            item { CompactDailySummary(data, en, unitSystem, { metricDialog = "steps" }, { metricDialog = "calories" }, { metricDialog = "water" }) }
-            item { HomePrograms(data, en, onOpenProgram) }
-            item { DailyMotivationCard(en) }
+            item { CompactDailySummary(data, en, unitSystem, stepSource, { metricDialog = "steps" }, { metricDialog = "calories" }, { metricDialog = "water" }) }
+            if (showAds) item { AdBanner(Modifier.fillMaxWidth()) }
+            item { HomePrograms(data, en, onOpenProgram, onProgramHomeVisibilityChange) }
         }
     }
     when (metricDialog) {
-        "steps" -> StepDetailDialog(data?.steps ?: 0, stepGoal, en, { metricDialog = null }, { onStepGoalChange(it); metricDialog = null })
+        "steps" -> StepDetailDialog(data?.steps ?: 0, stepGoal, data?.stepHistory.orEmpty(), en, { metricDialog = null }, { onStepGoalChange(it); metricDialog = null })
         "calories" -> CalorieDetailDialog(data, en) { metricDialog = null }
-        "water" -> WaterAddDialog(data?.waterMl ?: 0, en, unitSystem, { metricDialog = null }) { onAddWater(it); metricDialog = null }
+        "water" -> WaterAddDialog(data?.waterMl ?: 0, waterGoalMl, en, unitSystem, { metricDialog = null }, onWaterGoalChange) { onAddWater(it); metricDialog = null }
     }
 }
 
@@ -151,7 +163,10 @@ private fun RouteLaunchCard(onOpenRoute: () -> Unit, en: Boolean, unitSystem: St
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(48.dp).background(HedefitColors.Lime, CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Default.Route, null, tint = HedefitColors.OnLime) }
                 Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) { Text("Hedefit Rota", style = MaterialTheme.typography.titleLarge); Text(if (route.tracking) (if (en) "GPS recording is active" else "GPS kaydı devam ediyor") else if (en) "Run • Walk • Ride" else "Koşu • Yürüyüş • Bisiklet", color = if (route.tracking) HedefitColors.Lime else HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall) }
+                Column(Modifier.weight(1f)) {
+                    Text("Hedefit Rota", style = MaterialTheme.typography.titleLarge)
+                    if (route.tracking) Text(if (en) "GPS recording is active" else "GPS kaydı devam ediyor", color = HedefitColors.Lime, style = MaterialTheme.typography.bodySmall)
+                }
                 Icon(Icons.Default.ChevronRight, null, tint = HedefitColors.Lime)
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -170,23 +185,28 @@ private fun RouteHomeMetric(label: String, value: String) = Column(horizontalAli
 }
 
 @Composable
-private fun HomeHeader(name: String, avatarUrl: String?, onOpenProfile: () -> Unit, onOpenNotifications: () -> Unit, en: Boolean) {
+private fun HomeHeader(name: String, avatarUrl: String?, avatarPreview: ByteArray?, onOpenProfile: () -> Unit, onOpenNotifications: () -> Unit, onOpenCalendar: () -> Unit, en: Boolean) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(if (en) "Hello, $name" else "Merhaba, $name", style = MaterialTheme.typography.headlineSmall)
-            Text(if (en) "Small, clear steps for today." else "Bugün için küçük, net adımlar.", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
         }
-        IconButton(onClick = onOpenNotifications) { Icon(Icons.Default.NotificationsNone, "Bildirimler", tint = HedefitColors.TextSecondary) }
-        HomeAvatar(avatarUrl, name, Modifier.size(48.dp).clickable(onClick = onOpenProfile))
+        IconButton(onClick = onOpenCalendar) {
+            Icon(Icons.Default.CalendarMonth, if (en) "Workout calendar" else "Antrenman takvimi", tint = HedefitColors.Lime)
+        }
+        IconButton(onClick = onOpenNotifications) {
+            Icon(Icons.Default.NotificationsNone, if (en) "Notifications" else "Bildirimler", tint = HedefitColors.TextSecondary)
+        }
+        HomeAvatar(avatarUrl, avatarPreview, name, Modifier.size(48.dp).clickable(onClick = onOpenProfile))
     }
 }
 
 @Composable
-private fun HomeAvatar(url: String?, name: String, modifier: Modifier) {
+private fun HomeAvatar(url: String?, previewBytes: ByteArray?, name: String, modifier: Modifier) {
     var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    val preview = remember(previewBytes) { previewBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) } }
     LaunchedEffect(url) { bitmap = url?.let { address -> withContext(Dispatchers.IO) { runCatching { URL(address).openStream().use(BitmapFactory::decodeStream) }.getOrNull() } } }
-    Box(modifier.background(HedefitColors.Lime, CircleShape).padding(2.dp).background(HedefitColors.SurfaceHigh, CircleShape), contentAlignment = Alignment.Center) {
-        bitmap?.let { Image(it.asImageBitmap(), contentDescription = "Profil fotoğrafı", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+    Box(modifier.clip(CircleShape).background(HedefitColors.Lime).padding(2.dp).clip(CircleShape).background(HedefitColors.SurfaceHigh), contentAlignment = Alignment.Center) {
+        (preview ?: bitmap)?.let { Image(it.asImageBitmap(), contentDescription = "Profil fotoğrafı", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
             ?: Text(name.take(2).uppercase(), color = HedefitColors.Lime, fontWeight = FontWeight.Bold)
     }
 }
@@ -215,46 +235,37 @@ private fun GoalProjectionCard(data: DashboardData, onOpen: () -> Unit, en: Bool
     }
 }
 
-private data class HomeProgram(val id: String?, val name: String, val source: String, val focus: String, val count: Int)
-
 @Composable
-private fun HomePrograms(data: DashboardData, en: Boolean, onOpenProgram: (String?) -> Unit) {
-    val stored = data.workoutPrograms
-    val coachSources = setOf("ai", "coach", "profile_test", "generated", "assessment")
-    val hasCoachProgram = stored.any { it.source.lowercase() in coachSources }
-    val programs = buildList {
-        if (data.workouts.isNotEmpty() && !hasCoachProgram) add(HomeProgram(null, if (en) "Fit Coach Program" else "Fit Koç Programı", "coach", if (en) "Personal plan" else "Kişisel plan", data.workouts.size))
-        stored.forEach { add(HomeProgram(it.id, it.name, it.source, it.focusArea, it.exercises.size)) }
-    }
-    if (programs.isEmpty()) return
+private fun HomePrograms(
+    data: DashboardData,
+    en: Boolean,
+    onOpenProgram: (String?) -> Unit,
+    onVisibilityChange: (WorkoutProgramData, Boolean) -> Unit,
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    val programs = data.workoutPrograms.filter(WorkoutProgramData::showOnHome)
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (en) "My programs" else "Programlarım", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-            Text(if (en) "Tap to open" else "Açmak için dokun", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            Text(if (en) "Programs" else "Programlar", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            IconButton(onClick = { showPicker = true }) { Icon(Icons.Default.Add, if (en) "Add program" else "Program ekle", tint = HedefitColors.Lime) }
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(9.dp), contentPadding = PaddingValues(end = 18.dp)) {
-            items(programs.size) { index ->
-                val program = programs[index]
-                val coachMade = program.source.lowercase() in coachSources
-                val displayName = if (coachMade) (if (en) "Fit Coach Program" else "Fit Koç Programı") else program.name
-                val sourceLabel = when {
-                    coachMade -> if (en) "FIT COACH" else "FİT KOÇ"
-                    program.source.equals("regional", true) -> if (en) "BODY PART" else "BÖLGESEL"
-                    else -> if (en) "MY PROGRAM" else "PROGRAMIM"
-                }
+        if (programs.isEmpty()) {
+            TextButton(onClick = { showPicker = true }) { Icon(Icons.Default.Add, null, tint = HedefitColors.Lime); Spacer(Modifier.width(6.dp)); Text(if (en) "Add a program" else "Program Ekle", color = HedefitColors.Lime) }
+        } else LazyRow(horizontalArrangement = Arrangement.spacedBy(9.dp), contentPadding = PaddingValues(end = 18.dp)) {
+            items(programs, key = { it.id }) { program ->
                 HedefitCard(Modifier.width(218.dp).height(108.dp), onClick = { onOpenProgram(program.id) }, contentPadding = PaddingValues(14.dp)) {
                     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(30.dp).background(HedefitColors.Lime.copy(alpha = .15f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
-                                Icon(if (coachMade) Icons.Default.AutoAwesome else Icons.Default.FitnessCenter, null, tint = HedefitColors.Lime, modifier = Modifier.size(17.dp))
+                                Icon(Icons.Default.FitnessCenter, null, tint = HedefitColors.Lime, modifier = Modifier.size(17.dp))
                             }
                             Spacer(Modifier.width(8.dp))
-                            Text(sourceLabel, color = HedefitColors.Lime, style = MaterialTheme.typography.labelSmall)
+                            Text(if (en) "PROGRAM" else "PROGRAM", color = HedefitColors.Lime, style = MaterialTheme.typography.labelSmall)
                         }
                         Column {
-                            Text(displayName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                            Text(program.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                listOfNotNull(program.focus.takeIf { it.isNotBlank() }, if (en) "${program.count} exercises" else "${program.count} hareket").joinToString(" • "),
+                                listOfNotNull(program.focusArea.takeIf { it.isNotBlank() }, if (en) "${program.exercises.size} exercises" else "${program.exercises.size} hareket").joinToString(" • "),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 color = HedefitColors.TextSecondary,
@@ -266,25 +277,44 @@ private fun HomePrograms(data: DashboardData, en: Boolean, onOpenProgram: (Strin
             }
         }
     }
+    if (showPicker) AlertDialog(
+        onDismissRequest = { showPicker = false },
+        title = { Text(if (en) "Add programs" else "Program Ekle") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (data.workoutPrograms.isEmpty()) Text(if (en) "Create a program from the Workout tab first." else "Önce Antrenman sekmesinden bir program oluştur.", color = HedefitColors.TextSecondary)
+            data.workoutPrograms.forEach { program ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) { Text(program.name); Text(if (en) "${program.exercises.size} exercises" else "${program.exercises.size} hareket", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall) }
+                    androidx.compose.material3.Checkbox(checked = program.showOnHome, onCheckedChange = { onVisibilityChange(program, it) })
+                }
+            }
+        } },
+        confirmButton = { TextButton(onClick = { showPicker = false }) { Text(if (en) "Done" else "Tamam") } },
+    )
 }
 
 @Composable
-private fun CompactDailySummary(data: DashboardData, en: Boolean, unitSystem: String, onSteps: () -> Unit, onCalories: () -> Unit, onWater: () -> Unit) {
-    val calories = data.nutritionLogs.sumOf { it.calories }
+private fun CompactDailySummary(data: DashboardData, en: Boolean, unitSystem: String, stepSource: StepSource, onSteps: () -> Unit, onCalories: () -> Unit, onWater: () -> Unit) {
+    val sourceLabel = when (stepSource) {
+        StepSource.HEALTH_CONNECT -> if (en) "Health Connect" else "Health Connect"
+        StepSource.DEVICE_STEP_COUNTER, StepSource.DEVICE_STEP_DETECTOR -> if (en) "This device" else "Bu cihaz"
+        StepSource.UNAVAILABLE -> null
+    }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        CompactMetricCard(Icons.Default.DirectionsWalk, "%,d".format(data.steps).replace(',', '.'), if (en) "steps" else "adım", HedefitColors.Lime, onSteps, Modifier.weight(1f))
-        CompactMetricCard(Icons.Default.LocalFireDepartment, "$calories", "kcal", HedefitColors.Warning, onCalories, Modifier.weight(1f))
-        CompactMetricCard(Icons.Default.LocalDrink, MeasurementUnits.formatWater(data.waterMl, unitSystem), if (en) "water" else "su", HedefitColors.Water, onWater, Modifier.weight(1f))
+        CompactMetricCard(Icons.Default.DirectionsWalk, "%,d".format(data.steps).replace(',', '.'), sourceLabel, HedefitColors.Lime, onSteps, Modifier.weight(1f))
+        CompactMetricCard(Icons.Default.LocalFireDepartment, null, null, HedefitColors.Warning, onCalories, Modifier.weight(1f))
+        CompactMetricCard(Icons.Default.LocalDrink, MeasurementUnits.formatWater(data.waterMl, unitSystem), null, HedefitColors.Water, onWater, Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun CompactMetricCard(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String, label: String, accent: Color, onClick: () -> Unit, modifier: Modifier) {
-    HedefitCard(modifier, onClick = onClick, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Icon(icon, null, tint = accent, modifier = Modifier.size(20.dp))
-            Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLarge)
-            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+private fun CompactMetricCard(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String?, label: String?, accent: Color, onClick: () -> Unit, modifier: Modifier) {
+    HedefitCard(modifier.height(96.dp), onClick = onClick, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)) {
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, null, tint = accent, modifier = Modifier.size(if (value == null) 42.dp else 20.dp))
+            if (value != null) Spacer(Modifier.height(4.dp))
+            value?.let { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLarge) }
+            label?.let { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis, color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall) }
         }
     }
 }
@@ -321,13 +351,16 @@ private fun DailyMotivationCard(en: Boolean) {
 }
 
 @Composable
-private fun StepDetailDialog(steps: Int, goal: Int, en: Boolean, onDismiss: () -> Unit, onSave: (Int) -> Unit) {
+private fun StepDetailDialog(steps: Int, goal: Int, history: List<com.hedefit.app.data.model.DailyStepData>, en: Boolean, onDismiss: () -> Unit, onSave: (Int) -> Unit) {
     var target by remember(goal) { mutableStateOf(goal.toString()) }
+    var historyDays by remember { mutableStateOf(7) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text(if (en) "Step details" else "Adım detayları") }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (en) "$steps steps today" else "Bugün $steps adım", color = HedefitColors.Lime, style = MaterialTheme.typography.headlineSmall)
         Text(if (en) "You completed %${(steps * 100 / goal.coerceAtLeast(1)).coerceAtMost(999)} of your target." else "Hedefinin %${(steps * 100 / goal.coerceAtLeast(1)).coerceAtMost(999)} kadarını tamamladın.", color = HedefitColors.TextSecondary)
         OutlinedTextField(target, { target = it.filter(Char::isDigit).take(5) }, label = { Text(if (en) "Daily step target" else "Günlük adım hedefi") }, singleLine = true)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf(6000, 8000, 10000, 12000).forEach { value -> TextButton(onClick = { target = value.toString() }) { Text("${value / 1000}K") } } }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { TextButton(onClick = { historyDays = 7 }) { Text(if (en) "7 days" else "7 gün") }; TextButton(onClick = { historyDays = 30 }) { Text(if (en) "30 days" else "30 gün") } }
+        history.takeLast(historyDays).joinToString(" · ") { "${it.localDate.dayOfMonth}: ${it.steps / 1000}K" }.takeIf { it.isNotBlank() }?.let { Text(it, color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall) }
     } }, dismissButton = { TextButton(onClick = onDismiss) { Text(if (en) "Close" else "Kapat") } }, confirmButton = { Button(onClick = { onSave(target.toIntOrNull()?.coerceIn(1000, 50000) ?: goal) }, colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Text(if (en) "Save target" else "Hedefi kaydet") } })
 }
 
@@ -342,9 +375,18 @@ private fun CalorieDetailDialog(data: DashboardData?, en: Boolean, onDismiss: ()
 }
 
 @Composable
-private fun WaterAddDialog(currentMl: Int, en: Boolean, unitSystem: String, onDismiss: () -> Unit, onAdd: (Int) -> Unit) {
+private fun WaterAddDialog(currentMl: Int, goalMl: Int, en: Boolean, unitSystem: String, onDismiss: () -> Unit, onGoalChange: (Int) -> Unit, onAdd: (Int) -> Unit) {
     AlertDialog(onDismissRequest = onDismiss, title = { Text(if (en) "Add water" else "Su ekle") }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (en) "${MeasurementUnits.formatWater(currentMl, unitSystem)} today" else "Bugün ${MeasurementUnits.formatWater(currentMl, unitSystem)} içtin", color = HedefitColors.Water, style = MaterialTheme.typography.headlineSmall)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(if (en) "Daily goal" else "Günlük hedef", color = HedefitColors.TextSecondary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { onGoalChange((goalMl - 250).coerceAtLeast(500)) }) { Icon(Icons.Default.Remove, if (en) "Decrease goal" else "Hedefi azalt") }
+                Text(MeasurementUnits.formatWater(goalMl, unitSystem), color = HedefitColors.Water, fontWeight = FontWeight.Bold)
+                IconButton(onClick = { onGoalChange((goalMl + 250).coerceAtMost(10_000)) }) { Icon(Icons.Default.Add, if (en) "Increase goal" else "Hedefi artır") }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(7.dp).background(HedefitColors.Divider, CircleShape)) { Box(Modifier.fillMaxWidth((currentMl / goalMl.toFloat()).coerceIn(0f, 1f)).height(7.dp).background(HedefitColors.Water, CircleShape)) }
         listOf(200, 300, 500).forEach { amount -> Button(onClick = { onAdd(amount) }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.SurfaceHigh, contentColor = HedefitColors.Water)) { Text("+${if (MeasurementUnits.isImperial(unitSystem)) MeasurementUnits.formatWater(amount, unitSystem) else "$amount ml"}") } }
     } }, dismissButton = { TextButton(onClick = onDismiss) { Text(if (en) "Close" else "Kapat") } }, confirmButton = {})
 }
