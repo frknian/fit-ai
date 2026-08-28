@@ -92,6 +92,11 @@ fun geoDistanceMeters(first: RoutePoint, second: RoutePoint): Double {
 
 fun normalizeAccuracyMeters(value: Double): Double = value.takeIf { it.isFinite() && it in 0.0..1_000.0 } ?: 0.0
 
+fun isValidRoutePoint(point: RoutePoint): Boolean =
+    point.latitude.isFinite() && point.latitude in -85.05112878..85.05112878 &&
+        point.longitude.isFinite() && point.longitude in -180.0..180.0 &&
+        point.recordedAt > 0
+
 const val MAX_ROUTE_ACCURACY_METERS = 20f
 
 /** Prevents cached/network fixes from pulling a GPS route into nearby streets. */
@@ -99,10 +104,14 @@ fun isPreciseRouteLocation(accuracyMeters: Float, hasAccuracy: Boolean = true): 
     hasAccuracy && accuracyMeters.isFinite() && accuracyMeters in 0f..MAX_ROUTE_ACCURACY_METERS
 
 fun acceptedRouteSegmentMeters(last: RoutePoint, next: RoutePoint, activityType: String): Double? {
+    if (!isValidRoutePoint(last) || !isValidRoutePoint(next)) return null
     val elapsedSeconds = (next.recordedAt - last.recordedAt) / 1_000.0
     if (elapsedSeconds <= 0) return null
     val distance = geoDistanceMeters(last, next)
-    val jitterThreshold = maxOf(2.0, (last.accuracyMeters + next.accuracyMeters) / 4.0)
+    // A displacement smaller than the reported GPS uncertainty is noise, not
+    // movement. Keeping those points made a stationary or slow route zigzag on
+    // the map even though the distance total correctly stayed unchanged.
+    val jitterThreshold = maxOf(2.0, last.accuracyMeters, next.accuracyMeters)
     if (distance <= jitterThreshold) return 0.0
     val maximumSpeedKmh = when (activityType) {
         "Yürüyüş" -> 15.0
@@ -217,8 +226,10 @@ class RouteTrackingStore(context: Context) {
         val current = activeCache?.takeIf { it.tracking } ?: read()
         if (!current.tracking || current.paused) return current
         val point = RoutePoint(location.latitude, location.longitude, location.altitude, location.time.takeIf { it > 0 } ?: System.currentTimeMillis(), location.accuracy.toDouble(), location.speed.takeIf { location.hasSpeed() }?.toDouble(), location.bearing.takeIf { location.hasBearing() }?.toDouble())
+        if (!isValidRoutePoint(point)) return current
         val last = current.points.lastOrNull()
         val extra = if (last == null) 0.0 else acceptedRouteSegmentMeters(last, point, current.activityType) ?: return current
+        if (last != null && extra == 0.0) return current
         val next = current.copy(distanceMeters = safeDistanceMeters(current.distanceMeters + extra), points = (current.points + point).takeLast(12_000))
         write(next)
         return next

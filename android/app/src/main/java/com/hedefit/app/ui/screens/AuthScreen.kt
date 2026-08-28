@@ -47,7 +47,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -139,7 +138,6 @@ private fun AuthForm(
             Text(
                 "Hedefine güçlü bir adımla başla.",
                 color = HedefitColors.TextSecondary,
-                fontFamily = FontFamily.Serif,
                 fontStyle = FontStyle.Italic,
                 style = MaterialTheme.typography.bodyLarge,
             )

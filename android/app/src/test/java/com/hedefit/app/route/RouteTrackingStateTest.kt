@@ -22,6 +22,19 @@ class RouteTrackingStateTest {
         assertEquals(0.0, acceptedRouteSegmentMeters(start, jitter, "Koşu")!!, 0.001)
     }
 
+    @Test fun gpsNoiseInsideReportedAccuracyDoesNotBecomeMovement() {
+        val noisyPoint = RoutePoint(41.00826, 28.9784, 0.0, 4_000L, 9.0)
+        assertEquals(0.0, acceptedRouteSegmentMeters(start.copy(accuracyMeters = 8.0), noisyPoint, "Yürüyüş")!!, 0.001)
+    }
+
+    @Test fun invalidMapCoordinatesAreRejected() {
+        assertTrue(isValidRoutePoint(start))
+        assertFalse(isValidRoutePoint(start.copy(latitude = Double.NaN)))
+        assertFalse(isValidRoutePoint(start.copy(latitude = 90.0)))
+        assertFalse(isValidRoutePoint(start.copy(longitude = 181.0)))
+        assertNull(acceptedRouteSegmentMeters(start, start.copy(longitude = 181.0, recordedAt = 3_000L), "Koşu"))
+    }
+
     @Test fun emptyRouteCannotBeSaved() {
         assertFalse(canSaveRoute(RouteSnapshot(tracking = true)))
         assertTrue(canSaveRoute(RouteSnapshot(distanceMeters = 10.0, points = listOf(start, start.copy(recordedAt = 3_000L)))))

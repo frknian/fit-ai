@@ -133,9 +133,9 @@ fun RouteScreen(onBack: () -> Unit, onCompleted: (RouteSnapshot, String, String)
     val visibleSnapshot = if (snapshot.tracking) snapshot else finished ?: snapshot
     val activityInProgress = snapshot.tracking
     Box(Modifier.fillMaxSize().background(Color(0xFF0B0D0C))) {
-        // Live tracking stays glanceable and safe while walking. The recorded map is only
-        // presented after the route has been stopped.
-        if (!snapshot.tracking && visibleSnapshot.points.isNotEmpty()) RouteMap(visibleSnapshot.points, Modifier.fillMaxSize(), en)
+        // Keep the accepted GPS path visible while recording as well as after
+        // completion. Rejected jitter points never reach this map.
+        if (visibleSnapshot.points.isNotEmpty()) RouteMap(visibleSnapshot.points, Modifier.fillMaxSize(), en)
         Column(Modifier.align(Alignment.TopCenter).fillMaxWidth().systemBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = if (snapshot.tracking) ({ showExitConfirmation = true }) else onBack, modifier = Modifier.background(Color.Black.copy(alpha = .68f), CircleShape)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, if (en) "Back" else "Geri", tint = Color.White) }
