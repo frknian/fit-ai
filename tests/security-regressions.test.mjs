@@ -53,7 +53,9 @@ test("öğün planları dondurulmuş hesaplara kapalıdır", async () => {
 
 test("OpenAI sağlık kontrolünde sabit süreli sır doğrulama ve hız sınırı vardır", async () => {
   const route = await readFile(new URL("../app/api/health/openai/route.ts", import.meta.url), "utf8");
-  assert.match(route, /crypto\.subtle\.digest\("SHA-256"/);
+  assert.match(route, /Math\.max\(left\.length, right\.length\)/);
+  assert.match(route, /difference \|= \(left\[index\] \?\? 0\) \^ \(right\[index\] \?\? 0\)/);
+  assert.doesNotMatch(route, /suppliedToken\s*!==\s*expectedToken/);
   assert.match(route, /rateLimit\(`deploy-health:\$\{clientKey\(request\)\}`, 5, 5 \* 60_000\)/);
 });
 

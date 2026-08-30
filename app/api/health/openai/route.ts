@@ -3,17 +3,16 @@ import { clientKey, rateLimit, tooManyRequests } from "../../../../lib/rate-limi
 
 export const runtime = "edge";
 
-async function sameSecret(expected: string, supplied: string): Promise<boolean> {
+function sameSecret(expected: string, supplied: string): boolean {
   if (!expected || !supplied) return false;
   const encoder = new TextEncoder();
-  const [expectedHash, suppliedHash] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
-    crypto.subtle.digest("SHA-256", encoder.encode(supplied)),
-  ]);
-  const left = new Uint8Array(expectedHash);
-  const right = new Uint8Array(suppliedHash);
+  const left = encoder.encode(expected);
+  const right = encoder.encode(supplied);
   let difference = left.length ^ right.length;
-  for (let index = 0; index < left.length; index += 1) difference |= left[index] ^ right[index];
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    difference |= (left[index] ?? 0) ^ (right[index] ?? 0);
+  }
   return difference === 0;
 }
 
@@ -29,7 +28,7 @@ export async function POST(request: Request) {
 
   const expectedToken = process.env.DEPLOY_HEALTH_TOKEN || "";
   const suppliedToken = request.headers.get("x-deploy-health-token") || "";
-  if (!(await sameSecret(expectedToken, suppliedToken))) {
+  if (!sameSecret(expectedToken, suppliedToken)) {
     return Response.json({ ok: false }, { status: 404 });
   }
 
