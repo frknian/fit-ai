@@ -2,30 +2,32 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { normalizeSupabaseUrl } from "./supabase/url.ts";
 import { bearerToken } from "./api-auth.ts";
 
-export type UsageFeature = "chat" | "photo" | "text_nutrition" | "weekly_review" | "nutrition_advice" | "plan";
+export type UsageFeature = "chat" | "photo" | "text_nutrition" | "weekly_review" | "nutrition_advice" | "plan" | "memory";
 
-// Fit Koç kotası maliyet ve kötüye kullanım koruması için plan bazında
-// günlük olarak sınırlandırılır. Diğer premium AI araçları sınırsız kalır.
-// `null`, SQL fonksiyonuna "bu özellik için sınır kontrolü yapma" der; TS
-// tarafında `Number.POSITIVE_INFINITY`e çevrilir (bkz. checkAndConsumeUsage).
+export type PlanTier = "free" | "plus" | "pro";
+
+// Her özellik için günlük istek kotası. Ücretli planlar da sınırsız değildir;
+// bu hem beklenmeyen fatura artışını hem de ele geçirilmiş hesap kötüye
+// kullanımını sınırlar. Fotoğraf, diğer isteklere göre daha pahalı olduğu için
+// daha düşük tutulur.
 const DAILY_LIMITS = {
-  free: { chat: 5, photo: 1, text_nutrition: 3, weekly_review: 1, nutrition_advice: 5, plan: 3 },
-  // Mevcut üretim altyapısında Plus ve Pro aynı premium kotasını kullanır.
-  // plan_tier canlıya ayrıştırıldığında bu değerler Plus/Pro için ayrı atanabilir.
-  premium: { chat: 25, photo: null, text_nutrition: null, weekly_review: null, nutrition_advice: null, plan: null },
-} as const satisfies Record<"free" | "premium", Record<UsageFeature, number | null>>;
+  free: { chat: 5, photo: 1, text_nutrition: 3, weekly_review: 1, nutrition_advice: 5, plan: 1, memory: 2 },
+  plus: { chat: 20, photo: 3, text_nutrition: 15, weekly_review: 1, nutrition_advice: 12, plan: 3, memory: 10 },
+  pro: { chat: 50, photo: 8, text_nutrition: 40, weekly_review: 2, nutrition_advice: 30, plan: 6, memory: 25 },
+} as const satisfies Record<PlanTier, Record<UsageFeature, number>>;
 
-// Eski (geçiş dönemi) yol yalnız db/migrations/20260726_usage_limits.sql'deki
-// increment_usage_counter'ı çağırır; o fonksiyon NULL'ı "sınırsız" olarak
-// YORUMLAMAZ (integer parametre). Bu yüzden legacy yolda gerçek NULL yerine
-// pratikte hiç ulaşılamayacak büyük bir sayı kullanılır. Bu yalnız YENİ
-// migration henüz uygulanmamış eski kurulumlarda devreye girer.
-const LEGACY_UNLIMITED_SENTINEL = 100_000;
+const OUTPUT_TOKEN_LIMITS: Record<UsageFeature, Record<PlanTier, number>> = {
+  chat: { free: 420, plus: 560, pro: 700 }, photo: { free: 1100, plus: 1400, pro: 1800 },
+  text_nutrition: { free: 380, plus: 450, pro: 500 }, weekly_review: { free: 600, plus: 750, pro: 900 },
+  nutrition_advice: { free: 140, plus: 180, pro: 220 }, plan: { free: 5000, plus: 6500, pro: 8000 },
+  memory: { free: 220, plus: 280, pro: 320 },
+};
 
-export type UsageCheckResult = { allowed: boolean; used: number; limit: number; isPremium: boolean };
+export function outputTokenLimit(feature: UsageFeature, tier: PlanTier) { return OUTPUT_TOKEN_LIMITS[feature][tier]; }
 
-/** Reklam başına verilen bonus hak ve bir özellik için günlük bonus tavanı. */
-const BONUS_PER_AD = 1;
+export type UsageCheckResult = { allowed: boolean; used: number; limit: number; isPremium: boolean; planTier: PlanTier };
+
+/** Bir özellik için günlük reklam bonusu tavanı. */
 const MAX_BONUS_PER_DAY = 3;
 
 export type AdBonusResult = { bonusCount: number; maxBonus: number };
@@ -60,10 +62,11 @@ export async function checkAndConsumeUsage(request: Request, feature: UsageFeatu
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
 
-  let { data, error } = await client.rpc("check_and_consume_usage", {
+  let { data, error } = await client.rpc("check_and_consume_usage_tiered", {
     p_feature: feature,
     p_free_limit: DAILY_LIMITS.free[feature],
-    p_premium_limit: DAILY_LIMITS.premium[feature],
+    p_plus_limit: DAILY_LIMITS.plus[feature],
+    p_pro_limit: DAILY_LIMITS.pro[feature],
   }).single();
 
   // PGRST202/PGRST204 genellikle migration eksikliğinden değil, PostgREST'in
@@ -77,10 +80,11 @@ export async function checkAndConsumeUsage(request: Request, feature: UsageFeatu
   // hatayı verir ve akış normal şekilde legacy yola / 503'e düşmeye devam eder.
   if (error && isMissingInfrastructure(error) && process.env.NODE_ENV === "production") {
     await new Promise((resolve) => setTimeout(resolve, 400));
-    ({ data, error } = await client.rpc("check_and_consume_usage", {
+    ({ data, error } = await client.rpc("check_and_consume_usage_tiered", {
       p_feature: feature,
       p_free_limit: DAILY_LIMITS.free[feature],
-      p_premium_limit: DAILY_LIMITS.premium[feature],
+      p_plus_limit: DAILY_LIMITS.plus[feature],
+      p_pro_limit: DAILY_LIMITS.pro[feature],
     }).single());
   }
 
@@ -91,12 +95,13 @@ export async function checkAndConsumeUsage(request: Request, feature: UsageFeatu
     console.error("[usage-limits] check_and_consume_usage rpc failed", error?.code);
     return { error: Response.json({ error: "Kullanım sınırı kontrol edilemedi." }, { status: 500 }) };
   }
-  const result = data as { allowed: boolean; current_count: number; effective_limit: number | null; is_premium: boolean };
+  const result = data as { allowed: boolean; current_count: number; effective_limit: number; plan_tier: PlanTier };
   // SQL fonksiyonu premium + sınırsız özellik için effective_limit'i NULL
   // döner (bkz. migration); bu, uygulamanın "sınır yok" göstergesi olan
   // Number.POSITIVE_INFINITY'e çevrilir — çağıran taraflar zaten
   // Number.isFinite(usage.limit) ile bu durumu kontrol ediyor.
-  return { allowed: result.allowed, used: result.current_count, limit: result.effective_limit ?? Number.POSITIVE_INFINITY, isPremium: result.is_premium };
+  const planTier = (["free", "plus", "pro"] as const).includes(result.plan_tier) ? result.plan_tier : "free";
+  return { allowed: result.allowed, used: result.current_count, limit: result.effective_limit, isPremium: planTier !== "free", planTier };
 }
 
 /**
@@ -123,18 +128,17 @@ async function legacyCheckAndConsumeUsage(
   feature: UsageFeature,
   userId: string,
 ): Promise<UsageCheckResult | { error: Response }> {
-  const { data: profile, error: profileError } = await client.from("profiles").select("is_premium").eq("id", userId).maybeSingle();
+  const { data: profile, error: profileError } = await client.from("profiles").select("is_premium,plan_tier").eq("id", userId).maybeSingle();
   if (profileError && !isMissingInfrastructure(profileError)) {
     console.error("[usage-limits] profile lookup failed", profileError.code);
     return { error: Response.json({ error: "Kullanım sınırı kontrol edilemedi." }, { status: 500 }) };
   }
   if (profileError) return handleMissingInfrastructure(feature, "profiles.is_premium");
   const isPremium = Boolean(profile?.is_premium);
-  // Eski increment_usage_counter NULL'ı sınırsız olarak yorumlamaz (integer
-  // parametre); bu yüzden burada gerçek NULL yerine LEGACY_UNLIMITED_SENTINEL
-  // kullanılır (bkz. yukarıdaki sabitin açıklaması).
-  const configuredLimit = isPremium ? DAILY_LIMITS.premium[feature] : DAILY_LIMITS.free[feature];
-  const limit = configuredLimit ?? LEGACY_UNLIMITED_SENTINEL;
+  const planTier: PlanTier = profile?.plan_tier === "plus" || profile?.plan_tier === "pro" ? profile.plan_tier : (isPremium ? "pro" : "free");
+  // Eski sayaç integer limit bekler; tier kotası burada sonlu sayıya çevrilir.
+  const configuredLimit = DAILY_LIMITS[planTier][feature];
+  const limit = configuredLimit;
 
   let { data, error } = await client.rpc("increment_usage_counter", { p_feature: feature, p_limit: limit }).single();
   // text_nutrition sayacı sonradan eklendi. Üretim migration'ı henüz
@@ -153,10 +157,11 @@ async function legacyCheckAndConsumeUsage(
   }
   const result = data as { allowed: boolean; current_count: number; effective_limit: number };
   return {
-    allowed: configuredLimit === null ? true : result.allowed,
+    allowed: result.allowed,
     used: result.current_count,
-    limit: configuredLimit === null ? Number.POSITIVE_INFINITY : (result.effective_limit ?? limit),
-    isPremium,
+    limit: result.effective_limit ?? limit,
+    isPremium: planTier !== "free",
+    planTier,
   };
 }
 
@@ -168,52 +173,46 @@ async function legacyCheckAndConsumeUsage(
  * İade, iyimser bir en-iyi-çaba işlemidir: başarısız olursa yalnız loglanır,
  * kullanıcıya hata döndürülmez — asıl istek zaten yanıtlanmış olur.
  */
-export async function refundUsage(request: Request, feature: UsageFeature): Promise<void> {
+export async function refundUsage(userId: string, feature: UsageFeature): Promise<void> {
   const url = normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const token = bearerToken(request);
-  if (!url || !anonKey || !token) return;
+  const secretKey = process.env.SUPABASE_SECRET_KEY;
+  if (!url || !secretKey || !userId) return;
 
-  const client = createClient(url, anonKey, {
+  // Sayaç azaltan RPC son kullanıcıya açık değildir. Doğrulanmış kullanıcı
+  // kimliği route'tan gelir; çağrı yalnız sunucudaki service-role anahtarıyla
+  // yapılır. Böylece kullanıcı RPC'yi doğrudan çağırıp kotasını sıfırlayamaz.
+  const client = createClient(url, secretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${token}` } },
   });
-  const { error } = await client.rpc("refund_usage_counter", { p_feature: feature, p_amount: 1 });
+  const { error } = await client.rpc("refund_usage_counter_for_user", { p_user_id: userId, p_feature: feature });
   if (error && !isMissingInfrastructure(error)) {
-    console.error("[usage-limits] refund_usage_counter failed", error.code);
+    console.error("[usage-limits] refund_usage_counter_for_user failed", error.code);
   }
 }
 
 /**
- * Reklam izlendikten sonra bir özellik için günlük bonus hakkı verir (bkz.
- * db/migrations/20260810_ad_bonus_usage.sql — grant_usage_bonus). Bonus,
- * feature başına MAX_BONUS_PER_DAY ile sınırlıdır; SSV yerine bu tavan
- * kötüye kullanım riskini sınırlar (bkz. plan notları).
+ * Sunucu tarafından doğrulanmış reklam callback'i sonrasında çağrılmak üzere
+ * bonusu service-role RPC'siyle verir. İstemci bu fonksiyona erişemez.
  */
-export async function grantAdBonus(request: Request, feature: UsageFeature): Promise<AdBonusResult | { error: Response }> {
+export async function grantAdBonus(userId: string, feature: UsageFeature): Promise<AdBonusResult | { error: Response }> {
   const url = normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) {
+  const secretKey = process.env.SUPABASE_SECRET_KEY;
+  if (!url || !secretKey) {
     return { error: Response.json({ error: "Reklam ödülü servisi yapılandırılmamış." }, { status: 503 }) };
   }
-  const token = bearerToken(request);
-  if (!token) {
-    return { error: Response.json({ error: "Bu işlem için giriş yapmalısın." }, { status: 401 }) };
-  }
 
-  const client = createClient(url, anonKey, {
+  const client = createClient(url, secretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${token}` } },
   });
 
   const { data, error } = await client
-    .rpc("grant_usage_bonus", { p_feature: feature, p_bonus: BONUS_PER_AD, p_max_bonus: MAX_BONUS_PER_DAY });
+    .rpc("grant_usage_bonus_for_user", { p_user_id: userId, p_feature: feature });
   if (error && isMissingInfrastructure(error)) {
-    console.warn(`[usage-limits] grant_usage_bonus bulunamadı; reklam ödülü uygulanmadı. db/migrations/20260810_ad_bonus_usage.sql çalıştırılmalı.`);
+    console.warn("[usage-limits] grant_usage_bonus_for_user bulunamadı; güvenli reklam ödülü migration'ı uygulanmalı.");
     return { bonusCount: 0, maxBonus: MAX_BONUS_PER_DAY };
   }
   if (error || typeof data !== "number") {
-    console.error("[usage-limits] grant_usage_bonus rpc failed", error?.code);
+    console.error("[usage-limits] grant_usage_bonus_for_user rpc failed", error?.code);
     return { error: Response.json({ error: "Reklam ödülü uygulanamadı." }, { status: 500 }) };
   }
   return { bonusCount: data, maxBonus: MAX_BONUS_PER_DAY };
@@ -291,7 +290,7 @@ function isLegacyTextNutritionCounter(error: { code?: string | null; message?: s
 function handleMissingInfrastructure(feature: UsageFeature, missing: string, isPremium = false): UsageCheckResult | { error: Response } {
   if (process.env.NODE_ENV !== "production") {
     console.warn(`[usage-limits] ${missing} bulunamadı; kullanım sınırı uygulanmıyor (yalnız üretim dışı). db/migrations/20260726_usage_limits.sql çalıştırılmalı.`);
-    return { allowed: true, used: 0, limit: Number.POSITIVE_INFINITY, isPremium };
+    return { allowed: true, used: 0, limit: Number.POSITIVE_INFINITY, isPremium, planTier: isPremium ? "pro" : "free" };
   }
   console.error(`[usage-limits] ${missing} bulunamadı; kullanım sınırı üretimde kapalı tarafa düşürüldü (feature=${feature}). db/migrations/20260726_usage_limits.sql çalıştırılmalı.`);
   return { error: Response.json({ error: "Kullanım sınırı servisi geçici olarak kullanılamıyor. Lütfen kısa süre sonra tekrar dene." }, { status: 503 }) };
@@ -308,7 +307,9 @@ export function usageLimitExceeded(feature: UsageFeature, used: number, limit: n
           ? "haftalık AI değerlendirme"
           : feature === "plan"
             ? "AI program üretimi"
-            : "AI beslenme önerisi";
+            : feature === "memory"
+              ? "AI tercih hafızası"
+              : "AI beslenme önerisi";
   return Response.json(
     {
       error: `Bugünkü ${featureLabel} sınırına ulaştın (${limit}/${limit}). Yarın tekrar deneyebilirsin.`,

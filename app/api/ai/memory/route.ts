@@ -3,6 +3,7 @@ import { rateLimit, tooManyRequests } from "../../../../lib/rate-limit.ts";
 import { deleteMemory, loadMemories, mayContainMemory, saveMemories } from "../../../../lib/ai/memory.ts";
 import { extractMemories } from "../../../../lib/ai/coach.ts";
 import { hasRemoteProvider } from "../../../../lib/ai/providers/openai-compatible.ts";
+import { checkAndConsumeUsage, outputTokenLimit, refundUsage } from "../../../../lib/usage-limits.ts";
 
 export const runtime = "edge";
 
@@ -69,13 +70,24 @@ export async function POST(request: Request) {
   // Ucuz ön eleme: aday olmayan mesaj için ücretli çağrı yapılmaz.
   if (!message || !mayContainMemory(message)) return Response.json({ saved: 0 });
 
+  // Hafıza çıkarımı ayrı ve ücretli bir model çağrısıdır. Sohbet kotasından
+  // bağımsız günlük kota, ele geçirilmiş bir hesabın bu arka plan özelliğini
+  // tekrarlayarak sınırsız model maliyeti üretmesini engeller.
+  const usage = await checkAndConsumeUsage(request, "memory", auth.user.id);
+  if ("error" in usage || !usage.allowed) return Response.json({ saved: 0 });
+
   const memories = await extractMemories({
     message,
     locale: payload.locale === "en" ? "en" : "tr",
+    maxOutputTokens: outputTokenLimit("memory", usage.planTier),
     abortSignal: AbortSignal.timeout(15_000),
   });
-  if (!memories.length) return Response.json({ saved: 0 });
+  if (!memories.length) {
+    await refundUsage(auth.user.id, "memory");
+    return Response.json({ saved: 0 });
+  }
 
   const saved = await saveMemories(request, auth.user.id, memories);
+  if (!saved) await refundUsage(auth.user.id, "memory");
   return Response.json({ saved });
 }

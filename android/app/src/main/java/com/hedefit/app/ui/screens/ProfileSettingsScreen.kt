@@ -325,6 +325,7 @@ private fun ShortcutSettingsDialog(en: Boolean, onDismiss: () -> Unit, onSelect:
             listOf(
                 Triple("route", "Hedefit Rota", Icons.Default.Route),
                 Triple("workout", if (en) "Workout" else "Antrenman", Icons.Default.FitnessCenter),
+                Triple("activity", if (en) "Log a sport" else "Spor aktivitesi ekle", Icons.Default.Add),
                 Triple("nutrition", if (en) "Add meal" else "Öğün ekle", Icons.Default.Restaurant),
             ).forEach { (key, label, icon) ->
                 item { Button(onClick = { onSelect(key) }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.SurfaceHigh, contentColor = HedefitColors.TextPrimary)) { Icon(icon, null); Spacer(Modifier.width(8.dp)); Text(label) } }

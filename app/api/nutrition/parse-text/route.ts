@@ -4,7 +4,7 @@ import { hasRemoteProvider } from "../../../../lib/ai/providers/openai-compatibl
 import { containsPromptInjection } from "../../../../lib/nutrition-parser.ts";
 import { matchDefaultFood } from "../../../../lib/default-food-catalog.ts";
 import { rateLimit, tooManyRequests } from "../../../../lib/rate-limit.ts";
-import { checkAndConsumeUsage, refundUsage, usageLimitExceeded } from "../../../../lib/usage-limits.ts";
+import { checkAndConsumeUsage, outputTokenLimit, refundUsage, usageLimitExceeded } from "../../../../lib/usage-limits.ts";
 
 export const runtime = "edge";
 
@@ -60,11 +60,11 @@ export async function POST(request: Request) {
   if (!usage.allowed) return usageLimitExceeded("text_nutrition", usage.used, usage.limit);
 
   try {
-    const item = await estimateAiTextNutrition({ foodName: query, grams, timeoutMs: 20_000 });
+    const item = await estimateAiTextNutrition({ foodName: query, grams, timeoutMs: 35_000, maxOutputTokens: outputTokenLimit("text_nutrition", usage.planTier) });
     if (!item) {
       // Model doğrulanabilir bir sonuç üretemedi: kullanıcı gerçekte bir
       // tahmin ALMADI, günlük hakkı geri iade edilir.
-      if (Number.isFinite(usage.limit)) await refundUsage(request, "text_nutrition");
+      if (Number.isFinite(usage.limit)) await refundUsage(auth.user.id, "text_nutrition");
       return Response.json({ error: "Besin değerleri güvenle hesaplanamadı; tekrar deneyebilirsin." }, { status: 422 });
     }
     const warnings = [
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("[nutrition-estimate] AI request failed", error instanceof Error ? error.name : "unknown");
-    if (Number.isFinite(usage.limit)) await refundUsage(request, "text_nutrition");
+    if (Number.isFinite(usage.limit)) await refundUsage(auth.user.id, "text_nutrition");
     return Response.json({ error: "AI besin hesaplaması zamanında tamamlanamadı; tekrar deneyebilirsin." }, { status: 502 });
   }
 }

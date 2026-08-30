@@ -7,13 +7,17 @@ export const TEST_USER_ID = "00000000-0000-4000-8000-000000000001";
 export function withSupabaseAuthEnv() {
   const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const previousKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const previousSecretKey = process.env.SUPABASE_SECRET_KEY;
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://test.supabase.co";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
+  process.env.SUPABASE_SECRET_KEY = "test-service-role-key";
   return () => {
     if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
     if (previousKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = previousKey;
+    if (previousSecretKey === undefined) delete process.env.SUPABASE_SECRET_KEY;
+    else process.env.SUPABASE_SECRET_KEY = previousSecretKey;
   };
 }
 
@@ -58,20 +62,20 @@ export function authorizedRequest(url, init = {}) {
  * çağrılırsa çağrılsın tutarlı kalır. `extra` verilirse eşleşmeyen istekler
  * ona devredilir (ör. AI sağlayıcısı çağrısı).
  */
-export function withUsageMock({ isPremium = false, allowed = true, currentCount = 1 } = {}, extra) {
+export function withUsageMock({ isPremium = false, planTier = isPremium ? "pro" : "free", allowed = true, currentCount = 1 } = {}, extra) {
   return withAuthenticatedFetch((url, init) => {
     const href = String(url);
     if (href.includes("/rpc/check_and_consume_usage")) {
       const body = init?.body ? JSON.parse(String(init.body)) : {};
-      const effectiveLimit = isPremium ? body.p_premium_limit : body.p_free_limit;
+      const effectiveLimit = planTier === "pro" ? body.p_pro_limit : planTier === "plus" ? body.p_plus_limit : body.p_free_limit;
       return Response.json({
-        allowed: effectiveLimit === null ? true : allowed,
+        allowed,
         current_count: currentCount,
         effective_limit: effectiveLimit,
-        is_premium: isPremium,
+        plan_tier: planTier,
       });
     }
-    if (href.includes("/rest/v1/profiles")) return Response.json({ is_premium: isPremium });
+    if (href.includes("/rest/v1/profiles")) return Response.json({ is_premium: isPremium, plan_tier: planTier });
     if (href.includes("/rpc/increment_usage_counter")) return Response.json({ allowed, current_count: currentCount });
     if (extra) return extra(url, init);
     throw new TypeError(`beklenmeyen ağ isteği: ${href}`);

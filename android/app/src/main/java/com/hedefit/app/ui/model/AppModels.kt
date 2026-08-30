@@ -2,12 +2,12 @@ package com.hedefit.app.ui.model
 
 import androidx.annotation.DrawableRes
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FactCheck
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Restaurant
-import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.hedefit.app.R
 
@@ -16,7 +16,7 @@ enum class AppDestination(val label: String, val icon: ImageVector) {
     Workout("Antrenman", Icons.Default.FitnessCenter),
     Nutrition("Beslenme", Icons.Default.Restaurant),
     Progress("İlerleme", Icons.Default.BarChart),
-    Game("Görevler", Icons.Default.SportsEsports),
+    Game("Görevler", Icons.AutoMirrored.Filled.FactCheck),
     Coach("Fit Koç", Icons.AutoMirrored.Filled.Chat),
     ;
 

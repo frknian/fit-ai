@@ -62,33 +62,38 @@ private fun hedefitDarkScheme() = darkColorScheme(
 )
 
 private fun hedefitLightScheme() = lightColorScheme(
-    primary = HedefitColors.LimeDark,
+    primary = HedefitColors.Lime,
     onPrimary = HedefitColors.OnLime,
     primaryContainer = HedefitColors.Lime.copy(alpha = .22f),
     onPrimaryContainer = HedefitColors.LimeDark,
     secondary = HedefitColors.LimeDark,
-    background = Color(0xFFF6F8F3),
-    onBackground = Color(0xFF10150F),
-    surface = Color.White,
-    onSurface = Color(0xFF10150F),
-    surfaceVariant = Color(0xFFEEF2E9),
-    onSurfaceVariant = Color(0xFF657062),
+    background = HedefitColors.Background,
+    onBackground = HedefitColors.TextPrimary,
+    surface = HedefitColors.Surface,
+    onSurface = HedefitColors.TextPrimary,
+    surfaceVariant = HedefitColors.SurfaceHigh,
+    onSurfaceVariant = HedefitColors.TextSecondary,
     error = Color(0xFFB3261E),
-    outline = Color(0xFFD8E0D3),
+    outline = HedefitColors.Divider,
 )
 
-private val HedefitTypography = androidx.compose.material3.Typography(
+private val baseTypography = androidx.compose.material3.Typography()
+private val HedefitTypography = baseTypography.copy(
+    displayLarge = baseTypography.displayLarge.copy(fontFamily = FontFamily.Default),
+    displayMedium = baseTypography.displayMedium.copy(fontFamily = FontFamily.Default),
     displaySmall = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 36.sp, lineHeight = 40.sp),
     headlineLarge = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 30.sp, lineHeight = 36.sp),
     headlineMedium = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 24.sp, lineHeight = 30.sp),
     headlineSmall = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 26.sp),
     titleLarge = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 18.sp, lineHeight = 24.sp),
     titleMedium = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp),
+    titleSmall = baseTypography.titleSmall.copy(fontFamily = FontFamily.Default),
     bodyLarge = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 24.sp),
     bodyMedium = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp),
     bodySmall = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp),
     labelLarge = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 18.sp),
     labelMedium = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp),
+    labelSmall = baseTypography.labelSmall.copy(fontFamily = FontFamily.Default),
 )
 
 @Composable

@@ -44,6 +44,8 @@ fun estimatedGoalWeeks(currentKg: Double?, targetKg: Double?): Int? {
     if (currentKg == null || targetKg == null) return null
     val difference = abs(targetKg - currentKg)
     if (difference < 0.1) return 0
-    val weeklyKg = if (targetKg < currentKg) (currentKg * 0.0075).coerceIn(0.3, 0.8) else (currentKg * 0.003).coerceIn(0.15, 0.4)
+    // Genel yetişkin planında kilo kaybını başlangıç ağırlığının yaklaşık
+    // %1'iyle hızlandır, ancak klinik gözetim olmadan 1 kg/haftayı aşma.
+    val weeklyKg = if (targetKg < currentKg) (currentKg * 0.01).coerceIn(0.5, 1.0) else (currentKg * 0.003).coerceIn(0.15, 0.4)
     return ceil(difference / weeklyKg).toInt().coerceAtLeast(1)
 }

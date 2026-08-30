@@ -173,6 +173,23 @@ test("uzak sağlayıcı çökerse son çare yerel sağlayıcı kullanıcıyı ya
   assert.equal(response.fallbackUsed, true);
 });
 
+test("bulut sağlayıcının süresi dolarsa iptal sanılmadan yerel Fit Koç'a düşülür", async () => {
+  const signal = AbortSignal.timeout(5);
+  const remote = {
+    ...stubProvider("remote", "remote"),
+    generateText: async () => new Promise((_, reject) => {
+      const fail = () => reject(signal.reason);
+      if (signal.aborted) fail(); else signal.addEventListener("abort", fail, { once: true });
+    }),
+  };
+  const local = { ...stubProvider("local", "local"), categories: [], lastResortCategories: ["conversation"] };
+  providerRegistry.reset([remote, local]);
+
+  const response = await routeText({ category: "conversation", prompt: "merhaba", abortSignal: signal }, SILENT);
+  assert.equal(response.provider, "local");
+  assert.equal(response.fallbackUsed, true);
+});
+
 test("basit koçlukta da Automatic sırası yerel → uzak → deterministiktir", async () => {
   const deterministic = {
     ...stubProvider("local-deterministic", "local"),

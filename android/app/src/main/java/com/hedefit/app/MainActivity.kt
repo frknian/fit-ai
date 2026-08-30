@@ -21,6 +21,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.hedefit.app.ui.components.HedefitAppFrame
 import com.hedefit.app.ui.model.AppDestination
 import com.hedefit.app.ui.screens.ActiveWorkoutScreen
@@ -40,6 +43,7 @@ import com.hedefit.app.ui.screens.RouteScreen
 import com.hedefit.app.ui.screens.GoalJourneyScreen
 import com.hedefit.app.ui.screens.GameScreen
 import com.hedefit.app.ui.screens.AppUserGuideScreen
+import com.hedefit.app.ui.screens.ManualActivityScreen
 import com.hedefit.app.ui.screens.WelcomeGuideDialog
 import com.hedefit.app.shortcuts.HedefitShortcuts
 import com.hedefit.app.ui.theme.HedefitTheme
@@ -48,6 +52,8 @@ import com.hedefit.app.data.auth.AuthState
 import com.hedefit.app.data.auth.GoogleSignInManager
 import android.widget.Toast
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import com.hedefit.app.ui.settings.AppPreferencesStore
 import com.hedefit.app.notifications.NotificationScheduler
 import com.hedefit.app.notifications.StepCounterNotification
@@ -57,7 +63,7 @@ import com.hedefit.app.health.HealthConnectManager
 import com.hedefit.app.steps.StepSource
 import com.hedefit.app.ads.AdMobManager
 
-private enum class UtilityPage { Main, Profile, Questionnaire, Notifications, Calendar, ExerciseLibrary, Route, GoalJourney, UserGuide }
+private enum class UtilityPage { Main, Profile, Questionnaire, Notifications, Calendar, ExerciseLibrary, Route, GoalJourney, UserGuide, ManualActivity }
 
 /** Programdaki Türkçe bölge adını atlasın birincil kas filtresine çevirir. */
 private fun replacementMuscle(area: String): String {
@@ -119,8 +125,8 @@ class MainActivity : ComponentActivity() {
                 ).show()
             }
             val healthPermissionLauncher = rememberLauncherForActivityResult(healthConnectManager.permissionContract()) { granted ->
-                if (granted.containsAll(healthConnectManager.permissions)) mainViewModel.syncHealthConnect()
-                else Toast.makeText(this@MainActivity, "Health Connect izinleri verilmedi.", Toast.LENGTH_LONG).show()
+                if (granted.contains(healthConnectManager.stepPermission)) mainViewModel.syncHealthConnect()
+                else Toast.makeText(this@MainActivity, "Health Connect adım izni verilmedi.", Toast.LENGTH_LONG).show()
                 mainViewModel.checkHealthConnect()
             }
             val activityRecognitionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -131,13 +137,14 @@ class MainActivity : ComponentActivity() {
                 var selected by rememberSaveable { mutableStateOf(when { intent?.getBooleanExtra("open_workout", false) == true -> AppDestination.Workout; intent?.getBooleanExtra("open_nutrition", false) == true -> AppDestination.Nutrition; else -> AppDestination.Home }) }
                 var activeWorkout by rememberSaveable { mutableStateOf(false) }
                 var activeWorkoutExercises by remember { mutableStateOf<List<com.hedefit.app.data.model.WorkoutExerciseData>?>(null) }
-                var utilityPage by rememberSaveable { mutableStateOf(if (intent?.getBooleanExtra("open_route", false) == true) UtilityPage.Route else UtilityPage.Main) }
+                var utilityPage by rememberSaveable { mutableStateOf(when { intent?.getBooleanExtra("open_route", false) == true -> UtilityPage.Route; intent?.getBooleanExtra("open_activity", false) == true -> UtilityPage.ManualActivity; else -> UtilityPage.Main }) }
                 var googleCredentialBusy by remember { mutableStateOf(false) }
                 var showWelcomeGuide by remember { mutableStateOf(!preferences.welcomeGuideSeen) }
                 var healthAutoSynced by rememberSaveable { mutableStateOf(false) }
                 var activityRecognitionAsked by remember { mutableStateOf(this@MainActivity.getSharedPreferences("hedefit-step-permission", android.content.Context.MODE_PRIVATE).getBoolean("activity_recognition_asked", false)) }
                 val scope = rememberCoroutineScope()
                 val googleSignIn = remember { GoogleSignInManager(this@MainActivity) }
+                val lifecycleOwner = LocalLifecycleOwner.current
 
                 LaunchedEffect(uiState.dashboard?.profile?.id) {
                     val profile = uiState.dashboard?.profile ?: return@LaunchedEffect
@@ -147,6 +154,14 @@ class MainActivity : ComponentActivity() {
                     if (profile.historyAnswers.count { it.isNotBlank() } < 15) utilityPage = UtilityPage.Questionnaire
                 }
                 LaunchedEffect(Unit) { mainViewModel.checkHealthConnect() }
+                LaunchedEffect(lifecycleOwner, uiState.dashboard?.profile?.id) {
+                    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                        while (isActive) {
+                            mainViewModel.refreshSteps()
+                            delay(60_000L)
+                        }
+                    }
+                }
                 LaunchedEffect(uiState.healthConnected, uiState.stepSource) {
                     if (!uiState.healthConnected && uiState.stepSource == StepSource.UNAVAILABLE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !activityRecognitionAsked) {
                         activityRecognitionAsked = true
@@ -366,6 +381,13 @@ class MainActivity : ComponentActivity() {
                             language = preferences.language,
                             onBack = { utilityPage = UtilityPage.Profile },
                         )
+                        UtilityPage.ManualActivity -> ManualActivityScreen(
+                            language = preferences.language,
+                            weightKg = dashboard.profile.weightKg,
+                            saving = uiState.workoutSaving,
+                            onBack = { utilityPage = UtilityPage.Main },
+                            onSave = { input -> mainViewModel.recordManualActivity(input, preferences.language) { utilityPage = UtilityPage.Main } },
+                        )
                         UtilityPage.Main -> Unit
                     }
                 } else {
@@ -377,6 +399,7 @@ class MainActivity : ComponentActivity() {
                                 mainViewModel.signOut()
                             }, onOpenProfile = { utilityPage = UtilityPage.Profile }, onOpenNotifications = { utilityPage = UtilityPage.Notifications }, onOpenCalendar = { utilityPage = UtilityPage.Calendar }, onOpenRoute = { utilityPage = UtilityPage.Route },
                                 onOpenGoal = { utilityPage = UtilityPage.GoalJourney },
+                                onOpenActivity = { utilityPage = UtilityPage.ManualActivity },
                                 onOpenProgram = { programId ->
                                     programId?.let { id -> uiState.dashboard?.workoutPrograms?.firstOrNull { it.id == id }?.let(mainViewModel::activateProgram) }
                                     selected = AppDestination.Workout
@@ -394,9 +417,11 @@ class MainActivity : ComponentActivity() {
                             AppDestination.Workout -> WorkoutPlanScreen(padding, expanded, uiState.dashboard?.workouts.orEmpty(), uiState.dashboard?.workoutPrograms.orEmpty(), uiState.exerciseLibrary, uiState.exerciseLibraryBusy, uiState.dataLoading, uiState.planGenerating, mainViewModel::generatePlan, onStartWorkout = {
                                 if (!uiState.dashboard?.workouts.isNullOrEmpty()) { activeWorkoutExercises = null; mainViewModel.loadPreviousPerformance(); activeWorkout = true }
                             }, onOpenLibrary = { mainViewModel.loadExerciseLibrary(locale = preferences.language); utilityPage = UtilityPage.ExerciseLibrary },
+                                onOpenActivityLog = { utilityPage = UtilityPage.ManualActivity },
                                 onGenerateRegional = { muscle, label -> mainViewModel.generateRegionalPlan(muscle, label, preferences.language) },
                                 onLoadRegional = { muscle -> mainViewModel.loadExerciseLibrary(muscle = muscle, muscleRole = "primary", category = "strength", locale = preferences.language) },
                                 onCreateOwnPlan = { name -> mainViewModel.createCustomProgram(name, preferences.language) { mainViewModel.loadExerciseLibrary(locale = preferences.language); utilityPage = UtilityPage.ExerciseLibrary } },
+                                onAddPushPullTemplate = { key -> mainViewModel.addPushPullTemplate(key, preferences.language) },
                                 onSelectProgram = mainViewModel::activateProgram,
                                 onRemoveProgram = mainViewModel::deleteProgram,
                                 onUpdateExercise = mainViewModel::updateWorkoutExercise,
@@ -418,6 +443,14 @@ class MainActivity : ComponentActivity() {
                                 dateLoading = uiState.nutritionDateLoading,
                                 onSelectDate = mainViewModel::loadNutritionDate,
                                 onLoadHistory = mainViewModel::loadNutritionHistory,
+                                onAddMealPlanItem = mainViewModel::addMealPlanItem,
+                                onToggleMealPlanItem = mainViewModel::toggleMealPlanItem,
+                                onRemoveMealPlanItem = mainViewModel::removeMealPlanItem,
+                                photoBusy = uiState.photoNutritionBusy,
+                                photoResults = uiState.photoNutritionResults,
+                                onAnalyzePhoto = mainViewModel::analyzeNutritionPhoto,
+                                onClearPhotoResults = mainViewModel::clearPhotoNutritionResults,
+                                onSavePhotoResults = mainViewModel::savePhotoNutrition,
                             )
                             AppDestination.Game -> GameScreen(
                                 padding = padding,

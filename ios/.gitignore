@@ -1,0 +1,7 @@
+Config.xcconfig
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+Hedefit 2.xcodeproj/
+Hedefit 3.xcodeproj/

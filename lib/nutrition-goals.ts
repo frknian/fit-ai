@@ -101,18 +101,18 @@ export function calculateNutritionGoal(input: {
     ? Math.max(bmr, tdee + desiredAdjustment)
     : tdee + desiredAdjustment;
   const calorieAdjustment = calorieTarget - tdee;
-  // Hedef, aktivite ve ağırlığı birlikte değerlendiriyoruz. Önceki 2,2 g/kg
-  // yağ kaybı kuralı, yüksek kilolu birçok kullanıcıda gereksiz biçimde
-  // 180 g+ protein üretiyordu. Vücut ağırlığının ilk 100 kilosunu baz almak
-  // ve 1,2–1,6 g/kg bandında kalmak genel yetişkin hedefini daha uygulanabilir
-  // tutar; özel klinik/sporcu planı bunun dışındadır.
-  const proteinBaseKg = clamp(weightKg, 45, 100);
-  const proteinMultiplier = workoutDays === 0 ? 1.2 : workoutDays <= 3 ? 1.4 : 1.6;
-  const proteinGrams = Math.round(clamp(proteinBaseKg * proteinMultiplier, 60, 160));
-  // Yağ hedefi çok düşük kalırsa hem sürdürülebilirlik hem de kalan makronun
-  // hesaplanması bozulur. Kalorinin yaklaşık %25'i veya 0,7 g/kg tabanı
-  // korunur; geri kalan enerji karbonhidrata gider.
-  const fatGrams = Math.round(Math.max(weightKg * 0.7, calorieTarget * 0.25 / 9));
+  // Genel kullanıcı hedefi klinik veya performans reçetesi değildir. Ağırlığın
+  // ilk 90 kilosunu ve daha ılımlı aktivite çarpanlarını kullanmak, yüksek
+  // kiloda protein hedefinin gereksiz biçimde büyümesini önler. Ayrıca protein
+  // enerjisini %27,5 ile sınırlayarak yetişkin AMDR aralığının içinde tutarız.
+  const proteinBaseKg = clamp(weightKg, 45, 90);
+  const proteinMultiplier = workoutDays === 0 ? 1.0 : workoutDays <= 3 ? 1.2 : 1.4;
+  const proteinUpper = Math.max(50, Math.min(140, Math.floor(calorieTarget * 0.275 / 4)));
+  const proteinGrams = Math.round(clamp(proteinBaseKg * proteinMultiplier, 50, proteinUpper));
+  // Yağ kalorinin %27,5'i; kalan enerji karbonhidrata gider. Böylece üç makro
+  // yetişkinler için kullanılan 45–65 / 20–35 / 10–35 AMDR dağılımına yakın
+  // ve enerji toplamıyla tutarlı kalır.
+  const fatGrams = Math.round(calorieTarget * 0.275 / 9);
   const remainingCalories = Math.max(0, calorieTarget - proteinGrams * 4 - fatGrams * 9);
   const carbsGrams = Math.round(remainingCalories / 4);
 

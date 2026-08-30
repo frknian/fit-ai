@@ -4,7 +4,7 @@ import { rateLimit, tooManyRequests } from "../../../../lib/rate-limit.ts";
 import { hasRemoteProvider } from "../../../../lib/ai/providers/openai-compatible.ts";
 import { generateCoachTaskText } from "../../../../lib/ai/coach.ts";
 import { loadMemories } from "../../../../lib/ai/memory.ts";
-import { checkAndConsumeUsage, refundUsage } from "../../../../lib/usage-limits.ts";
+import { checkAndConsumeUsage, outputTokenLimit, refundUsage } from "../../../../lib/usage-limits.ts";
 
 export const runtime = "edge";
 
@@ -101,7 +101,7 @@ export async function POST(request: Request) {
       domainRules: ADVICE_SYSTEM_PROMPT,
       prompt: `Aşağıdaki anonim günlük beslenme özetine göre ${languageInstruction}, tıbbi olmayan ve tek paragraf halinde en fazla 65 kelimelik bir sonraki öğün önerisi yaz. Kesin sağlık iddiası üretme. Eksik makrolara odaklan ve 2-4 yaygın besin örneği ver. Kalori hedefini aşmayı teşvik etme.\n\nBugün kaydedilen öğünler: ${JSON.stringify(input.meals)}`,
       temperature: 0.3,
-      maxOutputTokens: 180,
+      maxOutputTokens: outputTokenLimit("nutrition_advice", usage.planTier),
       abortSignal: AbortSignal.timeout(15_000),
     });
     if (result.text.trim()) return Response.json({ advice: result.text.trim(), source: "ai" });
@@ -109,6 +109,6 @@ export async function POST(request: Request) {
     // Yerel yedeğe düşülür.
   }
   // AI'dan kullanılabilir bir öneri gelmedi; kullanıcının günlük hakkı iade edilir.
-  if (Number.isFinite(usage.limit)) await refundUsage(request, "nutrition_advice");
+  if (Number.isFinite(usage.limit)) await refundUsage(auth.user.id, "nutrition_advice");
   return Response.json({ advice: fallback, source: "fallback" });
 }

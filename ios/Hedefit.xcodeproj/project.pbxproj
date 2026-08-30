@@ -1,0 +1,504 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		16073E59302533939229F4DC /* HedefitWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D9C661815337F873E4EC65D /* HedefitWidgets.swift */; };
+		1DF3D56B0FF41CB8D03270B1 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A0D659DD68F41D93FAF1B5D /* Models.swift */; };
+		22C9084E0698B76271561825 /* FeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C67C4E9751FF941BB8A401D /* FeatureViews.swift */; };
+		369E3EC4A1F8744B412D2296 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 941B2859D4E7B29DA95B1A71 /* AppStore.swift */; };
+		5EE29385FF29D1BF7296BA41 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EB01284760B6C99254521D3 /* Components.swift */; };
+		88BE518DA6E9BED055E53B97 /* HedefitWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DA05552DD58259D70D856670 /* HedefitWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		8CC50039B639762085EE64BC /* Services.swift in Sources */ = {isa = PBXBuildFile; fileRef = 080930673F4CBE67F42FD7E6 /* Services.swift */; };
+		9B06DB3BF10D80C15990B89A /* HedefitApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04ADD1955152D233E3D460C8 /* HedefitApp.swift */; };
+		ED45663EC6E8C473F0733169 /* MainViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01C546F13F047ABD292B74E0 /* MainViews.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		6B904468BAB7DB29E9408557 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E308A22F93B6D50A2F384006 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2300C3D95723D858CB4DE14B;
+			remoteInfo = HedefitWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		70E62EA8ED0894441DDB853F /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				88BE518DA6E9BED055E53B97 /* HedefitWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		01C546F13F047ABD292B74E0 /* MainViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViews.swift; sourceTree = "<group>"; };
+		04ADD1955152D233E3D460C8 /* HedefitApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HedefitApp.swift; sourceTree = "<group>"; };
+		080930673F4CBE67F42FD7E6 /* Services.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services.swift; sourceTree = "<group>"; };
+		275E7F1757E221898C205240 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		3C67C4E9751FF941BB8A401D /* FeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureViews.swift; sourceTree = "<group>"; };
+		5EB01284760B6C99254521D3 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		761418C288D57E96585DE175 /* HedefitWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HedefitWidgets.entitlements; sourceTree = "<group>"; };
+		7D9C661815337F873E4EC65D /* HedefitWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HedefitWidgets.swift; sourceTree = "<group>"; };
+		8A0D659DD68F41D93FAF1B5D /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		941B2859D4E7B29DA95B1A71 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
+		DA05552DD58259D70D856670 /* HedefitWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = HedefitWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E7CFFAFE44B5BA41870B83DC /* Config.base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.base.xcconfig; sourceTree = "<group>"; };
+		F67A52AEE4120947D2A1A421 /* Hedefit.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Hedefit.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		040D4EFAAF71CA58CF5A9959 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				04ADD1955152D233E3D460C8 /* HedefitApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		3539E94AB38AD18EAC240F07 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				8A0D659DD68F41D93FAF1B5D /* Models.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		4DBC49DF7D93270A1B6746F8 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				5EB01284760B6C99254521D3 /* Components.swift */,
+				3C67C4E9751FF941BB8A401D /* FeatureViews.swift */,
+				01C546F13F047ABD292B74E0 /* MainViews.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		55B23267BD05783BECCC874F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F67A52AEE4120947D2A1A421 /* Hedefit.app */,
+				DA05552DD58259D70D856670 /* HedefitWidgets.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		5AF680C1D761CB143FF20901 = {
+			isa = PBXGroup;
+			children = (
+				FEA0DCA572348A087015F27F /* Hedefit */,
+				7B3BFC3E7EB535CDEBB7D227 /* HedefitWidgets */,
+				C0A4F515E4D53D0F897C26A7 /* ios */,
+				55B23267BD05783BECCC874F /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		6E60005BE9C696C4DE46C135 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				080930673F4CBE67F42FD7E6 /* Services.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		7B3BFC3E7EB535CDEBB7D227 /* HedefitWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				761418C288D57E96585DE175 /* HedefitWidgets.entitlements */,
+				7D9C661815337F873E4EC65D /* HedefitWidgets.swift */,
+				275E7F1757E221898C205240 /* Info.plist */,
+			);
+			path = HedefitWidgets;
+			sourceTree = "<group>";
+		};
+		C0A4F515E4D53D0F897C26A7 /* ios */ = {
+			isa = PBXGroup;
+			children = (
+				E7CFFAFE44B5BA41870B83DC /* Config.base.xcconfig */,
+			);
+			name = ios;
+			path = .;
+			sourceTree = "<group>";
+		};
+		C9045651638A434ACB220E8D /* Store */ = {
+			isa = PBXGroup;
+			children = (
+				941B2859D4E7B29DA95B1A71 /* AppStore.swift */,
+			);
+			path = Store;
+			sourceTree = "<group>";
+		};
+		FEA0DCA572348A087015F27F /* Hedefit */ = {
+			isa = PBXGroup;
+			children = (
+				040D4EFAAF71CA58CF5A9959 /* App */,
+				3539E94AB38AD18EAC240F07 /* Models */,
+				6E60005BE9C696C4DE46C135 /* Services */,
+				C9045651638A434ACB220E8D /* Store */,
+				4DBC49DF7D93270A1B6746F8 /* UI */,
+			);
+			path = Hedefit;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2300C3D95723D858CB4DE14B /* HedefitWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CE857AA35D081D888E45E59C /* Build configuration list for PBXNativeTarget "HedefitWidgets" */;
+			buildPhases = (
+				D09A28F21A2D841E11A8C83A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HedefitWidgets;
+			packageProductDependencies = (
+			);
+			productName = HedefitWidgets;
+			productReference = DA05552DD58259D70D856670 /* HedefitWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		48CC86AFE6C0CBB4DCFBF9E4 /* Hedefit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C25FA34E44604FAA1C323B2A /* Build configuration list for PBXNativeTarget "Hedefit" */;
+			buildPhases = (
+				8DCE90CFBF0DBB430872C6D2 /* Sources */,
+				70E62EA8ED0894441DDB853F /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1DE92EE0BF9E7C27D81596FE /* PBXTargetDependency */,
+			);
+			name = Hedefit;
+			packageProductDependencies = (
+			);
+			productName = Hedefit;
+			productReference = F67A52AEE4120947D2A1A421 /* Hedefit.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E308A22F93B6D50A2F384006 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					2300C3D95723D858CB4DE14B = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					48CC86AFE6C0CBB4DCFBF9E4 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 7E3032949C15B0FEDE8A19B6 /* Build configuration list for PBXProject "Hedefit" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 5AF680C1D761CB143FF20901;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 55B23267BD05783BECCC874F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				48CC86AFE6C0CBB4DCFBF9E4 /* Hedefit */,
+				2300C3D95723D858CB4DE14B /* HedefitWidgets */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		8DCE90CFBF0DBB430872C6D2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				369E3EC4A1F8744B412D2296 /* AppStore.swift in Sources */,
+				5EE29385FF29D1BF7296BA41 /* Components.swift in Sources */,
+				22C9084E0698B76271561825 /* FeatureViews.swift in Sources */,
+				9B06DB3BF10D80C15990B89A /* HedefitApp.swift in Sources */,
+				ED45663EC6E8C473F0733169 /* MainViews.swift in Sources */,
+				1DF3D56B0FF41CB8D03270B1 /* Models.swift in Sources */,
+				8CC50039B639762085EE64BC /* Services.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D09A28F21A2D841E11A8C83A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				16073E59302533939229F4DC /* HedefitWidgets.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1DE92EE0BF9E7C27D81596FE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2300C3D95723D858CB4DE14B /* HedefitWidgets */;
+			targetProxy = 6B904468BAB7DB29E9408557 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		01BF149C7B378A84CEB45747 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = E7CFFAFE44B5BA41870B83DC /* Config.base.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Hedefit/Hedefit.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = Hedefit/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Hedefit;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hedefit.app;
+				PRODUCT_NAME = Hedefit;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		54189F4444FCDB5A964DC676 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = E7CFFAFE44B5BA41870B83DC /* Config.base.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = HedefitWidgets/HedefitWidgets.entitlements;
+				INFOPLIST_FILE = HedefitWidgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hedefit.app.widgets;
+				PRODUCT_NAME = HedefitWidgets;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		55454C03B6A2E59A9DAA8EDC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = E7CFFAFE44B5BA41870B83DC /* Config.base.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = HedefitWidgets/HedefitWidgets.entitlements;
+				INFOPLIST_FILE = HedefitWidgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hedefit.app.widgets;
+				PRODUCT_NAME = HedefitWidgets;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		6C315B67707022880F3DBD53 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = E7CFFAFE44B5BA41870B83DC /* Config.base.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Hedefit/Hedefit.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = Hedefit/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Hedefit;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hedefit.app;
+				PRODUCT_NAME = Hedefit;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7C5EA27A54D65D94CFDF8335 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 22;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.2.11;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		B332931F4F65AA73AE67E24F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 22;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.2.11;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		7E3032949C15B0FEDE8A19B6 /* Build configuration list for PBXProject "Hedefit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7C5EA27A54D65D94CFDF8335 /* Debug */,
+				B332931F4F65AA73AE67E24F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C25FA34E44604FAA1C323B2A /* Build configuration list for PBXNativeTarget "Hedefit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6C315B67707022880F3DBD53 /* Debug */,
+				01BF149C7B378A84CEB45747 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CE857AA35D081D888E45E59C /* Build configuration list for PBXNativeTarget "HedefitWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				55454C03B6A2E59A9DAA8EDC /* Debug */,
+				54189F4444FCDB5A964DC676 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E308A22F93B6D50A2F384006 /* Project object */;
+}

@@ -65,16 +65,17 @@ import java.time.ZoneId
 import java.time.format.TextStyle
 import java.util.Locale
 
-private val GameBackground = HedefitColors.Background
-private val GameSurface = HedefitColors.Surface
-private val GameSurfaceHigh = HedefitColors.SurfaceHigh
-private val GameSurfaceHighest = HedefitColors.SurfaceHigh
-private val GameLime = HedefitColors.Lime
-private val GameLimeDim = HedefitColors.Lime.copy(alpha = .75f)
-private val GameInk = HedefitColors.TextSecondary
-private val GameHeat = HedefitColors.Warning
-private val GameText = HedefitColors.TextPrimary
-private val GameTextMuted = HedefitColors.TextSecondary
+// These must be getters. Capturing the mutable palette at class-load time made
+// the Tasks screen keep the old dark/green colors after a theme or accent
+// change while the rest of the app updated.
+private val GameSurfaceHigh get() = HedefitColors.SurfaceHigh
+private val GameSurfaceHighest get() = HedefitColors.SurfaceHigh
+private val GameLime get() = HedefitColors.Lime
+private val GameLimeDim get() = HedefitColors.Lime.copy(alpha = .75f)
+private val GameInk get() = HedefitColors.TextSecondary
+private val GameHeat get() = HedefitColors.Warning
+private val GameText get() = HedefitColors.TextPrimary
+private val GameTextMuted get() = HedefitColors.TextSecondary
 
 @Composable
 fun GameScreen(
@@ -129,7 +130,7 @@ private fun GameContent(snapshot: GamificationSnapshot, displayName: String, en:
     ) {
         item {
             Column {
-                Text(if (en) "Tasks" else "Görevler", color = GameText, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text(if (en) "Tasks" else "Görevler", color = GameText, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
                 Text(if (en) "Build strength through daily actions." else "Günlük adımlarla gücünü inşa et.", color = GameTextMuted, style = MaterialTheme.typography.labelLarge)
             }
         }

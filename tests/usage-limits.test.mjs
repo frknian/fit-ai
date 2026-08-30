@@ -15,32 +15,28 @@ test("ücretsiz kullanıcı için Fit Koç sohbeti günlük 5 mesajla sınırlı
     const request = authorizedRequest("http://localhost/x", { headers: { Authorization: `Bearer ${TEST_TOKEN}` } });
     const result = await checkAndConsumeUsage(request, "chat", TEST_USER_ID);
     assert.ok(!("error" in result));
-    assert.deepEqual(result, { allowed: true, used: 3, limit: 5, isPremium: false });
+    assert.deepEqual(result, { allowed: true, used: 3, limit: 5, isPremium: false, planTier: "free" });
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
   }
 });
 
-test("premium kullanıcı için Fit Koç sohbeti günlük 25 mesajla sınırlıdır", async () => {
+test("Pro kullanıcı için Fit Koç sohbeti günlük 50 mesajla sınırlıdır", async () => {
   const restoreEnv = withSupabaseAuthEnv();
   const previousFetch = globalThis.fetch;
   globalThis.fetch = withUsageMock({ isPremium: true, allowed: true, currentCount: 8 });
   try {
     const result = await checkAndConsumeUsage(authorizedRequest("http://localhost/x"), "chat", TEST_USER_ID);
     assert.ok(!("error" in result));
-    assert.deepEqual(result, { allowed: true, used: 8, limit: 25, isPremium: true });
+    assert.deepEqual(result, { allowed: true, used: 8, limit: 50, isPremium: true, planTier: "pro" });
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
   }
 });
 
-test("ücretli kullanıcı için AI kullanımı sınırsızdır", async () => {
-  // bkz. db/migrations/20260821_premium_unlimited_ai_usage.sql — AI maliyeti
-  // büyük ölçüde cihaz üstü çıkarımla karşılandığı için premium'da günlük
-  // sınır kaldırıldı. SQL fonksiyonu bunu effective_limit=NULL ile ifade eder;
-  // istemci tarafı bunu Number.POSITIVE_INFINITY'e çevirir.
+test("Pro kullanıcı için fotoğraf analizi günlük 8 istekle sınırlıdır", async () => {
   const restoreEnv = withSupabaseAuthEnv();
   const previousFetch = globalThis.fetch;
   globalThis.fetch = withUsageMock({ isPremium: true, allowed: true, currentCount: 8 });
@@ -48,7 +44,21 @@ test("ücretli kullanıcı için AI kullanımı sınırsızdır", async () => {
     const request = authorizedRequest("http://localhost/x");
     const result = await checkAndConsumeUsage(request, "photo", TEST_USER_ID);
     assert.ok(!("error" in result));
-    assert.deepEqual(result, { allowed: true, used: 8, limit: Number.POSITIVE_INFINITY, isPremium: true });
+    assert.deepEqual(result, { allowed: true, used: 8, limit: 8, isPremium: true, planTier: "pro" });
+  } finally {
+    globalThis.fetch = previousFetch;
+    restoreEnv();
+  }
+});
+
+test("ücretsiz kullanıcı için AI tercih hafızası günlük 2 çıkarımla sınırlıdır", async () => {
+  const restoreEnv = withSupabaseAuthEnv();
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = withUsageMock({ isPremium: false, allowed: true, currentCount: 1 });
+  try {
+    const result = await checkAndConsumeUsage(authorizedRequest("http://localhost/x"), "memory", TEST_USER_ID);
+    assert.ok(!("error" in result));
+    assert.deepEqual(result, { allowed: true, used: 1, limit: 2, isPremium: false, planTier: "free" });
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
@@ -93,7 +103,7 @@ test("birleşik RPC bulunamazsa eski iki adımlı yola (profil + increment_usage
   });
   try {
     const result = await checkAndConsumeUsage(authorizedRequest("http://localhost/x"), "chat", TEST_USER_ID);
-    assert.deepEqual(result, { allowed: true, used: 3, limit: 5, isPremium: false });
+    assert.deepEqual(result, { allowed: true, used: 3, limit: 5, isPremium: false, planTier: "free" });
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
@@ -122,7 +132,7 @@ test("eksik altyapı: normal durum — geliştirmede (NODE_ENV≠production) sı
   try {
     const result = await checkAndConsumeUsage(authorizedRequest("http://localhost/x"), "chat", TEST_USER_ID);
     assert.ok(!("error" in result));
-    assert.deepEqual(result, { allowed: true, used: 0, limit: Number.POSITIVE_INFINITY, isPremium: false });
+    assert.deepEqual(result, { allowed: true, used: 0, limit: Number.POSITIVE_INFINITY, isPremium: false, planTier: "free" });
   } finally {
     globalThis.fetch = previousFetch;
     process.env.NODE_ENV = previousNodeEnv;
@@ -163,14 +173,14 @@ test("eksik altyapı: normal durum — üretimde geçici önbellek gecikmesi TEK
       rpcCalls += 1;
       if (rpcCalls === 1) return Response.json({ code: "PGRST202", message: "function not found" }, { status: 404 });
       const body = JSON.parse(String(init?.body));
-      return Response.json({ allowed: true, current_count: 1, effective_limit: body.p_free_limit, is_premium: false });
+      return Response.json({ allowed: true, current_count: 1, effective_limit: body.p_free_limit, plan_tier: "free" });
     }
     throw new TypeError(`beklenmeyen ağ isteği: ${url}`);
   });
   try {
     const result = await checkAndConsumeUsage(authorizedRequest("http://localhost/x"), "chat", TEST_USER_ID);
     assert.ok(!("error" in result), "önbellek kendini düzelttiğinde 503 dönmemeli");
-    assert.deepEqual(result, { allowed: true, used: 1, limit: 5, isPremium: false });
+    assert.deepEqual(result, { allowed: true, used: 1, limit: 5, isPremium: false, planTier: "free" });
     assert.equal(rpcCalls, 2, "tam olarak bir yeniden deneme yapılmalı");
   } finally {
     globalThis.fetch = previousFetch;
@@ -226,7 +236,7 @@ test("eski veritabanında yazılı besin sayacı geçici olarak chat sayacına d
   try {
     const result = await checkAndConsumeUsage(authorizedRequest("http://localhost/x"), "text_nutrition", TEST_USER_ID);
     assert.deepEqual(requestedFeatures, ["text_nutrition", "chat"]);
-    assert.deepEqual(result, { allowed: true, used: 2, limit: 3, isPremium: false });
+    assert.deepEqual(result, { allowed: true, used: 2, limit: 3, isPremium: false, planTier: "free" });
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
@@ -261,14 +271,14 @@ test("haftalık AI değerlendirme ücretsiz kullanıcı için düşük limitle s
     const request = authorizedRequest("http://localhost/x");
     const result = await checkAndConsumeUsage(request, "weekly_review", TEST_USER_ID);
     assert.ok(!("error" in result));
-    assert.deepEqual(result, { allowed: false, used: 1, limit: 1, isPremium: false });
+    assert.deepEqual(result, { allowed: false, used: 1, limit: 1, isPremium: false, planTier: "free" });
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
   }
 });
 
-test("AI beslenme önerisi ücretli kullanıcı için sınırsızdır", async () => {
+test("AI beslenme önerisi Pro kullanıcı için günlük 30 istekle sınırlıdır", async () => {
   const restoreEnv = withSupabaseAuthEnv();
   const previousFetch = globalThis.fetch;
   globalThis.fetch = withUsageMock({ isPremium: true, allowed: true, currentCount: 4 });
@@ -276,7 +286,7 @@ test("AI beslenme önerisi ücretli kullanıcı için sınırsızdır", async ()
     const request = authorizedRequest("http://localhost/x");
     const result = await checkAndConsumeUsage(request, "nutrition_advice", TEST_USER_ID);
     assert.ok(!("error" in result));
-    assert.deepEqual(result, { allowed: true, used: 4, limit: Number.POSITIVE_INFINITY, isPremium: true });
+    assert.deepEqual(result, { allowed: true, used: 4, limit: 30, isPremium: true, planTier: "pro" });
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
@@ -379,41 +389,41 @@ test("refundUsage: normal durum — RPC'ye doğru feature ile tek istek atılır
   const calls = [];
   globalThis.fetch = withAuthenticatedFetch((url, init) => {
     calls.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : null });
-    if (String(url).includes("/rpc/refund_usage_counter")) return Response.json(2);
+    if (String(url).includes("/rpc/refund_usage_counter_for_user")) return Response.json(2);
     throw new TypeError(`beklenmeyen ağ isteği: ${url}`);
   });
   try {
-    await refundUsage(authorizedRequest("http://localhost/x"), "chat");
+    await refundUsage(TEST_USER_ID, "chat");
     assert.equal(calls.length, 1);
-    assert.match(calls[0].url, /\/rpc\/refund_usage_counter$/);
-    assert.deepEqual(calls[0].body, { p_feature: "chat", p_amount: 1 });
+    assert.match(calls[0].url, /\/rpc\/refund_usage_counter_for_user$/);
+    assert.deepEqual(calls[0].body, { p_user_id: TEST_USER_ID, p_feature: "chat" });
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
   }
 });
 
-test("refundUsage: edge case — refund_usage_counter migration'ı henüz yoksa sessizce hiçbir şey yapmaz (fırlamaz)", async () => {
+test("refundUsage: edge case — güvenli refund RPC migration'ı henüz yoksa sessizce hiçbir şey yapmaz", async () => {
   const restoreEnv = withSupabaseAuthEnv();
   const previousFetch = globalThis.fetch;
   globalThis.fetch = withAuthenticatedFetch((url) => {
-    if (String(url).includes("/rpc/refund_usage_counter")) return Response.json({ code: "PGRST202", message: "function not found" }, { status: 404 });
+    if (String(url).includes("/rpc/refund_usage_counter_for_user")) return Response.json({ code: "PGRST202", message: "function not found" }, { status: 404 });
     throw new TypeError(`beklenmeyen ağ isteği: ${url}`);
   });
   try {
-    await assert.doesNotReject(() => refundUsage(authorizedRequest("http://localhost/x"), "chat"));
+    await assert.doesNotReject(() => refundUsage(TEST_USER_ID, "chat"));
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
   }
 });
 
-test("refundUsage: hatalı input — jetonsuz istekte ağa hiç gitmeden sessizce döner", async () => {
+test("refundUsage: hatalı input — kullanıcı kimliği yoksa ağa gitmeden sessizce döner", async () => {
   const restoreEnv = withSupabaseAuthEnv();
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => { throw new TypeError("beklenmeyen ağ isteği"); };
   try {
-    await assert.doesNotReject(() => refundUsage(new Request("http://localhost/x"), "chat"));
+    await assert.doesNotReject(() => refundUsage("", "chat"));
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv();
@@ -427,7 +437,7 @@ test("sohbet: normal durum — AI başarıyla yanıt verince hak iade edilMEZ", 
   process.env.OPENAI_API_KEY = "test-key";
   const refundCalls = [];
   globalThis.fetch = withUsageMock({ allowed: true, currentCount: 2 }, (url) => {
-    if (String(url).includes("/rpc/refund_usage_counter")) { refundCalls.push(String(url)); return Response.json(1); }
+    if (String(url).includes("/rpc/refund_usage_counter_for_user")) { refundCalls.push(String(url)); return Response.json(1); }
     if (String(url).includes("/responses")) return Response.json(openAiResponse("Bugün dinlenme günü."));
     throw new TypeError(`beklenmeyen ağ isteği: ${url}`);
   });
@@ -450,7 +460,7 @@ test("sohbet: AI çağrısı başarısızsa günlük kota iade edilir", { concur
   process.env.OPENAI_API_KEY = "test-key";
   const refundCalls = [];
   globalThis.fetch = withUsageMock({ allowed: true, currentCount: 2 }, (url, init) => {
-    if (String(url).includes("/rpc/refund_usage_counter")) {
+    if (String(url).includes("/rpc/refund_usage_counter_for_user")) {
       refundCalls.push(init?.body ? JSON.parse(String(init.body)) : null);
       return Response.json(1);
     }
@@ -460,11 +470,12 @@ test("sohbet: AI çağrısı başarısızsa günlük kota iade edilir", { concur
   try {
     const { POST } = await import(`../app/api/chat/route.ts?test=${Date.now()}`);
     const response = await POST(authorizedRequest("http://localhost/api/chat", { method: "POST", body: JSON.stringify({ messages: [{ role: "user", text: "Bugün ne yapmalıyım?" }] }) }));
-    // AI başarısız olduğunda kota iade edilir ve istemci yeniden denemeyi
-    // doğru biçimde gösterebilsin diye hizmet 503 döner.
-    assert.equal(response.status, 503);
+    // Bulut AI başarısız olduğunda kota iade edilir; Fit Koç kullanıcıyı boşta
+    // bırakmak yerine güvenli deterministik yedek yanıtı başarıyla döndürür.
+    assert.equal(response.status, 200);
     const payload = await response.json();
-    assert.equal(payload.source, "unavailable");
+    assert.equal(payload.source, "fallback");
+    assert.match(payload.text, /antrenman|ısın|verilerin güvende/i);
     assert.equal(refundCalls.length, 1);
   } finally {
     globalThis.fetch = previousFetch;

@@ -330,11 +330,15 @@ class RouteTrackingService : Service() {
         if (store.read().paused) return START_STICKY
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2_000L)
             .setGranularity(Granularity.GRANULARITY_FINE)
-            .setWaitForAccurateLocation(true)
+            // Receive fixes immediately and filter them in onLocation. Waiting
+            // here can leave the service with no callbacks at all in dense
+            // city streets or under tree cover, which looks like broken GPS.
+            .setWaitForAccurateLocation(false)
             .setMaxUpdateAgeMillis(0L)
             .setMinUpdateDistanceMeters(2f)
             .setMinUpdateIntervalMillis(1_000L)
             .build()
+        stopLocation()
         locationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
         return START_STICKY
     }

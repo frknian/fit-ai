@@ -188,14 +188,12 @@ fun ScreenContainer(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(padding)
-            .padding(horizontal = ScreenHorizontalPadding),
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier = modifier.fillMaxSize().padding(padding),
         contentAlignment = Alignment.TopCenter,
     ) {
-        Box(Modifier.fillMaxWidth().widthIn(max = 1120.dp), content = content)
+        val horizontalPadding = LayoutPolicy.horizontalPadding(maxWidth.value.toInt()).dp
+        Box(Modifier.fillMaxWidth().padding(horizontal = horizontalPadding).widthIn(max = 1120.dp), content = content)
     }
 }
 
@@ -238,9 +236,11 @@ fun PrimaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
+    enabled: Boolean = true,
 ) {
     Button(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier.fillMaxWidth().height(56.dp),
         shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime),

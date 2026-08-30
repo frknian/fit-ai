@@ -61,6 +61,18 @@ function outputTokens(request: AiRequest) {
   return Math.max(request.maxOutputTokens ?? 0, request.minimumOutputTokens ?? MIN_OUTPUT_TOKENS);
 }
 
+function providerOptionsForModel(request: { providerOptions?: AiRequest["providerOptions"] }, model: string) {
+  if (!/^(gpt-5|o\d)/i.test(model)) return request.providerOptions;
+  return {
+    ...request.providerOptions,
+    openai: {
+      ...(request.providerOptions?.openai as Record<string, unknown> | undefined),
+      reasoningEffort: "low",
+      textVerbosity: "low",
+    },
+  };
+}
+
 /**
  * Sağlayıcıya özgü tuhaflıklar SADECE burada.
  *
@@ -115,14 +127,7 @@ export const openAiCompatibleProvider: AIProvider = {
         temperature: undefined,
         // GPT-5.6'da düşük düşünme bütçesi hem yanıtın görünür kısmına alan
         // bırakır hem de Fit Koç'un kısa sorularda beklemesini azaltır.
-        providerOptions: {
-          ...request.providerOptions,
-          openai: {
-            ...(request.providerOptions?.openai as Record<string, unknown> | undefined),
-            reasoningEffort: "low",
-            textVerbosity: "low",
-          },
-        },
+        providerOptions: providerOptionsForModel(request, model),
         abortSignal: request.abortSignal,
     });
     return {
@@ -149,14 +154,7 @@ export const openAiCompatibleProvider: AIProvider = {
         schema: request.schema,
         maxOutputTokens: outputTokens(request),
         temperature: undefined,
-        providerOptions: {
-          ...request.providerOptions,
-          openai: {
-            ...(request.providerOptions?.openai as Record<string, unknown> | undefined),
-            reasoningEffort: "low",
-            textVerbosity: "low",
-          },
-        },
+        providerOptions: providerOptionsForModel(request, model),
         abortSignal: request.abortSignal,
     });
     return {

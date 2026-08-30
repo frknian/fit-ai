@@ -38,6 +38,7 @@ object HedefitShortcuts {
         val (label, extra) = when (type) {
             "route" -> "Hedefit Rota" to "open_route"
             "workout" -> "Antrenmanı Aç" to "open_workout"
+            "activity" -> "Spor Ekle" to "open_activity"
             else -> "Öğün Ekle" to "open_nutrition"
         }
         val launch = Intent(context, MainActivity::class.java).setAction(Intent.ACTION_VIEW).putExtra(extra, true)

@@ -22,6 +22,9 @@ import com.hedefit.app.data.model.WorkoutProgramData
 import com.hedefit.app.data.model.RouteActivityData
 import com.hedefit.app.data.model.WorkoutExercisePerformanceData
 import com.hedefit.app.data.model.WorkoutSetPerformanceData
+import com.hedefit.app.data.model.ManualActivityInput
+import com.hedefit.app.data.model.estimateManualActivityEnergy
+import com.hedefit.app.data.model.manualActivityTypes
 import com.hedefit.app.data.offline.OfflineQueueStore
 import com.hedefit.app.data.offline.OfflineSyncScheduler
 import com.hedefit.app.data.offline.workoutOfflinePayload
@@ -83,6 +86,8 @@ data class MainUiState(
     val foodSearchBusy: Boolean = false,
     val foodSearchResults: List<FoodSearchData> = emptyList(),
     val foodSearchQuery: String? = null,
+    val photoNutritionBusy: Boolean = false,
+    val photoNutritionResults: List<com.hedefit.app.data.model.NutritionEstimateData> = emptyList(),
     val exerciseLibraryBusy: Boolean = false,
     val exerciseLibrary: List<ExerciseCatalogData> = emptyList(),
     val offlinePendingCount: Int = 0,
@@ -209,6 +214,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshSteps() {
+        if (_state.value.dashboard == null) return
+        viewModelScope.launch { stepRepository.refresh() }
+    }
+
     fun syncGamificationPreferences(stepGoal: Int, waterGoalMl: Int, weeklyActivityGoal: Int, timezone: String) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.syncGamificationPreferences(stepGoal, waterGoalMl, weeklyActivityGoal, timezone)
@@ -267,6 +277,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun recordManualActivity(input: ManualActivityInput, language: String, onSaved: () -> Unit) {
+        if (_state.value.workoutSaving) return
+        val dashboard = _state.value.dashboard ?: return
+        val activity = manualActivityTypes.firstOrNull { it.key == input.activityKey } ?: return
+        val estimate = estimateManualActivityEnergy(activity, input, dashboard.profile.weightKg)
+        val calories = estimate.activeCalories
+        viewModelScope.launch {
+            _state.update { it.copy(workoutSaving = true) }
+            runCatching { repository.recordManualActivity(input, calories) }
+                .onSuccess { session ->
+                    _state.update { current -> current.copy(
+                        workoutSaving = false,
+                        dashboard = current.dashboard?.copy(sessions = listOf(session) + current.dashboard.sessions),
+                        transientMessage = if (language == "en") "${activity.titleEn} saved: $calories kcal burned." else "${activity.titleTr} kaydedildi: $calories kcal yakıldı.",
+                    ) }
+                    onSaved()
+                }
+                .onFailure { error -> _state.update { it.copy(workoutSaving = false, transientMessage = friendlyError(error)) } }
+        }
+    }
+
     private fun adaptPlan(feedback: WorkoutFeedbackData) {
         val profile = _state.value.dashboard?.profile ?: return
         viewModelScope.launch {
@@ -284,7 +315,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.healthBusy) return
         viewModelScope.launch {
             if (checkPermissionFirst) {
-                val connected = runCatching { healthConnect.hasPermissions() }.getOrDefault(false)
+                val connected = runCatching { healthConnect.hasStepPermission() }.getOrDefault(false)
                 _state.update { it.copy(healthConnected = connected) }
             }
             val stepReading = stepRepository.refresh()
@@ -296,6 +327,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     dashboard = current.dashboard?.copy(steps = stepReading.count, activeCalories = stepReading.count / 25),
                     transientMessage = if (showMessage && stepReading.source == StepSource.UNAVAILABLE) "Bu cihaz otomatik adım takibini desteklemiyor. Health Connect bağlayarak adımlarını takip edebilirsin." else current.transientMessage,
                 ) }
+                return@launch
+            }
+            _state.update { current -> current.copy(
+                healthConnected = true,
+                healthBusy = false,
+                stepSource = stepReading.source,
+                dashboard = current.dashboard?.copy(steps = stepReading.count),
+            ) }
+            if (!runCatching { healthConnect.hasPermissions() }.getOrDefault(false)) {
+                if (showMessage) _state.update { it.copy(transientMessage = "Samsung Health adımları güncellendi. Uyku, kalori ve kilo için ek Health Connect izinleri gerekir.") }
                 return@launch
             }
             _state.update { it.copy(healthBusy = true) }
@@ -326,7 +367,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun checkHealthConnect() {
         viewModelScope.launch {
-            val connected = runCatching { healthConnect.hasPermissions() }.getOrDefault(false)
+            val connected = runCatching { healthConnect.hasStepPermission() }.getOrDefault(false)
             _state.update { it.copy(healthConnected = connected) }
             stepRepository.refresh()
         }
@@ -343,6 +384,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching { repository.searchFoods(query, locale) }
                 .onSuccess { results -> _state.update { it.copy(foodSearchBusy = false, foodSearchResults = results, foodSearchQuery = query.trim()) } }
                 .onFailure { error -> _state.update { it.copy(foodSearchBusy = false, transientMessage = friendlyError(error)) } }
+        }
+    }
+
+    fun analyzeNutritionPhoto(jpegBytes: ByteArray) {
+        if (_state.value.photoNutritionBusy) return
+        viewModelScope.launch {
+            _state.update { it.copy(photoNutritionBusy = true, photoNutritionResults = emptyList()) }
+            runCatching { repository.analyzeNutritionPhoto(jpegBytes) }
+                .onSuccess { results -> _state.update { it.copy(photoNutritionBusy = false, photoNutritionResults = results) } }
+                .onFailure { error -> _state.update { it.copy(photoNutritionBusy = false, transientMessage = friendlyError(error)) } }
+        }
+    }
+
+    fun clearPhotoNutritionResults() = _state.update { it.copy(photoNutritionResults = emptyList()) }
+
+    fun savePhotoNutrition(items: List<com.hedefit.app.data.model.NutritionEstimateData>, meal: String) {
+        if (_state.value.nutritionBusy || items.isEmpty()) return
+        viewModelScope.launch {
+            _state.update { it.copy(nutritionBusy = true) }
+            runCatching { repository.savePhotoNutrition(items, meal) }
+                .onSuccess { logs -> _state.update { current -> current.copy(
+                    nutritionBusy = false, photoNutritionResults = emptyList(),
+                    dashboard = current.dashboard?.copy(nutritionLogs = logs + current.dashboard.nutritionLogs),
+                    nutritionViewingLogs = if (current.nutritionViewingDate == LocalDate.now()) logs + current.nutritionViewingLogs else current.nutritionViewingLogs,
+                    nutritionHistory = logs + current.nutritionHistory,
+                    transientMessage = "Fotoğraftaki ${logs.size} besin öğüne eklendi.",
+                ) } }
+                .onFailure { error -> _state.update { it.copy(nutritionBusy = false, transientMessage = friendlyError(error)) } }
         }
     }
 
@@ -416,6 +485,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun repeatFavorite(favorite: FavoriteMealData) = viewModelScope.launch {
         _state.update { it.copy(nutritionBusy = true) }
         runCatching { repository.repeatFavorite(favorite) }.onSuccess { log -> _state.update { current -> current.copy(nutritionBusy = false, dashboard = current.dashboard?.copy(nutritionLogs = listOf(log) + current.dashboard.nutritionLogs), nutritionViewingLogs = if (current.nutritionViewingDate == LocalDate.now()) listOf(log) + current.nutritionViewingLogs else current.nutritionViewingLogs, nutritionHistory = listOf(log) + current.nutritionHistory, transientMessage = "Favori öğün tekrar eklendi.") } }
+            .onFailure { error -> _state.update { it.copy(nutritionBusy = false, transientMessage = friendlyError(error)) } }
+    }
+
+    fun addMealPlanItem(food: com.hedefit.app.data.model.FoodSearchData, grams: Double, date: LocalDate, mealType: String) = viewModelScope.launch {
+        if (_state.value.nutritionBusy) return@launch
+        _state.update { it.copy(nutritionBusy = true) }
+        runCatching { repository.addMealPlanItem(food, grams, date, mealType) }
+            .onSuccess { item -> _state.update { current -> current.copy(
+                nutritionBusy = false,
+                dashboard = current.dashboard?.copy(mealPlanItems = (current.dashboard.mealPlanItems + item).sortedBy { it.plannedDate }),
+                transientMessage = "Öğün haftalık plana eklendi.",
+            ) } }
+            .onFailure { error -> _state.update { it.copy(nutritionBusy = false, transientMessage = friendlyError(error)) } }
+    }
+
+    fun toggleMealPlanItem(item: com.hedefit.app.data.model.MealPlanItemData, completed: Boolean) = viewModelScope.launch {
+        if (_state.value.nutritionBusy) return@launch
+        _state.update { current -> current.copy(
+            nutritionBusy = true,
+            dashboard = current.dashboard?.copy(mealPlanItems = current.dashboard.mealPlanItems.map { if (it.id == item.id) it.copy(completed = completed) else it }),
+        ) }
+        runCatching { repository.setMealPlanCompleted(item, completed) }
+            .onSuccess { saved -> _state.update { current -> current.copy(
+                nutritionBusy = false,
+                dashboard = current.dashboard?.copy(mealPlanItems = current.dashboard.mealPlanItems.map { if (it.id == saved.id) saved else it }),
+            ) } }
+            .onFailure { error -> _state.update { current -> current.copy(
+                nutritionBusy = false,
+                dashboard = current.dashboard?.copy(mealPlanItems = current.dashboard.mealPlanItems.map { if (it.id == item.id) item else it }),
+                transientMessage = friendlyError(error),
+            ) } }
+    }
+
+    fun removeMealPlanItem(item: com.hedefit.app.data.model.MealPlanItemData) = viewModelScope.launch {
+        if (_state.value.nutritionBusy) return@launch
+        _state.update { it.copy(nutritionBusy = true) }
+        runCatching { repository.removeMealPlanItem(item.id) }
+            .onSuccess { _state.update { current -> current.copy(
+                nutritionBusy = false,
+                dashboard = current.dashboard?.copy(mealPlanItems = current.dashboard.mealPlanItems.filterNot { it.id == item.id }),
+            ) } }
             .onFailure { error -> _state.update { it.copy(nutritionBusy = false, transientMessage = friendlyError(error)) } }
     }
 
@@ -565,6 +675,55 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .onSuccess { program -> _state.update { state -> state.copy(dashboard = state.dashboard?.let { data -> data.copy(workouts = emptyList(), workoutPrograms = withActiveProgram(data.workoutPrograms, program)) }, transientMessage = if (locale == "en") "Custom program created." else "Kendi programın oluşturuldu.") }; onComplete() }
                 .onFailure { error -> _state.update { it.copy(transientMessage = friendlyError(error)) } }
         }
+    }
+
+    fun addPushPullTemplate(key: String, locale: String = "tr") {
+        if (_state.value.planGenerating) return
+        val en = locale == "en"
+        val definitions = pushPullTemplate(key, en) ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(planGenerating = true) }
+            runCatching { repository.saveProgram(definitions.first, "push_pull_template", definitions.first, definitions.second) }
+                .onSuccess { program -> _state.update { current -> current.copy(
+                    planGenerating = false,
+                    dashboard = current.dashboard?.let { data -> data.copy(workouts = program.exercises, workoutPrograms = withActiveProgram(data.workoutPrograms, program)) },
+                    transientMessage = if (en) "${program.name} was added and activated." else "${program.name} eklendi ve aktif edildi.",
+                ) } }
+                .onFailure { error -> _state.update { it.copy(planGenerating = false, transientMessage = friendlyError(error)) } }
+        }
+    }
+
+    private fun pushPullTemplate(key: String, en: Boolean): Pair<String, List<com.hedefit.app.data.model.WorkoutExerciseData>>? {
+        fun exercise(id: String, tr: String, english: String, area: String, sets: Int, reps: String, rest: Int) = com.hedefit.app.data.model.WorkoutExerciseData(id, if (en) english else tr, area, sets, reps, rest)
+        val pushA = listOf(
+            exercise("barbell-bench-press", "Barbell Bench Press", "Barbell Bench Press", if (en) "Chest" else "Göğüs", 4, "6–8", 120),
+            exercise("incline-dumbbell-press", "Incline Dumbbell Press", "Incline Dumbbell Press", if (en) "Upper chest" else "Üst göğüs", 3, "8–12", 90),
+            exercise("seated-dumbbell-press", "Seated Dumbbell Press", "Seated Dumbbell Press", if (en) "Shoulders" else "Omuz", 3, "8–12", 90),
+            exercise("dumbbell-lateral-raise", "Dumbbell Lateral Raise", "Dumbbell Lateral Raise", if (en) "Shoulders" else "Omuz", 3, "12–15", 60),
+            exercise("cable-rope-triceps-pushdown", "Cable Rope Triceps Pushdown", "Cable Rope Triceps Pushdown", if (en) "Triceps" else "Arka kol", 3, "10–15", 60),
+        )
+        val pushB = listOf(
+            exercise("barbell-shoulder-press", "Barbell Shoulder Press", "Barbell Shoulder Press", if (en) "Shoulders" else "Omuz", 4, "6–8", 120),
+            exercise("dumbbell-bench-press", "Dumbbell Bench Press", "Dumbbell Bench Press", if (en) "Chest" else "Göğüs", 3, "8–12", 90),
+            exercise("cable-crossover", "Cable Crossover", "Cable Crossover", if (en) "Chest" else "Göğüs", 3, "12–15", 60),
+            exercise("dumbbell-lateral-raise-b", "Dumbbell Lateral Raise", "Dumbbell Lateral Raise", if (en) "Shoulders" else "Omuz", 4, "12–20", 60),
+            exercise("overhead-cable-triceps-extension", "Overhead Cable Triceps Extension", "Overhead Cable Triceps Extension", if (en) "Triceps" else "Arka kol", 3, "10–15", 60),
+        )
+        val pullA = listOf(
+            exercise("pullups", "Pull-up", "Pull-up", if (en) "Back" else "Sırt", 4, "6–10", 120),
+            exercise("wide-grip-lat-pulldown", "Wide-Grip Lat Pulldown", "Wide-Grip Lat Pulldown", if (en) "Back" else "Sırt", 3, "8–12", 90),
+            exercise("seated-cable-row", "Seated Cable Row", "Seated Cable Row", if (en) "Back" else "Sırt", 3, "8–12", 90),
+            exercise("face-pull", "Face Pull", "Face Pull", if (en) "Rear delts" else "Arka omuz", 3, "12–15", 60),
+            exercise("incline-dumbbell-curl", "Incline Dumbbell Curl", "Incline Dumbbell Curl", if (en) "Biceps" else "Ön kol", 3, "10–15", 60),
+        )
+        val pullB = listOf(
+            exercise("barbell-row", "Barbell Row", "Barbell Row", if (en) "Back" else "Sırt", 4, "6–8", 120),
+            exercise("close-grip-lat-pulldown", "Close-Grip Lat Pulldown", "Close-Grip Lat Pulldown", if (en) "Back" else "Sırt", 3, "8–12", 90),
+            exercise("chest-supported-dumbbell-row", "Chest-Supported Dumbbell Row", "Chest-Supported Dumbbell Row", if (en) "Back" else "Sırt", 3, "8–12", 90),
+            exercise("reverse-pec-deck", "Reverse Pec Deck", "Reverse Pec Deck", if (en) "Rear delts" else "Arka omuz", 3, "12–15", 60),
+            exercise("hammer-curl", "Hammer Curl", "Hammer Curl", if (en) "Biceps" else "Ön kol", 3, "10–15", 60),
+        )
+        return when (key) { "push_a" -> (if (en) "Push A" else "İtiş A") to pushA; "push_b" -> (if (en) "Push B" else "İtiş B") to pushB; "pull_a" -> (if (en) "Pull A" else "Çekiş A") to pullA; "pull_b" -> (if (en) "Pull B" else "Çekiş B") to pullB; else -> null }
     }
 
     fun activateProgram(program: WorkoutProgramData) {

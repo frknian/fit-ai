@@ -10,6 +10,7 @@ import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.records.metadata.DataOrigin
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Instant
@@ -25,8 +26,10 @@ data class HealthSnapshot(
 )
 
 class HealthConnectManager(private val context: Context) {
+    val stepPermission = HealthPermission.getReadPermission(StepsRecord::class)
+
     val permissions = setOf(
-        HealthPermission.getReadPermission(StepsRecord::class),
+        stepPermission,
         HealthPermission.getReadPermission(SleepSessionRecord::class),
         HealthPermission.getReadPermission(WeightRecord::class),
         HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
@@ -39,6 +42,18 @@ class HealthConnectManager(private val context: Context) {
 
     suspend fun hasPermissions(): Boolean = sdkStatus() == HealthConnectClient.SDK_AVAILABLE && client.permissionController.getGrantedPermissions().containsAll(permissions)
 
+    suspend fun hasStepPermission(): Boolean =
+        sdkStatus() == HealthConnectClient.SDK_AVAILABLE &&
+            client.permissionController.getGrantedPermissions().contains(stepPermission)
+
+    suspend fun readTodaySteps(): Int {
+        check(sdkStatus() == HealthConnectClient.SDK_AVAILABLE) { "Health Connect bu cihazda kullanılamıyor." }
+        check(hasStepPermission()) { "Health Connect adım izni verilmedi." }
+        val zone = ZoneId.systemDefault()
+        val start = LocalDate.now(zone).atStartOfDay(zone).toInstant()
+        return aggregatePreferredSteps(start, Instant.now())
+    }
+
     suspend fun readToday(): HealthSnapshot {
         check(sdkStatus() == HealthConnectClient.SDK_AVAILABLE) { "Health Connect bu cihazda kullanılamıyor." }
         check(hasPermissions()) { "Health Connect izinleri verilmedi." }
@@ -46,12 +61,13 @@ class HealthConnectManager(private val context: Context) {
         val date = LocalDate.now(zone)
         val start = date.atStartOfDay(zone).toInstant()
         val end = Instant.now()
-        val aggregate = client.aggregate(
+        val activeCalories = client.aggregate(
             AggregateRequest(
-                metrics = setOf(StepsRecord.COUNT_TOTAL, ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL),
+                metrics = setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL),
                 timeRangeFilter = TimeRangeFilter.between(start, end),
             ),
         )
+        val steps = aggregatePreferredSteps(start, end)
         val sleepStart = date.minusDays(1).atTime(12, 0).atZone(zone).toInstant()
         val sleeps = client.readRecords(
             ReadRecordsRequest(SleepSessionRecord::class, TimeRangeFilter.between(sleepStart, end), ascendingOrder = false, pageSize = 20),
@@ -61,11 +77,38 @@ class HealthConnectManager(private val context: Context) {
         ).records
         val sleepMinutes = sleeps.sumOf { java.time.Duration.between(it.startTime, it.endTime).toMinutes() }.toInt().coerceIn(0, 1_440)
         return HealthSnapshot(
-            steps = (aggregate[StepsRecord.COUNT_TOTAL] ?: 0L).toInt().coerceAtLeast(0),
-            activeCalories = (aggregate[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories ?: 0.0).toInt().coerceAtLeast(0),
+            steps = steps,
+            activeCalories = (activeCalories[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories ?: 0.0).toInt().coerceAtLeast(0),
             sleepMinutes = sleepMinutes,
             weightKg = weights.firstOrNull()?.weight?.inKilograms,
             date = date,
         )
     }
+
+    private suspend fun aggregatePreferredSteps(start: Instant, end: Instant): Int {
+        val timeRange = TimeRangeFilter.between(start, end)
+        val samsungSteps = client.aggregate(
+            AggregateRequest(
+                metrics = setOf(StepsRecord.COUNT_TOTAL),
+                timeRangeFilter = timeRange,
+                dataOriginFilter = setOf(DataOrigin(SAMSUNG_HEALTH_PACKAGE)),
+            ),
+        )[StepsRecord.COUNT_TOTAL]
+        val allSteps = if (samsungSteps == null) {
+            client.aggregate(
+                AggregateRequest(
+                    metrics = setOf(StepsRecord.COUNT_TOTAL),
+                    timeRangeFilter = timeRange,
+                ),
+            )[StepsRecord.COUNT_TOTAL]
+        } else null
+        return preferredHealthStepCount(samsungSteps, allSteps)
+    }
+
+    private companion object {
+        const val SAMSUNG_HEALTH_PACKAGE = "com.sec.android.app.shealth"
+    }
 }
+
+internal fun preferredHealthStepCount(samsungSteps: Long?, allSteps: Long?): Int =
+    (samsungSteps ?: allSteps ?: 0L).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()

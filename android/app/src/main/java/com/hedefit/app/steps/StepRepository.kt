@@ -43,8 +43,8 @@ fun preferredStepSource(healthConnectAvailable: Boolean, hasCounter: Boolean, ha
 }
 
 private class HealthConnectStepDataSource(private val health: HealthConnectManager) {
-    suspend fun isAvailable(): Boolean = health.hasPermissions()
-    suspend fun readToday(): Int = health.readToday().steps.coerceAtLeast(0)
+    suspend fun isAvailable(): Boolean = health.hasStepPermission()
+    suspend fun readToday(): Int = health.readTodaySteps().coerceAtLeast(0)
 }
 
 /**

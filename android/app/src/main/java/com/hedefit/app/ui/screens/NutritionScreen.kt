@@ -1,5 +1,13 @@
 package com.hedefit.app.ui.screens
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +35,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.EggAlt
@@ -53,6 +63,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
@@ -61,6 +72,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +82,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import com.hedefit.app.ui.components.HedefitCard
 import com.hedefit.app.ui.components.MacroBar
 import com.hedefit.app.ui.components.OutlineAction
@@ -84,7 +97,15 @@ import com.hedefit.app.data.model.NutritionGoalData
 import com.hedefit.app.data.model.NutritionLogData
 import com.hedefit.app.data.model.FoodSearchData
 import com.hedefit.app.data.model.FavoriteMealData
+import com.hedefit.app.data.model.ProfileData
+import com.hedefit.app.data.model.MealPlanItemData
+import com.hedefit.app.data.model.NutritionEstimateData
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -121,10 +142,30 @@ fun NutritionScreen(
     dateLoading: Boolean = false,
     onSelectDate: (LocalDate) -> Unit = {},
     onLoadHistory: () -> Unit = {},
+    onAddMealPlanItem: (FoodSearchData, Double, LocalDate, String) -> Unit = { _, _, _, _ -> },
+    onToggleMealPlanItem: (MealPlanItemData, Boolean) -> Unit = { _, _ -> },
+    onRemoveMealPlanItem: (MealPlanItemData) -> Unit = {},
+    photoBusy: Boolean = false,
+    photoResults: List<NutritionEstimateData> = emptyList(),
+    onAnalyzePhoto: (ByteArray) -> Unit = {},
+    onClearPhotoResults: () -> Unit = {},
+    onSavePhotoResults: (List<NutritionEstimateData>, String) -> Unit = { _, _ -> },
 ) {
     val en = language == "en"
     var showFoodSearch by remember { mutableStateOf(false) }
     var showCalendar by remember { mutableStateOf(false) }
+    var showPhotoSource by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var cameraPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var cameraPhotoFile by remember { mutableStateOf<File?>(null) }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch { prepareMealPhoto(context, uri)?.let(onAnalyzePhoto) }
+    }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val uri = cameraPhotoUri
+        if (saved && uri != null) scope.launch { prepareMealPhoto(context, uri)?.let(onAnalyzePhoto); cameraPhotoFile?.delete(); cameraPhotoFile = null; cameraPhotoUri = null }
+    }
     LaunchedEffect(openMealComposer) {
         if (openMealComposer) {
             showFoodSearch = true
@@ -145,7 +186,8 @@ fun NutritionScreen(
             item { DateSelector(selectedDate, en, onSelectDate) }
             if (!canLog) item { HistoricalDayNotice(selectedDate, en) }
             item { CalorieCard(logs, data?.nutritionGoal ?: NutritionGoalData(), if (canLog) data?.activeCalories ?: 0 else 0, en) }
-            item { MicroNutrientCard(logs, en) }
+            item { MicroNutrientCard(logs, data?.profile, en) }
+            item { WeeklyMealPlanner(data?.mealPlanItems.orEmpty(), foodResults, foodSearchBusy, foodSearchQuery, busy, en, onSearchFoods, onAddMealPlanItem, onToggleMealPlanItem, onRemoveMealPlanItem) }
             item {
                 MealEntryCard(
                     en = en,
@@ -156,6 +198,7 @@ fun NutritionScreen(
                     searchedQuery = foodSearchQuery,
                     onSearch = onSearchFoods,
                     onOpenCatalog = { showFoodSearch = true },
+                    onOpenPhoto = { showPhotoSource = true },
                     onAddWithAi = onAddWithAi,
                     onAddCatalog = onAddCatalogFood,
                     recentLogs = logs,
@@ -172,6 +215,23 @@ fun NutritionScreen(
 
     if (showFoodSearch) FoodSearchDialog(foodResults, foodSearchBusy, foodSearchQuery, busy, en, onDismiss = { showFoodSearch = false }, onSearch = onSearchFoods, onAdd = { item, amount, type -> onAddCatalogFood(item, amount, type); showFoodSearch = false })
     if (showCalendar) NutritionCalendarDialog(selectedDate, (historyLogs + logs).distinctBy { it.id }, en, dateLoading, onDismiss = { showCalendar = false }, onSelect = { onSelectDate(it); showCalendar = false })
+    if (showPhotoSource) AlertDialog(
+        onDismissRequest = { showPhotoSource = false },
+        title = { Text(if (en) "Analyze meal photo" else "Öğün fotoğrafını analiz et") },
+        text = { Text(if (en) "Include the whole plate and, if possible, a fork or card for scale. Portions remain estimates." else "Tabağın tamamını ve mümkünse ölçek için çatal veya kartı kadraja al. Porsiyonlar yine tahminidir.") },
+        confirmButton = { TextButton(onClick = {
+            showPhotoSource = false
+            val directory = File(context.cacheDir, "meal-photos").apply { mkdirs() }
+            val file = File.createTempFile("meal-", ".jpg", directory)
+            cameraPhotoFile = file
+            val photoUri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+            cameraPhotoUri = photoUri
+            cameraLauncher.launch(photoUri)
+        }) { Icon(Icons.Default.AddAPhoto, null); Spacer(Modifier.width(5.dp)); Text(if (en) "Camera" else "Kamera") } },
+        dismissButton = { TextButton(onClick = { showPhotoSource = false; galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Icon(Icons.Default.PhotoLibrary, null); Spacer(Modifier.width(5.dp)); Text(if (en) "Gallery" else "Galeri") } },
+    )
+    if (photoBusy) AlertDialog(onDismissRequest = {}, title = { Text(if (en) "Analyzing meal…" else "Öğün analiz ediliyor…") }, text = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) { CircularProgressIndicator(color = HedefitColors.Lime); Text(if (en) "Foods, portions and nutrients are being estimated." else "Besinler, porsiyonlar ve değerler tahmin ediliyor.") } }, confirmButton = {})
+    if (photoResults.isNotEmpty()) PhotoNutritionReviewDialog(photoResults, busy, en, onClearPhotoResults, onSavePhotoResults)
 }
 
 @Composable
@@ -184,6 +244,7 @@ private fun MealEntryCard(
     searchedQuery: String?,
     onSearch: (String) -> Unit,
     onOpenCatalog: () -> Unit,
+    onOpenPhoto: () -> Unit,
     onAddWithAi: (String, Double, String) -> Unit,
     onAddCatalog: (FoodSearchData, Double, String) -> Unit,
     recentLogs: List<NutritionLogData>,
@@ -229,6 +290,10 @@ private fun MealEntryCard(
                 }
                 IconButton(enabled = enabled, onClick = onOpenCatalog, modifier = Modifier.background(HedefitColors.SurfaceHigh, CircleShape)) {
                     Icon(Icons.Default.MenuBook, if (en) "Food catalogue" else "Besin kataloğu", tint = HedefitColors.Lime)
+                }
+                Spacer(Modifier.width(6.dp))
+                IconButton(enabled = enabled && !busy, onClick = onOpenPhoto, modifier = Modifier.background(HedefitColors.Lime.copy(alpha = .16f), CircleShape)) {
+                    Icon(Icons.Default.AddAPhoto, if (en) "Analyze meal photo" else "Fotoğrafla öğün analiz et", tint = HedefitColors.Lime)
                 }
                 Spacer(Modifier.width(6.dp))
                 IconButton(enabled = enabled, onClick = { showRecipe = true }, modifier = Modifier.background(HedefitColors.SurfaceHigh, CircleShape)) {
@@ -370,9 +435,10 @@ private fun MealEntryCard(
             ) { Text(if (!enabled) (if (en) "Past day" else "Geçmiş gün") else if (busy) (if (en) "Adding…" else "Ekleniyor…") else if (en) "Add to ${mealLabel(meal, true)}" else "${mealLabel(meal, false)} öğününe ekle") }
         }
     }
-    if (showRecipe) RecipeComposerDialog(en, busy, meal, onDismiss = { showRecipe = false }) { recipe, grams ->
+    if (showRecipe) RecipeComposerDialog(en, busy, meal, onDismiss = { showRecipe = false }) { recipe, grams, selectedMeal ->
         showRecipe = false
-        onAddWithAi(recipe, grams, meal)
+        meal = selectedMeal
+        onAddWithAi(recipe, grams, selectedMeal)
     }
 }
 
@@ -417,12 +483,13 @@ private fun amountStep(unit: String) = if (unit == "adet" || unit == "porsiyon")
 private fun Double.cleanNumber(): String = if (this % 1.0 == 0.0) toInt().toString() else "%.1f".format(Locale.US, this)
 
 @Composable
-private fun RecipeComposerDialog(en: Boolean, busy: Boolean, meal: String, onDismiss: () -> Unit, onAnalyze: (String, Double) -> Unit) {
+private fun RecipeComposerDialog(en: Boolean, busy: Boolean, meal: String, onDismiss: () -> Unit, onAnalyze: (String, Double, String) -> Unit) {
     var title by remember { mutableStateOf("") }
     var ingredients by remember { mutableStateOf("") }
     var grams by remember { mutableStateOf("") }
     var servings by remember { mutableStateOf("1") }
     var eatenServings by remember { mutableStateOf("1") }
+    var selectedMeal by remember(meal) { mutableStateOf(meal) }
     val totalGrams = grams.replace(',', '.').toDoubleOrNull()
     val totalServings = servings.toIntOrNull()
     val eaten = eatenServings.replace(',', '.').toDoubleOrNull()
@@ -439,6 +506,12 @@ private fun RecipeComposerDialog(en: Boolean, busy: Boolean, meal: String, onDis
                     OutlinedTextField(servings, { servings = it.filter(Char::isDigit).take(2) }, Modifier.weight(1f), label = { Text(if (en) "Recipe servings" else "Tarif porsiyonu") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     OutlinedTextField(eatenServings, { eatenServings = it.filter { c -> c.isDigit() || c == '.' || c == ',' }.take(4) }, Modifier.weight(1f), label = { Text(if (en) "You ate" else "Yediğin porsiyon") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 }
+                Text(if (en) "Save to meal" else "Kaydedilecek öğün", style = MaterialTheme.typography.labelLarge)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(listOf("Kahvaltı", "Öğle yemeği", "Akşam yemeği", "Atıştırmalık")) { type ->
+                        FilterChip(selected = selectedMeal == type, onClick = { selectedMeal = type }, label = { Text(mealLabel(type, en)) })
+                    }
+                }
                 Text(if (en) "Each ingredient is calculated for the whole recipe, then divided by servings. Recipes remain editable after saving." else "Malzemeler önce toplam tarif için hesaplanır, sonra porsiyona bölünür. Kaydettikten sonra da düzenleyebilirsin.", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
             }
         },
@@ -446,9 +519,9 @@ private fun RecipeComposerDialog(en: Boolean, busy: Boolean, meal: String, onDis
         confirmButton = {
             Button(
                 enabled = !busy && title.trim().length >= 2 && ingredients.trim().length >= 4 && totalGrams != null && totalGrams in 1.0..5000.0 && totalServings != null && totalServings in 1..30 && eaten != null && eaten > 0 && eaten <= totalServings,
-                onClick = { onAnalyze("${title.trim()}: ${ingredients.trim()}. Toplam tarif: ${totalGrams!!.cleanNumber()} g, $totalServings porsiyon. Kaydedilen miktar: ${eaten!!.cleanNumber()} porsiyon.", totalGrams * eaten / totalServings!!) },
+                onClick = { onAnalyze("${title.trim()}: ${ingredients.trim()}. Toplam tarif: ${totalGrams!!.cleanNumber()} g, $totalServings porsiyon. Kaydedilen miktar: ${eaten!!.cleanNumber()} porsiyon.", totalGrams * eaten / totalServings!!, selectedMeal) },
                 colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime),
-            ) { Text(if (busy) (if (en) "Analyzing…" else "Analiz ediliyor…") else if (en) "Analyze recipe" else "Tarifi analiz et") }
+            ) { Text(if (busy) (if (en) "Saving…" else "Kaydediliyor…") else if (en) "Calculate and save" else "Hesapla ve öğüne kaydet") }
         },
     )
 }
@@ -757,7 +830,7 @@ private fun NutritionCalendarDialog(
 }
 
 @Composable
-private fun MicroNutrientCard(logs: List<NutritionLogData>, en: Boolean) {
+private fun MicroNutrientCard(logs: List<NutritionLogData>, profile: ProfileData?, en: Boolean) {
     val fiber = logs.sumOf { it.fiber }
     val sugar = logs.sumOf { it.sugar }
     val sodium = logs.sumOf { it.sodiumMg }
@@ -765,18 +838,29 @@ private fun MicroNutrientCard(logs: List<NutritionLogData>, en: Boolean) {
     val calcium = logs.sumOf { it.calciumMg }
     val iron = logs.sumOf { it.ironMg }
     val vitaminC = logs.sumOf { it.vitaminCMg }
+    val age = profile?.age ?: 30
+    val normalizedGender = profile?.gender.orEmpty().lowercase(Locale("tr"))
+    val female = listOf("kadın", "kadin", "female", "woman").any(normalizedGender::contains)
+    val male = listOf("erkek", "male", "man").any(normalizedGender::contains)
+    val fiberTarget = when { age > 50 && !male -> 21; age > 50 -> 30; male -> 38; else -> 25 }
+    val potassiumTarget = if (male) 3400 else 2600
+    val calciumTarget = if (age >= 71 || (female && age >= 51)) 1200 else 1000
+    val ironTarget = if (female && age in 19..50) 18 else 8
+    val vitaminCTarget = if (male) 90 else 75
     HedefitCard(Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle(if (en) "Fibre and micronutrients" else "Lif ve mikro besinler")
-            MacroBar(if (en) "Fibre" else "Lif", "${fiber.toInt()} / 30 g", (fiber / 30).toFloat())
-            MacroBar(if (en) "Sugar" else "Şeker", "${sugar.toInt()} g", (sugar / 50).toFloat())
-            MacroBar(if (en) "Sodium" else "Sodyum", "${sodium.toInt()} / 2300 mg", (sodium / 2300).toFloat())
+            MacroBar(if (en) "Fibre" else "Lif", "${fiber.toInt()} / $fiberTarget g", (fiber / fiberTarget).toFloat())
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MicroValue(if (en) "Potassium" else "Potasyum", "${potassium.toInt()} / 3500 mg", Modifier.weight(1f))
-                MicroValue(if (en) "Calcium" else "Kalsiyum", "${calcium.toInt()} / 1000 mg", Modifier.weight(1f))
-                MicroValue(if (en) "Iron" else "Demir", "%.1f mg".format(iron), Modifier.weight(1f))
+                MicroValue(if (en) "Total sugar (not a target)" else "Toplam şeker (hedef değil)", "${sugar.toInt()} g", Modifier.weight(1f))
+                MicroValue(if (en) "Sodium limit" else "Sodyum sınırı", "${sodium.toInt()} / ≤2300 mg", Modifier.weight(1f))
             }
-            MicroValue(if (en) "Vitamin C" else "C Vitamini", "${vitaminC.toInt()} / 90 mg", Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MicroValue(if (en) "Potassium" else "Potasyum", "${potassium.toInt()} / $potassiumTarget mg", Modifier.weight(1f))
+                MicroValue(if (en) "Calcium" else "Kalsiyum", "${calcium.toInt()} / $calciumTarget mg", Modifier.weight(1f))
+                MicroValue(if (en) "Iron" else "Demir", "%.1f / %d mg".format(iron, ironTarget), Modifier.weight(1f))
+            }
+            MicroValue(if (en) "Vitamin C" else "C Vitamini", "${vitaminC.toInt()} / $vitaminCTarget mg", Modifier.fillMaxWidth())
         }
     }
 }
@@ -889,3 +973,68 @@ private fun NutritionTip(en: Boolean) {
         }
     }
 }
+
+private data class EditablePhotoFood(val original: NutritionEstimateData, val name: String, val gramsText: String, val included: Boolean = true)
+
+@Composable
+private fun PhotoNutritionReviewDialog(
+    detected: List<NutritionEstimateData>, busy: Boolean, en: Boolean,
+    onDismiss: () -> Unit, onSave: (List<NutritionEstimateData>, String) -> Unit,
+) {
+    var foods by remember(detected) { mutableStateOf(detected.map { EditablePhotoFood(it, it.name, it.grams.toInt().toString()) }) }
+    var meal by remember { mutableStateOf(smartMealForCurrentTime()) }
+    fun scaled(editable: EditablePhotoFood): NutritionEstimateData? {
+        val grams = editable.gramsText.replace(',', '.').toDoubleOrNull()?.takeIf { it in 1.0..5000.0 } ?: return null
+        val ratio = grams / editable.original.grams.coerceAtLeast(1.0)
+        return editable.original.copy(name = editable.name.trim().take(100), grams = grams, calories = (editable.original.calories * ratio).toInt(), protein = editable.original.protein * ratio, carbs = editable.original.carbs * ratio, fat = editable.original.fat * ratio, fiber = editable.original.fiber * ratio, sugar = editable.original.sugar * ratio, sodiumMg = editable.original.sodiumMg * ratio, potassiumMg = editable.original.potassiumMg * ratio, calciumMg = editable.original.calciumMg * ratio, ironMg = editable.original.ironMg * ratio, vitaminCMg = editable.original.vitaminCMg * ratio)
+    }
+    val ready = foods.filter { it.included }.mapNotNull(::scaled).filter { it.name.isNotBlank() }
+    val calories = ready.sumOf { it.calories }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(if (en) "Check photo analysis" else "Fotoğraf analizini kontrol et") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(if (en) "Portions are visual estimates. Edit names and grams before saving." else "Porsiyonlar görsel tahmindir. Kaydetmeden önce adları ve gramları düzenle.", color = HedefitColors.Warning, style = MaterialTheme.typography.bodySmall)
+            LazyColumn(Modifier.heightIn(max = 390.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                items(foods.size) { index ->
+                    val food = foods[index]; val value = scaled(food)
+                    Column(Modifier.fillMaxWidth().background(HedefitColors.SurfaceHigh, RoundedCornerShape(14.dp)).padding(9.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(food.included, onCheckedChange = { checked -> foods = foods.toMutableList().also { it[index] = food.copy(included = checked) } })
+                            OutlinedTextField(food.name, { name -> foods = foods.toMutableList().also { it[index] = food.copy(name = name.take(100)) } }, Modifier.weight(1f), label = { Text(if (en) "Food" else "Besin") }, singleLine = true)
+                        }
+                        OutlinedTextField(food.gramsText, { grams -> foods = foods.toMutableList().also { it[index] = food.copy(gramsText = grams.filter { c -> c.isDigit() || c == '.' || c == ',' }.take(7)) } }, Modifier.fillMaxWidth(), label = { Text(if (en) "Estimated amount (g)" else "Tahmini miktar (g)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+                        value?.let { Text("${it.calories} kcal • P ${it.protein.toInt()} g • K ${it.carbs.toInt()} g • Y ${it.fat.toInt()} g • Lif ${it.fiber.toInt()} g", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall); Text("Na ${it.sodiumMg.toInt()} mg • K ${it.potassiumMg.toInt()} mg • Ca ${it.calciumMg.toInt()} mg • Fe ${"%.1f".format(it.ironMg)} mg • C ${it.vitaminCMg.toInt()} mg", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.labelSmall) }
+                    }
+                }
+            }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) { items(listOf("Kahvaltı", "Öğle yemeği", "Akşam yemeği", "Atıştırmalık")) { type -> FilterChip(meal == type, { meal = type }, label = { Text(mealLabel(type, en)) }) } }
+            Text(if (en) "Total: $calories kcal • ${ready.size} foods" else "Toplam: $calories kcal • ${ready.size} besin", color = HedefitColors.Lime, fontWeight = FontWeight.Bold)
+        } },
+        confirmButton = { Button(enabled = !busy && ready.isNotEmpty(), onClick = { onSave(ready, meal) }, colors = ButtonDefaults.buttonColors(containerColor = HedefitColors.Lime, contentColor = HedefitColors.OnLime)) { Text(if (en) "Confirm and add" else "Onayla ve ekle") } },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(if (en) "Cancel" else "Vazgeç") } },
+    )
+}
+
+private suspend fun prepareMealPhoto(context: Context, uri: Uri): ByteArray? = withContext(Dispatchers.IO) {
+    runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+        var sample = 1
+        while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 1600) sample *= 2
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bitmap = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) } ?: return@runCatching null
+        encodeMealPhoto(bitmap).also { bitmap.recycle() }
+    }.getOrNull()
+}
+
+private fun encodeMealPhoto(bitmap: Bitmap): ByteArray? = runCatching {
+    val maxSide = maxOf(bitmap.width, bitmap.height)
+    val resized = if (maxSide > 1600) {
+        val scale = 1600f / maxSide
+        Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true)
+    } else bitmap
+    ByteArrayOutputStream().use { output -> resized.compress(Bitmap.CompressFormat.JPEG, 82, output); output.toByteArray() }
+        .also { if (resized !== bitmap) resized.recycle() }
+}.getOrNull()?.takeIf { it.size <= 5 * 1024 * 1024 }

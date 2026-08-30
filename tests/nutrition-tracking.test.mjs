@@ -93,6 +93,8 @@ test("negatif, sıfır, NaN, Infinity ve aşırı porsiyonlar reddedilir", () =>
 test("kompakt yazılı öğün sonucu kullanıcı gramajını korur", () => {
   assert.deepEqual(validateAiTextNutrition({ ...validAiTextNutrition, grams: 249.5 }, 250), validAiTextNutrition);
   assert.equal(validateAiTextNutrition({ ...validAiTextNutrition, calories: 0 }, 250), null);
+  assert.equal(validateAiTextNutrition({ ...validAiTextNutrition, sodiumMg: 50_000 }, 250), null);
+  assert.equal(validateAiTextNutrition({ ...validAiTextNutrition, protein: 120, carbohydrates: 200, fat: 80 }, 250), null);
 });
 
 test("kullanıcı metnindeki prompt injection işaretlenir", () => {
@@ -210,13 +212,15 @@ test("yemek adı ve gramaj AI ile kalori ve makrolara çevrilir", { concurrency:
   const previousFetch = globalThis.fetch;
   const restoreEnv = withSupabaseAuthEnv();
   process.env.OPENAI_API_KEY = "test-key";
-  process.env.OPENAI_MODEL_CHEAP = "gpt-5.6-luna";
+  process.env.OPENAI_MODEL_CHEAP = "gpt-4o";
   globalThis.fetch = withUsageMock({ isPremium: false, allowed: true, currentCount: 1 }, (url, init) => {
     if (String(url).includes("/responses")) {
       const aiRequest = JSON.parse(String(init?.body));
-      assert.equal(aiRequest.model, "gpt-5.6-luna");
-      assert.equal(aiRequest.max_output_tokens, 500);
-      assert.equal(aiRequest.reasoning.effort, "low");
+      assert.equal(aiRequest.model, "gpt-4o");
+      // Ücretsiz plan yapılandırılmış öğün yanıtını maliyet/güvenlik için
+      // merkezi token tavanıyla sınırlar.
+      assert.equal(aiRequest.max_output_tokens, 380);
+      assert.ok(!("reasoning" in aiRequest));
       // Alan bilgisi kaynakta durmakla kalmayıp isteğe de binmeli.
       const system = JSON.stringify(aiRequest.input);
       assert.match(system, /çiğ|pişmiş/i, "çiğ/pişmiş ağırlık kuralı system mesajında olmalı");
@@ -258,12 +262,12 @@ test("yemek adı ve gramaj AI ile kalori ve makrolara çevrilir", { concurrency:
   }
 });
 
-test("kalori tahmini ekonomik GPT-5_6 model katmanına yönlendirilir", async () => {
+test("kalori tahmini basit 4o model katmanına yönlendirilir", async () => {
   const source = await readFile(new URL("../lib/ai-nutrition-estimator.ts", import.meta.url), "utf8");
   assert.match(source, /name alanını mutlaka doğal Türkçe yaz/);
   assert.doesNotMatch(source, /gpt-5\.6/i, "model ailesi alan modülüne sızmamalı");
   const models = await readFile(new URL("../lib/ai/models.ts", import.meta.url), "utf8");
-  assert.match(models, /cheap:.*gpt-5\.6-luna/);
+  assert.match(models, /cheap:.*gpt-4o/);
   const provider = await readFile(new URL("../lib/ai/providers/openai-compatible.ts", import.meta.url), "utf8");
   assert.match(provider, /reasoningEffort: "low"/);
   assert.match(provider, /provider\.responses\(modelId\)/);

@@ -10,6 +10,7 @@ import android.graphics.Canvas as AndroidCanvas
 import android.graphics.Color as AndroidColor
 import android.graphics.Paint
 import android.graphics.Path as AndroidPath
+import android.graphics.RectF
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,9 +21,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.DirectionsRun
-import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -59,12 +58,14 @@ import com.hedefit.app.ui.theme.HedefitColors
 import com.hedefit.app.ui.settings.MeasurementUnits
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URL
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.roundToInt
@@ -74,6 +75,7 @@ import kotlin.math.tan
 fun RouteScreen(onBack: () -> Unit, onCompleted: (RouteSnapshot, String, String) -> Unit, language: String = "tr", unitSystem: String = "metric") {
     val en = language == "en"
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val store = remember { RouteTrackingStore(context) }
     val initialSnapshot = remember(store) { store.read() }
     val recoveredCompleted = remember(store) { store.readCompleted().takeIf(::canSaveRoute) }
@@ -133,13 +135,13 @@ fun RouteScreen(onBack: () -> Unit, onCompleted: (RouteSnapshot, String, String)
     val visibleSnapshot = if (snapshot.tracking) snapshot else finished ?: snapshot
     val activityInProgress = snapshot.tracking
     Box(Modifier.fillMaxSize().background(Color(0xFF0B0D0C))) {
-        // Keep the accepted GPS path visible while recording as well as after
-        // completion. Rejected jitter points never reach this map.
-        if (visibleSnapshot.points.isNotEmpty()) RouteMap(visibleSnapshot.points, Modifier.fillMaxSize(), en)
+        // The live activity is intentionally distraction-free. The map is
+        // revealed only after finishing, when it is useful for review/share.
+        if (finished != null) RouteMap(visibleSnapshot.points, Modifier.fillMaxSize(), en)
         Column(Modifier.align(Alignment.TopCenter).fillMaxWidth().systemBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = if (snapshot.tracking) ({ showExitConfirmation = true }) else onBack, modifier = Modifier.background(Color.Black.copy(alpha = .68f), CircleShape)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, if (en) "Back" else "Geri", tint = Color.White) }
-                Spacer(Modifier.width(10.dp)); Column { Text(if (en) "Activities" else "Aktiviteler", color = Color.White, style = MaterialTheme.typography.headlineSmall); Text(when (sessionStatus) { ActivitySessionStatus.PREPARING_GPS -> if (en) "Searching for GPS…" else "GPS sinyali aranıyor…"; ActivitySessionStatus.PAUSED -> if (en) "Paused" else "Duraklatıldı"; ActivitySessionStatus.ACTIVE -> if (en) "Recording in background" else "Arka planda kaydediliyor"; ActivitySessionStatus.COMPLETED -> if (en) "Ready to save" else "Kaydetmeye hazır"; else -> if (en) "GPS activity" else "GPS aktivitesi" }, color = HedefitColors.Lime, style = MaterialTheme.typography.bodySmall) }
+                Spacer(Modifier.width(10.dp)); Column { Text(if (en) "Activities" else "Aktiviteler", color = Color.White, style = MaterialTheme.typography.headlineSmall); Text(when { snapshot.tracking && snapshot.points.isEmpty() -> if (en) "Acquiring precise GPS signal…" else "Hassas GPS sinyali aranıyor…"; sessionStatus == ActivitySessionStatus.PREPARING_GPS -> if (en) "Searching for GPS…" else "GPS sinyali aranıyor…"; sessionStatus == ActivitySessionStatus.PAUSED -> if (en) "Paused" else "Duraklatıldı"; sessionStatus == ActivitySessionStatus.ACTIVE -> if (en) "Recording in background" else "Arka planda kaydediliyor"; sessionStatus == ActivitySessionStatus.COMPLETED -> if (en) "Ready to save" else "Kaydetmeye hazır"; else -> if (en) "GPS activity" else "GPS aktivitesi" }, color = HedefitColors.Lime, style = MaterialTheme.typography.bodySmall) }
             }
             permissionMessage?.let { Text(it, color = HedefitColors.Warning, style = MaterialTheme.typography.bodySmall, modifier = Modifier.background(Color.Black.copy(alpha = .7f), RoundedCornerShape(10.dp)).padding(10.dp)) }
             routeMessage?.let { Text(it, color = HedefitColors.Warning, style = MaterialTheme.typography.bodySmall, modifier = Modifier.background(Color.Black.copy(alpha = .7f), RoundedCornerShape(10.dp)).padding(10.dp)) }
@@ -154,14 +156,14 @@ fun RouteScreen(onBack: () -> Unit, onCompleted: (RouteSnapshot, String, String)
                 Text(if (en) "Precise GPS tracking starts when you are ready." else "Hazır olduğunda hassas GPS kaydı başlayacak.", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(4.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    RouteActivityChoice(if (en) "Run" else "Koşu", Icons.Default.DirectionsRun, activityType == "Koşu", { activityType = "Koşu" }, Modifier.weight(1f))
-                    RouteActivityChoice(if (en) "Walk" else "Yürüyüş", Icons.Default.DirectionsWalk, activityType == "Yürüyüş", { activityType = "Yürüyüş" }, Modifier.weight(1f))
+                    RouteActivityChoice(if (en) "Run" else "Koşu", "🏃", activityType == "Koşu", { activityType = "Koşu" }, Modifier.weight(1f))
+                    RouteActivityChoice(if (en) "Walk" else "Yürüyüş", "🚶", activityType == "Yürüyüş", { activityType = "Yürüyüş" }, Modifier.weight(1f))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    RouteActivityChoice(if (en) "Ride" else "Bisiklet", Icons.Default.DirectionsBike, activityType == "Bisiklet", { activityType = "Bisiklet" }, Modifier.weight(1f))
-                    RouteActivityChoice(if (en) "Hike" else "Doğa Yürüyüşü", Icons.Default.DirectionsWalk, activityType == "Doğa Yürüyüşü", { activityType = "Doğa Yürüyüşü" }, Modifier.weight(1f))
+                    RouteActivityChoice(if (en) "Trail run" else "Trail Koşusu", "⛰️", activityType == "Trail Koşusu", { activityType = "Trail Koşusu" }, Modifier.weight(1f))
+                    RouteActivityChoice(if (en) "Hike" else "Doğa Yürüyüşü", "🥾", activityType == "Doğa Yürüyüşü", { activityType = "Doğa Yürüyüşü" }, Modifier.weight(1f))
                 }
-                RouteActivityChoice(if (en) "Trail run" else "Trail Koşusu", Icons.Default.DirectionsRun, activityType == "Trail Koşusu", { activityType = "Trail Koşusu" }, Modifier.fillMaxWidth(.55f))
+                RouteActivityChoice(if (en) "Ride" else "Bisiklet", "🚴", activityType == "Bisiklet", { activityType = "Bisiklet" }, Modifier.fillMaxWidth(.55f))
             }
         }
         if (activityInProgress) {
@@ -215,8 +217,8 @@ fun RouteScreen(onBack: () -> Unit, onCompleted: (RouteSnapshot, String, String)
                     routeMessage = null
                 })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { shareRoute(context, completed, activityTitle, story = false) }, modifier = Modifier.weight(1f)) { Text("1:1 ${if (en) "Share" else "Paylaş"}") }
-                    TextButton(onClick = { shareRoute(context, completed, activityTitle, story = true) }, modifier = Modifier.weight(1f)) { Text("9:16 Story") }
+                    TextButton(onClick = { scope.launch { shareRoute(context, completed, activityTitle, story = false) } }, modifier = Modifier.weight(1f)) { Text("1:1 ${if (en) "Share" else "Paylaş"}") }
+                    TextButton(onClick = { scope.launch { shareRoute(context, completed, activityTitle, story = true) } }, modifier = Modifier.weight(1f)) { Text("9:16 Story") }
                 }
             }
         }
@@ -272,9 +274,9 @@ private fun RouteMap(points: List<RoutePoint>, modifier: Modifier, en: Boolean =
     val center = points.takeIf { it.isNotEmpty() }?.let { route ->
         RoutePoint((route.minOf { it.latitude } + route.maxOf { it.latitude }) / 2.0, (route.minOf { it.longitude } + route.maxOf { it.longitude }) / 2.0, 0.0, 0L)
     }
-    BoxWithConstraints(modifier.background(Color(0xFF0B0D0C)), contentAlignment = Alignment.Center) {
+    BoxWithConstraints(modifier.background(Color(0xFF0B0D0C)), contentAlignment = Alignment.TopStart) {
         if (center == null) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Box(Modifier.size(64.dp).background(HedefitColors.Lime.copy(alpha = .15f), CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Default.DirectionsRun, null, tint = HedefitColors.Lime, modifier = Modifier.size(32.dp)) }
                 Spacer(Modifier.height(10.dp)); Text(if (en) "GPS ready • Your route will appear here after you start" else "GPS hazır • Başladığında rotan burada çizilecek", color = HedefitColors.TextSecondary)
             }
@@ -316,7 +318,7 @@ private fun RouteMap(points: List<RoutePoint>, modifier: Modifier, en: Boolean =
 @Composable
 private fun RouteActivityChoice(
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    emoji: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -330,7 +332,7 @@ private fun RouteActivityChoice(
         border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) HedefitColors.Lime else HedefitColors.Divider),
     ) {
         Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(icon, null, modifier = Modifier.size(25.dp))
+            Text(emoji, style = MaterialTheme.typography.headlineMedium)
             Text(label, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
         }
     }
@@ -397,31 +399,83 @@ private fun stopRoute(context: Context, discard: Boolean = false) = context.star
     Intent(context, RouteTrackingService::class.java).setAction(if (discard) RouteTrackingService.ACTION_DISCARD else RouteTrackingService.ACTION_STOP),
 )
 
-private fun shareRoute(context: Context, snapshot: RouteSnapshot, title: String, story: Boolean) {
+private suspend fun shareRoute(context: Context, snapshot: RouteSnapshot, title: String, story: Boolean) {
     val width = 1080
     val height = if (story) 1920 else 1080
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = AndroidCanvas(bitmap)
-    canvas.drawColor(AndroidColor.rgb(11, 13, 12))
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = AndroidColor.rgb(126, 225, 80)
-        style = Paint.Style.STROKE
-        strokeWidth = 16f
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
+    val file = withContext(Dispatchers.IO) {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = AndroidCanvas(bitmap)
+        canvas.drawColor(AndroidColor.rgb(11, 13, 12))
+        val mapBottom = (height - 390).coerceAtMost(1120).toFloat()
+        drawShareMap(canvas, snapshot.points, width.toFloat(), mapBottom)
+        canvas.drawRect(0f, mapBottom, width.toFloat(), height.toFloat(), Paint().apply { color = AndroidColor.rgb(11, 13, 12) })
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = AndroidColor.rgb(126, 225, 80)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        textPaint.textSize = 58f
+        canvas.drawText(title.ifBlank { defaultActivityTitle(snapshot.activityType, false) }, 72f, height - 330f, textPaint)
+        textPaint.color = AndroidColor.rgb(166, 174, 169)
+        textPaint.textSize = 34f
+        canvas.drawText("MESAFE", 72f, height - 220f, textPaint); canvas.drawText("SÜRE", 410f, height - 220f, textPaint); canvas.drawText("TEMPO", 730f, height - 220f, textPaint)
+        textPaint.color = AndroidColor.WHITE
+        textPaint.textSize = 46f
+        canvas.drawText("%.2f km".format(snapshot.distanceMeters / 1_000.0), 72f, height - 155f, textPaint); canvas.drawText(formatDuration(snapshot.durationSeconds), 410f, height - 155f, textPaint); canvas.drawText(formatPace(snapshot.paceSecondsPerKm), 730f, height - 155f, textPaint)
+        textPaint.color = AndroidColor.rgb(126, 225, 80)
+        textPaint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        textPaint.textSize = 42f
+        canvas.drawText("HEDEFİT ROTA", 72f, height - 70f, textPaint)
+        val directory = File(context.cacheDir, "shared-routes").apply { mkdirs() }
+        File(directory, "hedefit-rota-${snapshot.id}.png").also { output ->
+            FileOutputStream(output).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
     }
-    drawMinimalRoute(canvas, snapshot.points, paint, width.toFloat(), height.toFloat())
-    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = AndroidColor.WHITE; typeface = android.graphics.Typeface.DEFAULT_BOLD }
-    textPaint.textSize = 58f; canvas.drawText(title.ifBlank { defaultActivityTitle(snapshot.activityType, false) }, 72f, height - 330f, textPaint)
-    textPaint.textSize = 34f
-    canvas.drawText("MESAFE", 72f, height - 220f, textPaint); canvas.drawText("SÜRE", 410f, height - 220f, textPaint); canvas.drawText("TEMPO", 730f, height - 220f, textPaint)
-    textPaint.textSize = 46f
-    canvas.drawText("%.2f km".format(snapshot.distanceMeters / 1_000.0), 72f, height - 155f, textPaint); canvas.drawText(formatDuration(snapshot.durationSeconds), 410f, height - 155f, textPaint); canvas.drawText(formatPace(snapshot.paceSecondsPerKm), 730f, height - 155f, textPaint)
-    textPaint.color = AndroidColor.rgb(126, 225, 80); textPaint.textSize = 38f; canvas.drawText("HEDEFIT", 72f, height - 70f, textPaint)
-    val directory = File(context.cacheDir, "shared-routes").apply { mkdirs() }; val file = File(directory, "hedefit-rota-${snapshot.id}.png")
-    FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("image/png").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Rotanı paylaş"))
+}
+
+private fun drawShareMap(canvas: AndroidCanvas, points: List<RoutePoint>, width: Float, height: Float) {
+    if (points.isEmpty()) return
+    val center = RoutePoint((points.minOf { it.latitude } + points.maxOf { it.latitude }) / 2.0, (points.minOf { it.longitude } + points.maxOf { it.longitude }) / 2.0, 0.0, 0L)
+    val tileSize = 360f
+    val zoom = fittedMapZoom(points, width, height, tileSize)
+    val tileCount = 1 shl zoom
+    val centerPosition = mapCoordinate(center, zoom)
+    val centerTileX = floor(centerPosition.x).toInt()
+    val centerTileY = floor(centerPosition.y).toInt()
+    val horizontalTiles = ceil(width / tileSize / 2).toInt() + 1
+    val verticalTiles = ceil(height / tileSize / 2).toInt() + 1
+    for (tileY in (centerTileY - verticalTiles)..(centerTileY + verticalTiles)) {
+        if (tileY !in 0 until tileCount) continue
+        for (rawTileX in (centerTileX - horizontalTiles)..(centerTileX + horizontalTiles)) {
+            val left = width / 2f + (rawTileX - centerPosition.x).toFloat() * tileSize
+            val top = height / 2f + (tileY - centerPosition.y).toFloat() * tileSize
+            if (left > width || top > height || left + tileSize < 0 || top + tileSize < 0) continue
+            runCatching {
+                URL("https://tile.openstreetmap.org/$zoom/${rawTileX.mod(tileCount)}/$tileY.png").openConnection().apply {
+                    connectTimeout = 1_500
+                    readTimeout = 1_500
+                    setRequestProperty("User-Agent", "Hedefit/0.2 Android route share")
+                }.getInputStream().use(BitmapFactory::decodeStream)
+            }.getOrNull()?.let { tile -> canvas.drawBitmap(tile, null, RectF(left, top, left + tileSize, top + tileSize), null) }
+        }
+    }
+    val path = AndroidPath()
+    points.forEachIndexed { index, point ->
+        val coordinate = mapCoordinate(point, zoom)
+        val x = width / 2f + (coordinate.x - centerPosition.x).toFloat() * tileSize
+        val y = height / 2f + (coordinate.y - centerPosition.y).toFloat() * tileSize
+        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    val routePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    routePaint.color = AndroidColor.rgb(10, 39, 17); routePaint.strokeWidth = 28f; canvas.drawPath(path, routePaint)
+    routePaint.color = AndroidColor.rgb(126, 225, 80); routePaint.strokeWidth = 15f; canvas.drawPath(path, routePaint)
+    val pointPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    fun drawPoint(point: RoutePoint, color: Int) { val coordinate = mapCoordinate(point, zoom); pointPaint.color = color; canvas.drawCircle(width / 2f + (coordinate.x - centerPosition.x).toFloat() * tileSize, height / 2f + (coordinate.y - centerPosition.y).toFloat() * tileSize, 18f, pointPaint) }
+    drawPoint(points.first(), AndroidColor.WHITE)
+    drawPoint(points.last(), AndroidColor.rgb(126, 225, 80))
+    val attribution = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = AndroidColor.WHITE; textSize = 22f; setShadowLayer(3f, 0f, 1f, AndroidColor.BLACK) }
+    canvas.drawText("© OpenStreetMap contributors", 20f, height - 18f, attribution)
 }
 
 private fun drawMinimalRoute(canvas: AndroidCanvas, points: List<RoutePoint>, paint: Paint, width: Float, height: Float) {

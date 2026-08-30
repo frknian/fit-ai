@@ -7,7 +7,7 @@ import { rateLimit, tooManyRequests } from "../../../lib/rate-limit.ts";
 import { hasRemoteProvider, parseImageDataUrl } from "../../../lib/ai/providers/openai-compatible.ts";
 import { generateCoachObject } from "../../../lib/ai/coach.ts";
 import { loadMemories } from "../../../lib/ai/memory.ts";
-import { checkAndConsumeUsage, refundUsage, usageLimitExceeded } from "../../../lib/usage-limits.ts";
+import { checkAndConsumeUsage, outputTokenLimit, refundUsage, usageLimitExceeded } from "../../../lib/usage-limits.ts";
 import { PROMPT_CATALOG_LIMIT, getExerciseById, getExercisesForProfile } from "../../../lib/exercise-service.ts";
 import { normalizeExercise } from "../../../lib/exercise-service.ts";
 import { translateExerciseLabel, translateExerciseName, turkishExerciseInstructions } from "../../../lib/exercise-translations.ts";
@@ -387,7 +387,9 @@ Tam olarak ${signals.exerciseCount} farklı hareket seç. Her workout için kata
     image,
     schema: responseSchema,
     // Fotoğraf varsa yalnız görsel destekli sağlayıcı bu işi yapabilir.
-    category: image ? "vision" as const : "plan_generation" as const,
+    // Görsel eklenmiş olsa da işin özü kişisel program muhakemesidir; bu rota
+    // her zaman güçlü plan modeline gider.
+    category: "plan_generation" as const,
     locale: locale as "tr" | "en",
     memories,
     facts: planFacts,
@@ -401,7 +403,7 @@ Tam olarak ${signals.exerciseCount} farklı hareket seç. Her workout için kata
     // içerik 0 karakter kaldı ve üretim HER SEFERİNDE "length" ile kesildi —
     // yani plan hiç üretilemiyordu. 8.000'de düşünme 1.212'de kalıyor ve
     // plan tamamlanıyor.
-    maxOutputTokens: 8_000,
+    maxOutputTokens: outputTokenLimit("plan", usage.planTier),
     // Kullanıcı profil testinden sonra boş bir yükleme ekranında beklememeli.
     // Uzak model 15 saniyede tamamlamazsa doğrulanmış katalogdan yerel plan
     // devreye girer; profil kaydı ve program oluşturma yine tamamlanır.
@@ -424,7 +426,7 @@ Tam olarak ${signals.exerciseCount} farklı hareket seç. Her workout için kata
       plan = result.object;
     }
     if (plan.workouts.length < 3) {
-      if (Number.isFinite(usage.limit)) await refundUsage(request, "plan");
+      if (Number.isFinite(usage.limit)) await refundUsage(auth.user.id, "plan");
       return Response.json({ ...buildLocalPlan(signals, exerciseCatalog, locale), profileFingerprint: signals.fingerprint, model: "hedefit-deterministic-v1", fallback: true });
     }
     // Uzak modelin metinsel koçluğunu korurken programın kendisini Atlas'tan
@@ -443,7 +445,7 @@ Tam olarak ${signals.exerciseCount} farklı hareket seç. Her workout için kata
     });
   } catch (error) {
     console.error("AI plan generation error", error);
-    if (Number.isFinite(usage.limit)) await refundUsage(request, "plan");
+    if (Number.isFinite(usage.limit)) await refundUsage(auth.user.id, "plan");
     return Response.json({ ...buildLocalPlan(signals, exerciseCatalog, locale), profileFingerprint: signals.fingerprint, model: "hedefit-deterministic-v1", fallback: true });
   }
 }

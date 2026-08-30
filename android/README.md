@@ -28,6 +28,10 @@ fitness metrikleri üzerine kuruludur.
 - Set bazlı ağırlık/tekrar/RPE/not kaydı, geçmiş performans, PR uyarısı,
   dinlenme sayacı, ses/titreşim, set türleri ve plaka hesaplayıcı
 - Egzersiz kütüphanesi, özel hareket ve antrenman takvimi
+- Program dışı 17 spor için spora özel süre, mesafe, tempo, eğim veya alt tür
+  ve profil kilosuna göre aktif kalori kaydı; kayıtlar İlerleme geçmişinde saklanır
+- Ana ekranda boyutu değişmeyen kalori kartında alınan/yakılan ayrımı ve
+  hızlı “Spor aktivitesi ekle” kısayolu
 
 Tasarım referansları `design/` klasöründedir.
 
@@ -112,6 +116,8 @@ Lint ve test:
 - Health Connect adım, uyku, kilo ve aktif kalori eşitlemesi
 - WorkManager ile çevrimdışı antrenman ve öğün kuyruğu
 - GPS rotalarının RLS korumalı `route_activities` tablosuna kaydı
+- Manuel sporların RLS korumalı `workout_sessions` geçmişine; süre, kalori ve
+  not üst sınırlarıyla kaydı
 - İlerleme sıfırlama, hesap dondurma ve geri alınamaz hesap silme API akışları
 
 Mobil pakete yalnızca public anon key eklenir. Supabase service-role/secret key

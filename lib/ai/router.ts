@@ -115,7 +115,11 @@ async function runChain<TResponse extends { provider: string; model: string; lat
       // ücretli bir uzak çağrı başlatmak hem parayı boşa harcar hem de
       // kullanıcının açıkça istemediği bir işi yapar. Bu yüzden iptal, zinciri
       // olduğu yerde bitirir; sonraki sağlayıcı DENENMEZ.
-      if (request.abortSignal?.aborted) break;
+      // AbortSignal.timeout() da `aborted` olur; ancak bu kullanıcı iptali
+      // değildir. Bulut sağlayıcının süresi dolduğunda deterministik yerel
+      // koça geçmeliyiz. Yalnız gerçek AbortError kullanıcı iptali sayılır.
+      const abortReasonName = (request.abortSignal?.reason as { name?: unknown } | undefined)?.name;
+      if (request.abortSignal?.aborted && abortReasonName !== "TimeoutError") break;
     }
   }
   throw new AiAllProvidersFailedError(failures);

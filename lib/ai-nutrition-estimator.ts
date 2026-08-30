@@ -29,11 +29,11 @@ const textSchema = jsonSchema<AiTextNutrition>({
     fat: { type: "number", minimum: 0, maximum: 2000 },
     fiber: { type: "number", minimum: 0, maximum: 1000 },
     sugar: { type: "number", minimum: 0, maximum: 2000 },
-    sodiumMg: { type: "number", minimum: 0, maximum: 50000 },
-    potassiumMg: { type: "number", minimum: 0, maximum: 50000 },
-    calciumMg: { type: "number", minimum: 0, maximum: 50000 },
-    ironMg: { type: "number", minimum: 0, maximum: 1000 },
-    vitaminCMg: { type: "number", minimum: 0, maximum: 10000 },
+    sodiumMg: { type: "number", minimum: 0, maximum: 4600 },
+    potassiumMg: { type: "number", minimum: 0, maximum: 6800 },
+    calciumMg: { type: "number", minimum: 0, maximum: 2500 },
+    ironMg: { type: "number", minimum: 0, maximum: 45 },
+    vitaminCMg: { type: "number", minimum: 0, maximum: 2000 },
     confidence: { type: "number", minimum: 0, maximum: 1 },
   },
   required: ["name", "grams", "calories", "protein", "carbohydrates", "fat", "fiber", "sugar", "sodiumMg", "potassiumMg", "calciumMg", "ironMg", "vitaminCMg", "confidence"],
@@ -60,15 +60,17 @@ export function validateAiTextNutrition(value: unknown, requestedGrams: number):
   const fat = finite(item.fat, 2000);
   const fiber = finite(item.fiber, 1000);
   const sugar = finite(item.sugar, 2000);
-  const sodiumMg = finite(item.sodiumMg, 50000);
-  const potassiumMg = finite(item.potassiumMg, 50000);
-  const calciumMg = finite(item.calciumMg, 50000);
-  const ironMg = finite(item.ironMg, 1000);
-  const vitaminCMg = finite(item.vitaminCMg, 10000);
+  const sodiumMg = finite(item.sodiumMg, 4600);
+  const potassiumMg = finite(item.potassiumMg, 6800);
+  const calciumMg = finite(item.calciumMg, 2500);
+  const ironMg = finite(item.ironMg, 45);
+  const vitaminCMg = finite(item.vitaminCMg, 2000);
   const confidence = finite(item.confidence, 1);
   if (!name || !Number.isFinite(requestedGrams) || requestedGrams <= 0 || requestedGrams > 5000
     || calories === null || calories <= 0 || protein === null || carbohydrates === null
     || fat === null || fiber === null || sugar === null || sodiumMg === null || potassiumMg === null || calciumMg === null || ironMg === null || vitaminCMg === null || confidence === null) return null;
+  const macroCalories = protein * 4 + carbohydrates * 4 + fat * 9;
+  if (Math.abs(macroCalories - calories) > Math.max(120, calories * 0.35)) return null;
   return {
     name,
     // Kullanıcının tarttığı gramaj tek doğruluk kaynağıdır; modelin bu alanı
@@ -157,6 +159,7 @@ export async function estimateAiTextNutrition(input: {
   foodName: string;
   grams: number;
   timeoutMs?: number;
+  maxOutputTokens?: number;
 }) {
   // Sağlayıcıya/modele özgü ayar burada yok; ucuz yapılandırılmış model
   // merkezi AI_MODELS yapılandırmasından seçilir.
@@ -169,8 +172,8 @@ export async function estimateAiTextNutrition(input: {
     prompt: `Yemek: <food>${input.foodName}</food>\nYenen miktar: ${input.grams} gram`,
     category: "structured_extraction",
     schema: textSchema,
-    maxOutputTokens: 500,
-    abortSignal: AbortSignal.timeout(input.timeoutMs || 20_000),
+    maxOutputTokens: input.maxOutputTokens ?? 500,
+    abortSignal: AbortSignal.timeout(input.timeoutMs || 35_000),
   });
   return validateAiTextNutrition(generated, input.grams);
 }

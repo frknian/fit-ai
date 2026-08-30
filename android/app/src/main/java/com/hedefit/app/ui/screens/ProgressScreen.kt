@@ -65,6 +65,7 @@ import com.hedefit.app.data.model.BodyMeasurementData
 import com.hedefit.app.data.model.WorkoutSessionData
 import com.hedefit.app.data.model.RouteActivityData
 import com.hedefit.app.data.model.WorkoutExercisePerformanceData
+import com.hedefit.app.data.model.manualActivityTypes
 import com.hedefit.app.route.formatDuration
 import java.time.DayOfWeek
 import java.time.Instant
@@ -205,8 +206,9 @@ private fun ProgressMetrics(data: DashboardData?, allSessions: List<WorkoutSessi
     val sessions = data?.sessions.orEmpty()
     val totalMinutes = sessions.sumOf { it.durationSeconds } / 60
     val totalCalories = sessions.sumOf { it.calories }
-    val totalPlanned = sessions.sumOf { it.totalExercises }.coerceAtLeast(1)
-    val completion = (sessions.sumOf { it.completedExercises } * 100 / totalPlanned).coerceIn(0, 100)
+    val plannedSessions = sessions.filter { it.manualActivityKey == null }
+    val totalPlanned = plannedSessions.sumOf { it.totalExercises }.coerceAtLeast(1)
+    val completion = (plannedSessions.sumOf { it.completedExercises } * 100 / totalPlanned).coerceIn(0, 100)
     val weekStart = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
     val weeklyDone = allSessions.count { sessionDate(it) >= weekStart }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -249,10 +251,11 @@ private fun WorkoutHistory(data: DashboardData?, en: Boolean) {
             SectionTitle(if (en) "Recent workouts" else "Son antrenmanlar")
             if (sessions.isEmpty()) Text(if (en) "Completed workouts will appear here." else "Tamamladığın antrenmanlar burada tarihleriyle görünecek.", color = HedefitColors.TextSecondary)
             sessions.forEach { session ->
+                val manualActivity = session.manualActivityKey?.let { key -> manualActivityTypes.firstOrNull { it.key == key } }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(formatDate(session.completedAt.take(10), en), style = MaterialTheme.typography.titleMedium)
-                        Text(if (en) "${session.completedExercises}/${session.totalExercises} movements completed" else "${session.completedExercises}/${session.totalExercises} hareket tamamlandı", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                        Text(manualActivity?.let { "${it.emoji} ${if (en) it.titleEn else it.titleTr}" } ?: formatDate(session.completedAt.take(10), en), style = MaterialTheme.typography.titleMedium)
+                        Text(if (manualActivity != null) formatDate(session.completedAt.take(10), en) else if (en) "${session.completedExercises}/${session.totalExercises} movements completed" else "${session.completedExercises}/${session.totalExercises} hareket tamamlandı", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                     }
                     Text("${session.durationSeconds / 60} ${if (en) "min" else "dk"} • ${session.calories} kcal", color = HedefitColors.Lime, style = MaterialTheme.typography.labelLarge)
                 }

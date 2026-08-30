@@ -5,7 +5,7 @@ import { loadMemories } from "../../../lib/ai/memory.ts";
 import { enforceWeeklySafety, hasEnoughWeeklyData, localWeeklyReview, validateWeeklyReview, validateWeeklySummary, type WeeklyReview } from "../../../lib/weekly-review.ts";
 import { authenticateRequest } from "../../../lib/api-auth.ts";
 import { rateLimit, tooManyRequests } from "../../../lib/rate-limit.ts";
-import { checkAndConsumeUsage, daysBetweenWeekStarts, lastAiWeeklyReviewWeekStart, refundUsage } from "../../../lib/usage-limits.ts";
+import { checkAndConsumeUsage, daysBetweenWeekStarts, lastAiWeeklyReviewWeekStart, outputTokenLimit, refundUsage } from "../../../lib/usage-limits.ts";
 import { tr } from "../../../lib/i18n/dictionaries/tr.ts";
 import { en } from "../../../lib/i18n/dictionaries/en.ts";
 
@@ -93,7 +93,7 @@ ${outputLanguageInstruction}
 - Kilo, bel veya beslenme değişimini tek başına sağlık sonucu gibi yorumlama.
 - Tıbbi teşhis, tedavi veya kesin kalori hedefi verme.`,
       prompt: `SON 7 GÜNÜN ANONİM HAFTALIK ÖZETİ <facts> içinde verildi.\n\nBu özet dışında veri varsayma.`,
-      maxOutputTokens: 900,
+      maxOutputTokens: outputTokenLimit("weekly_review", usage.planTier),
       temperature: 0.25,
       abortSignal: AbortSignal.timeout(20_000),
     });
@@ -102,7 +102,7 @@ ${outputLanguageInstruction}
     return Response.json({ review: enforceWeeklySafety(validated, safeSummary, dictionary), source: "ai", model: result.model });
   } catch {
     // Kullanıcı gerçekte bir AI değerlendirmesi ALMADI; günlük hakkı iade edilir.
-    if (Number.isFinite(usage.limit)) await refundUsage(request, "weekly_review");
+    if (Number.isFinite(usage.limit)) await refundUsage(auth.user.id, "weekly_review");
     return Response.json({ review: fallback, source: "local", reason: "AI yanıtı alınamadığı için güvenli yerel değerlendirme kullanıldı." });
   }
 }

@@ -134,7 +134,7 @@ const memoryExtractionSchema = jsonSchema<{ memories: Array<{ type: string; key:
  * Model çıktısı `sanitizeMemory` ile TEK TEK doğrulanır — şemaya uyduğunu
  * iddia eden ama uymayan JSON (bkz. openai-compatible.ts) uygulamayı bozamaz.
  */
-export async function extractMemories(input: { message: string; locale?: "tr" | "en"; abortSignal?: AbortSignal }): Promise<UserMemory[]> {
+export async function extractMemories(input: { message: string; locale?: "tr" | "en"; maxOutputTokens?: number; abortSignal?: AbortSignal }): Promise<UserMemory[]> {
   const locale = input.locale === "en" ? "en" : "tr";
   const message = input.message.trim().slice(0, 600);
   if (!message) return [];
@@ -145,7 +145,7 @@ export async function extractMemories(input: { message: string; locale?: "tr" | 
       system: MEMORY_EXTRACTION_PROMPT[locale],
       prompt: `<message>\n${message}\n</message>`,
       temperature: 0,
-      maxOutputTokens: 400,
+      maxOutputTokens: Math.max(100, Math.min(input.maxOutputTokens ?? 300, 400)),
       abortSignal: input.abortSignal,
     });
     const raw = Array.isArray(response.object?.memories) ? response.object.memories : [];

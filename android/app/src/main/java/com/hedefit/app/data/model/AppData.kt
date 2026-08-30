@@ -65,6 +65,7 @@ data class WorkoutSessionData(
     val exerciseNames: List<String> = emptyList(),
     val difficulty: String? = null,
     val painAreas: List<String> = emptyList(),
+    val manualActivityKey: String? = null,
 )
 
 data class WorkoutSetPerformanceData(
@@ -189,6 +190,26 @@ data class FavoriteMealData(
     val micros: Map<String, Double>,
 )
 
+data class MealPlanItemData(
+    val id: String,
+    val plannedDate: String,
+    val mealType: String,
+    val name: String,
+    val grams: Double,
+    val calories: Int,
+    val protein: Double,
+    val carbs: Double,
+    val fat: Double,
+    val fiber: Double,
+    val sugar: Double,
+    val sodiumMg: Double,
+    val potassiumMg: Double,
+    val calciumMg: Double,
+    val ironMg: Double,
+    val vitaminCMg: Double,
+    val completed: Boolean,
+)
+
 data class ExerciseCatalogData(
     val id: String,
     val name: String,
@@ -205,9 +226,9 @@ data class ExerciseCatalogData(
 
 data class NutritionGoalData(
     val calories: Int = 2250,
-    val protein: Int = 160,
-    val carbs: Int = 240,
-    val fat: Int = 70,
+    val protein: Int = 110,
+    val carbs: Int = 297,
+    val fat: Int = 69,
 )
 
 data class BodyMeasurementData(
@@ -235,6 +256,7 @@ data class DashboardData(
     val activeCalories: Int = 0,
     val schedule: List<WorkoutScheduleData> = emptyList(),
     val favoriteMeals: List<FavoriteMealData> = emptyList(),
+    val mealPlanItems: List<MealPlanItemData> = emptyList(),
     val workoutPrograms: List<WorkoutProgramData> = emptyList(),
     val routeActivities: List<RouteActivityData> = emptyList(),
     val exercisePerformance: List<WorkoutExercisePerformanceData> = emptyList(),

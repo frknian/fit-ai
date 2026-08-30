@@ -18,6 +18,7 @@ import com.hedefit.app.data.model.WorkoutFeedbackData
 import com.hedefit.app.data.model.WorkoutScheduleData
 import com.hedefit.app.data.model.WorkoutProgramData
 import com.hedefit.app.data.model.FavoriteMealData
+import com.hedefit.app.data.model.MealPlanItemData
 import com.hedefit.app.data.model.asRepeatFood
 import com.hedefit.app.data.model.FoodSearchData
 import com.hedefit.app.data.model.ExerciseCatalogData
@@ -25,6 +26,8 @@ import com.hedefit.app.data.model.DailyStepData
 import com.hedefit.app.data.model.PreviousSetData
 import com.hedefit.app.data.model.WorkoutExercisePerformanceData
 import com.hedefit.app.data.model.WorkoutSetPerformanceData
+import com.hedefit.app.data.model.ManualActivityInput
+import com.hedefit.app.data.model.manualActivityTypes
 import com.hedefit.app.health.HealthSnapshot
 import com.hedefit.app.data.network.HedefitApiClient
 import com.hedefit.app.data.network.SupabaseRestClient
@@ -41,6 +44,8 @@ import java.time.LocalDate
 import java.time.ZoneId
 import com.hedefit.app.route.RouteSnapshot
 import java.util.UUID
+import android.util.Base64
+import kotlin.math.roundToInt
 
 class HedefitRepository(
     private val auth: AuthRepository,
@@ -87,6 +92,7 @@ class HedefitRepository(
         val measurementsCall = async { optionalSelect("body_measurements", "select=*&user_id=eq.$userId&order=measured_at.asc&limit=90") }
         val scheduleCall = async { optionalSelect("workout_schedule", "select=*&user_id=eq.$userId&scheduled_date=gte.${date.minusDays(7)}&scheduled_date=lte.${date.plusDays(21)}&order=scheduled_date.asc") }
         val favoritesCall = async { optionalSelect("favorite_meals", "select=*&user_id=eq.$userId&order=updated_at.desc&limit=30") }
+        val mealPlansCall = async { optionalSelect("meal_plan_items", "select=*&user_id=eq.$userId&planned_date=gte.${date.minusDays(35)}&planned_date=lte.${date.plusDays(35)}&order=planned_date.asc,created_at.asc&limit=500") }
         val programsCall = async { optionalSelect("workout_program_collections", "select=*&user_id=eq.$userId&order=updated_at.desc&limit=50") }
         val routesCall = async { optionalSelect("route_activities", "select=*&user_id=eq.$userId&order=started_at.desc&limit=100") }
         val exerciseLogsCall = async { optionalSelect("workout_exercise_logs", "select=id,session_id,exercise_id,exercise_name,completed_at&user_id=eq.$userId&completed_at=gte.${date.minusDays(14)}T00:00:00Z&order=completed_at.desc&limit=200") }
@@ -106,7 +112,7 @@ class HedefitRepository(
         val workouts = parseWorkouts(planCall.await().optJSONObject(0)?.optJSONArray("workouts") ?: JSONArray())
         val sessions = parseSessions(sessionsCall.await())
         val nutritionLogs = parseNutritionLogs(nutritionCall.await().optJSONArray("logs") ?: JSONArray())
-        val nutritionGoal = parseNutritionGoal(goalCall.await().optJSONObject(0))
+        val nutritionGoal = parseNutritionGoal(goalCall.await().optJSONObject(0), profile)
         val measurements = parseMeasurements(measurementsCall.await())
 
         val xpRows = xpEventsCall.await()
@@ -140,6 +146,7 @@ class HedefitRepository(
             activeCalories = (stepsCall.await().optJSONObject(0)?.optInt("steps") ?: 0) / 25,
             schedule = parseSchedule(scheduleCall.await()),
             favoriteMeals = parseFavorites(favoritesCall.await()),
+            mealPlanItems = parseMealPlanItems(mealPlansCall.await()),
             workoutPrograms = parseWorkoutPrograms(programsCall.await()),
             routeActivities = parseRouteActivities(routesCall.await()),
             exercisePerformance = parseExercisePerformance(exerciseLogsCall.await(), setLogsCall.await()),
@@ -318,6 +325,29 @@ class HedefitRepository(
         return WorkoutSessionData(id, now, durationSeconds, calories, sets.map { it.exerciseId }.distinct().size, exercises.size, feedback.fatigue)
     }
 
+    suspend fun recordManualActivity(input: ManualActivityInput, calories: Int): WorkoutSessionData {
+        val activity = requireNotNull(manualActivityTypes.firstOrNull { it.key == input.activityKey }) { "Geçersiz aktivite türü." }
+        val duration = input.durationMinutes.coerceIn(1, 600)
+        val safeCalories = calories.coerceIn(1, 10_000)
+        val safeNote = input.notes.trim().take(500)
+        val id = UUID.randomUUID().toString()
+        val now = Instant.now().toString()
+        rest.insert("workout_sessions", JSONObject()
+            .put("id", id)
+            .put("user_id", requireNotNull(auth.userId()))
+            .put("completed_at", now)
+            .put("duration_seconds", duration * 60)
+            .put("calories", safeCalories)
+            .put("completed_exercises", 0)
+            .put("total_exercises", 1)
+            .put("exercise_names", JSONArray(listOf("activity:${activity.key}")))
+            .put("difficulty", "Uygun")
+            .put("fatigue", JSONObject.NULL)
+            .put("pain_areas", JSONArray())
+            .put("feedback_note", safeNote.takeIf(String::isNotBlank) ?: JSONObject.NULL))
+        return WorkoutSessionData(id, now, duration * 60, safeCalories, 0, 1, null, manualActivityKey = activity.key)
+    }
+
     suspend fun syncHealth(snapshot: HealthSnapshot) {
         val userId = requireNotNull(auth.userId())
         optionalHealthUpsert("daily_steps", JSONObject().put("user_id", userId).put("local_date", snapshot.date.toString()).put("steps", snapshot.steps).put("source", "health_connect").put("synced_at", Instant.now().toString()), "user_id,local_date")
@@ -357,6 +387,37 @@ class HedefitRepository(
         val response = api.get("/api/nutrition/foods?q=${java.net.URLEncoder.encode(query.trim(), Charsets.UTF_8.name())}&locale=${if (locale == "en") "en" else "tr"}").requireSuccess("Besin kataloğu aranamadı.").jsonObject()
         val array = response.optJSONArray("items") ?: JSONArray()
         return buildList { for (index in 0 until array.length()) array.optJSONObject(index)?.let { item -> add(parseFoodSearch(item)) } }
+    }
+
+    suspend fun analyzeNutritionPhoto(jpegBytes: ByteArray): List<NutritionEstimateData> {
+        require(jpegBytes.isNotEmpty() && jpegBytes.size <= 5 * 1024 * 1024) { "Fotoğraf 5 MB'den küçük olmalı." }
+        val encoded = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
+        val response = api.post("/api/nutrition/analyze-photo", JSONObject().put("imageDataUrl", "data:image/jpeg;base64,$encoded"))
+            .requireSuccess("Fotoğraftaki öğün analiz edilemedi.").jsonObject()
+        val items = response.optJSONArray("items") ?: JSONArray()
+        return buildList {
+            for (index in 0 until items.length()) items.optJSONObject(index)?.let { item ->
+                add(NutritionEstimateData(
+                    name = item.optString("name"), grams = item.optDouble("estimatedGrams"), calories = item.optInt("calories"),
+                    protein = item.optDouble("protein"), carbs = item.optDouble("carbohydrates"), fat = item.optDouble("fat"), fiber = item.optDouble("fiber"),
+                    sugar = item.optDouble("sugar"), sodiumMg = item.optDouble("sodiumMg"), potassiumMg = item.optDouble("potassiumMg"),
+                    calciumMg = item.optDouble("calciumMg"), ironMg = item.optDouble("ironMg"), vitaminCMg = item.optDouble("vitaminCMg"),
+                    confidence = item.optDouble("confidence"),
+                ))
+            }
+        }.also { require(it.isNotEmpty()) { "Fotoğrafta öğün bulunamadı." } }
+    }
+
+    suspend fun savePhotoNutrition(items: List<NutritionEstimateData>, meal: String): List<NutritionLogData> = items.map { item ->
+        val grams = item.grams.coerceIn(1.0, 5000.0)
+        val ratioTo100 = 100.0 / grams
+        addCatalogFood(FoodSearchData(
+            id = "photo", name = item.name, brand = null, servingGrams = grams,
+            calories = (item.calories * ratioTo100).toInt(), protein = item.protein * ratioTo100, carbs = item.carbs * ratioTo100,
+            fat = item.fat * ratioTo100, fiber = item.fiber * ratioTo100, sugar = item.sugar * ratioTo100,
+            sodiumMg = item.sodiumMg * ratioTo100, potassiumMg = item.potassiumMg * ratioTo100, calciumMg = item.calciumMg * ratioTo100,
+            ironMg = item.ironMg * ratioTo100, vitaminCMg = item.vitaminCMg * ratioTo100, verified = false, source = "photo_ai",
+        ), grams, meal, "photo")
     }
 
     suspend fun addCatalogFood(food: FoodSearchData, grams: Double, meal: String, inputMethod: String = "search"): NutritionLogData {
@@ -405,6 +466,27 @@ class HedefitRepository(
     suspend fun repeatFavorite(favorite: FavoriteMealData): NutritionLogData {
         return addCatalogFood(favorite.asRepeatFood(), favorite.grams, favorite.meal, "favorite")
     }
+
+    suspend fun addMealPlanItem(food: FoodSearchData, grams: Double, date: LocalDate, mealType: String): MealPlanItemData {
+        val cleanGrams = grams.coerceIn(1.0, 5_000.0)
+        val ratio = cleanGrams / 100.0
+        val micros = JSONObject().put("sugar", food.sugar * ratio).put("sodiumMg", food.sodiumMg * ratio)
+            .put("potassiumMg", food.potassiumMg * ratio).put("calciumMg", food.calciumMg * ratio)
+            .put("ironMg", food.ironMg * ratio).put("vitaminCMg", food.vitaminCMg * ratio)
+        val row = JSONObject().put("user_id", requireNotNull(auth.userId())).put("planned_date", date.toString())
+            .put("meal_type", mealType.takeIf { it in setOf("breakfast", "lunch", "dinner", "snack") } ?: "snack")
+            .put("food_name", food.name.take(160)).put("grams", cleanGrams).put("calories", (food.calories * ratio).toInt())
+            .put("protein_g", food.protein * ratio).put("carbs_g", food.carbs * ratio).put("fat_g", food.fat * ratio)
+            .put("fiber_g", food.fiber * ratio).put("micros", micros)
+        return parseMealPlanItem(rest.insert("meal_plan_items", row))
+    }
+
+    suspend fun setMealPlanCompleted(item: MealPlanItemData, completed: Boolean): MealPlanItemData = parseMealPlanItem(
+        rest.update("meal_plan_items", "id=eq.${item.id}&user_id=eq.${requireNotNull(auth.userId())}", JSONObject()
+            .put("completed", completed).put("completed_at", if (completed) Instant.now().toString() else JSONObject.NULL))
+    )
+
+    suspend fun removeMealPlanItem(id: String) = rest.delete("meal_plan_items", "id=eq.$id&user_id=eq.${requireNotNull(auth.userId())}")
 
     suspend fun scheduleWorkout(date: LocalDate, time: String, status: String = "planned", originalDate: String? = null): WorkoutScheduleData {
         val row = JSONObject().put("id", UUID.randomUUID().toString()).put("user_id", requireNotNull(auth.userId())).put("scheduled_date", date.toString())
@@ -603,7 +685,7 @@ class HedefitRepository(
         }
         val response = api.post("/api/chat", JSONObject().put("messages", bodyMessages).put("signals", signals).put("locale", if (locale == "en") "en" else "tr"))
             .requireSuccess("Fit Koç yanıt veremedi.").jsonObject()
-        if (response.optString("source") in setOf("fallback", "unavailable")) error(response.optString("notice", "Çevrimiçi Fit Koç geçici olarak kullanılamıyor."))
+        if (response.optString("source") == "unavailable") error(response.optString("notice", "Çevrimiçi Fit Koç geçici olarak kullanılamıyor."))
         val usage = response.optJSONObject("usage")
         return ChatReplyData(response.optString("text").replace("**", "").replace("__", ""), response.optString("source"), usage?.intOrNull("used"), usage?.intOrNull("limit"))
     }
@@ -747,14 +829,17 @@ class HedefitRepository(
     private fun parseSessions(array: JSONArray): List<WorkoutSessionData> = buildList {
         for (index in 0 until array.length()) {
             val item = array.optJSONObject(index) ?: continue
+            val rawNames = item.optJSONArray("exercise_names")?.let { values -> List(values.length()) { values.optString(it) }.filter(String::isNotBlank) }.orEmpty()
+            val manualActivityKey = rawNames.firstOrNull { it.startsWith("activity:") }?.removePrefix("activity:")
             add(WorkoutSessionData(
                 id = item.optString("id"), completedAt = item.optString("completed_at"),
                 durationSeconds = item.optInt("duration_seconds"), calories = item.optInt("calories"),
                 completedExercises = item.optInt("completed_exercises"), totalExercises = item.optInt("total_exercises"),
                 fatigue = item.intOrNull("fatigue"),
-                exerciseNames = item.optJSONArray("exercise_names")?.let { values -> List(values.length()) { values.optString(it) }.filter(String::isNotBlank) }.orEmpty(),
+                exerciseNames = rawNames.filterNot { it.startsWith("activity:") },
                 difficulty = item.stringOrNull("difficulty"),
                 painAreas = item.optJSONArray("pain_areas")?.let { values -> List(values.length()) { values.optString(it) }.filter(String::isNotBlank) }.orEmpty(),
+                manualActivityKey = manualActivityKey,
             ))
         }
     }
@@ -838,6 +923,22 @@ class HedefitRepository(
         for (index in 0 until array.length()) array.optJSONObject(index)?.let { add(parseFavorite(it)) }
     }
 
+    private fun parseMealPlanItems(array: JSONArray): List<MealPlanItemData> = buildList {
+        for (index in 0 until array.length()) array.optJSONObject(index)?.let { add(parseMealPlanItem(it)) }
+    }
+
+    private fun parseMealPlanItem(item: JSONObject): MealPlanItemData {
+        val micros = item.optJSONObject("micros") ?: JSONObject()
+        return MealPlanItemData(
+            id = item.optString("id"), plannedDate = item.optString("planned_date"), mealType = item.optString("meal_type", "snack"),
+            name = item.optString("food_name"), grams = item.optDouble("grams"), calories = item.optInt("calories"),
+            protein = item.optDouble("protein_g"), carbs = item.optDouble("carbs_g"), fat = item.optDouble("fat_g"), fiber = item.optDouble("fiber_g"),
+            sugar = micros.optDouble("sugar"), sodiumMg = micros.optDouble("sodiumMg"), potassiumMg = micros.optDouble("potassiumMg"),
+            calciumMg = micros.optDouble("calciumMg"), ironMg = micros.optDouble("ironMg"), vitaminCMg = micros.optDouble("vitaminCMg"),
+            completed = item.optBoolean("completed"),
+        )
+    }
+
     private fun parseFavorite(item: JSONObject): FavoriteMealData {
         val micros = item.optJSONObject("micros") ?: JSONObject()
         return FavoriteMealData(item.optString("id"), item.optString("name"), item.optString("meal"), item.optDouble("grams", 100.0), item.optInt("calories"),
@@ -851,12 +952,23 @@ class HedefitRepository(
 
     private fun parseScheduleItem(item: JSONObject) = WorkoutScheduleData(item.optString("id"), item.optString("scheduled_date"), item.optString("scheduled_time").take(5), item.optString("status"), item.stringOrNull("original_date"))
 
-    private fun parseNutritionGoal(item: JSONObject?) = NutritionGoalData(
-        calories = item?.optInt("calorie_target")?.takeIf { it > 0 } ?: 2250,
-        protein = item?.optInt("protein_g")?.takeIf { it > 0 } ?: 160,
-        carbs = item?.optInt("carbs_g")?.takeIf { it > 0 } ?: 240,
-        fat = item?.optInt("fat_g")?.takeIf { it > 0 } ?: 70,
-    )
+    private fun parseNutritionGoal(item: JSONObject?, profile: ProfileData): NutritionGoalData {
+        val calories = item?.optInt("calorie_target")?.takeIf { it > 0 } ?: 2250
+        if (item?.optBoolean("is_manual") == true) return NutritionGoalData(
+            calories = calories,
+            protein = item.optInt("protein_g").takeIf { it > 0 } ?: 110,
+            carbs = item.optInt("carbs_g").takeIf { it > 0 } ?: 297,
+            fat = item.optInt("fat_g").takeIf { it > 0 } ?: 69,
+        )
+        val weight = (profile.weightKg ?: 75.0).coerceIn(45.0, 90.0)
+        val workoutDays = item?.optInt("workout_days")?.coerceIn(0, 7) ?: 3
+        val multiplier = when { workoutDays == 0 -> 1.0; workoutDays <= 3 -> 1.2; else -> 1.4 }
+        val proteinUpper = minOf(140, (calories * .275 / 4).toInt()).coerceAtLeast(50)
+        val protein = (weight * multiplier).coerceIn(50.0, proteinUpper.toDouble()).roundToInt()
+        val fat = (calories * .275 / 9).roundToInt()
+        val carbs = ((calories - protein * 4 - fat * 9).coerceAtLeast(0) / 4.0).roundToInt()
+        return NutritionGoalData(calories, protein, carbs, fat)
+    }
 
     private fun parseMeasurements(array: JSONArray): List<BodyMeasurementData> = buildList {
         for (index in 0 until array.length()) {

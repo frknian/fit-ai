@@ -1,13 +1,13 @@
 package com.hedefit.app.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,13 +15,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.hedefit.app.data.model.ProfileData
 import com.hedefit.app.data.model.ProfileUpdateData
 import com.hedefit.app.ui.components.PrimaryButton
+import com.hedefit.app.ui.settings.estimatedGoalWeeks
 import com.hedefit.app.ui.theme.HedefitColors
-import kotlin.math.abs
-import kotlin.math.ceil
 
 private data class ProfileQuestion(
     val title: String,
@@ -60,9 +60,8 @@ fun ProfileQuestionnaireScreen(profile: ProfileData, saving: Boolean, quickStart
     val index = questionOrder[step]
     var targetText by remember(profile) { mutableStateOf(profile.targetWeightKg?.toString() ?: suggestedTarget(profile).toString()) }
     val question = profileQuestions[index]
-    val goal = if (index == 0) answers[0] else answers[0].ifBlank { profile.goal }
     val target = targetText.toDoubleOrNull()
-    val weeks = estimateWeeks(profile.weightKg, target, goal)
+    val weeks = estimatedGoalWeeks(profile.weightKg, target)
 
     Column(Modifier.fillMaxSize().background(HedefitColors.Background).statusBarsPadding().navigationBarsPadding()) {
         UtilityHeader(if (quickStart) "Hızlı başlangıç" else "Profil testi", onClose)
@@ -78,8 +77,10 @@ fun ProfileQuestionnaireScreen(profile: ProfileData, saving: Boolean, quickStart
                 val choice = question.choices[choiceIndex]
                 val selected = if (question.multiSelect) choice in selectedProfileChoices(answers[index]) else answers[index] == choice
                 Row(
-                    Modifier.fillMaxWidth().background(if (selected) HedefitColors.Lime.copy(alpha = .16f) else HedefitColors.Surface, RoundedCornerShape(16.dp))
-                        .clickable {
+                    Modifier.fillMaxWidth()
+                        .background(if (selected) HedefitColors.Lime.copy(alpha = .16f) else HedefitColors.Surface, RoundedCornerShape(16.dp))
+                        .border(BorderStroke(if (selected) 2.dp else 1.dp, if (selected) HedefitColors.Lime else HedefitColors.Divider), RoundedCornerShape(16.dp))
+                        .selectable(selected = selected, role = if (question.multiSelect) Role.Checkbox else Role.RadioButton) {
                             answers[index] = if (question.multiSelect) {
                                 toggleProfileChoice(answers[index], choice, question.choices, question.exclusiveChoice)
                             } else choice
@@ -87,7 +88,15 @@ fun ProfileQuestionnaireScreen(profile: ProfileData, saving: Boolean, quickStart
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(choice, Modifier.weight(1f), color = HedefitColors.TextPrimary, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-                    if (selected) Icon(Icons.Default.Check, null, tint = HedefitColors.Lime)
+                    if (question.multiSelect) Checkbox(
+                        checked = selected,
+                        onCheckedChange = null,
+                        colors = CheckboxDefaults.colors(checkedColor = HedefitColors.Lime, checkmarkColor = HedefitColors.OnLime),
+                    ) else RadioButton(
+                        selected = selected,
+                        onClick = null,
+                        colors = RadioButtonDefaults.colors(selectedColor = HedefitColors.Lime, unselectedColor = HedefitColors.TextSecondary),
+                    )
                 }
             }
             if (index == 0 && answers[0] != "Formu koruma") item {
@@ -141,10 +150,4 @@ private fun suggestedTarget(profile: ProfileData): Double {
         profile.goal.contains("ver", true) -> weight - 6
         else -> weight + 4
     }.coerceAtLeast(40.0)
-}
-
-private fun estimateWeeks(current: Double?, target: Double?, goal: String): Int? {
-    if (current == null || target == null) return null
-    val rate = if (goal.contains("Kas", true)) .25 else .5
-    return ceil(abs(target - current) / rate).toInt().coerceAtLeast(1)
 }

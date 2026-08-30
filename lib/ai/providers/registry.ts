@@ -7,6 +7,7 @@
 // Hedefit'in geri kalanında hiçbir dosya değişmez. Sıra önemlidir: router
 // zinciri bu sırayla dener.
 
+import { deterministicLocalProvider } from "./deterministic-local.ts";
 import { openAiCompatibleProvider } from "./openai-compatible.ts";
 import type { AIProvider } from "../types.ts";
 
@@ -39,6 +40,8 @@ class ProviderRegistry {
   }
 }
 
-const DEFAULT_PROVIDERS: AIProvider[] = [openAiCompatibleProvider];
+// The deterministic provider is marked as last-resort for conversation, so
+// the router tries OpenAI first and uses it only when cloud coaching fails.
+const DEFAULT_PROVIDERS: AIProvider[] = [openAiCompatibleProvider, deterministicLocalProvider];
 
 export const providerRegistry = new ProviderRegistry().reset();

@@ -7,13 +7,15 @@ export type AiModelTier = "cheap" | "standard" | "advanced";
  * istemciye model anahtarı veya sağlayıcı anahtarı gönderilmez.
  */
 export const AI_MODELS: Record<AiModelTier, () => string> = {
-  cheap: () => process.env.OPENAI_MODEL_CHEAP || "gpt-5.6-luna",
-  standard: () => process.env.OPENAI_MODEL_STANDARD || "gpt-5.6-terra",
-  advanced: () => process.env.OPENAI_MODEL_ADVANCED || "gpt-5.6-sol",
+  // Basit sohbet, besin çıkarımı ve görsel okuma hızlı 4o katmanındadır.
+  cheap: () => process.env.OPENAI_MODEL_CHEAP || "gpt-4o",
+  standard: () => process.env.OPENAI_MODEL_STANDARD || "gpt-4o",
+  // 15 soruluk kişisel plan ve haftalık muhakeme güçlü reasoning modeline gider.
+  advanced: () => process.env.OPENAI_MODEL_ADVANCED || "gpt-5.1",
 };
 
 export function tierForTask(category: AiTaskCategory): AiModelTier {
-  if (category === "vision" || category === "complex_reasoning" || category === "plan_generation") return "advanced";
+  if (category === "complex_reasoning" || category === "plan_generation") return "advanced";
   if (category === "structured_extraction") return "cheap";
   return "standard";
 }

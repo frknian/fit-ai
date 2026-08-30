@@ -6,8 +6,9 @@ import { evaluateSafety } from "../../../lib/ai/safety.ts";
 import { loadMemories } from "../../../lib/ai/memory.ts";
 import { sanitizeCoachSignals } from "../../../lib/ai/signals.ts";
 import { AiAllProvidersFailedError } from "../../../lib/ai/errors.ts";
-import { checkAndConsumeUsage, refundUsage, usageLimitExceeded } from "../../../lib/usage-limits.ts";
+import { checkAndConsumeUsage, outputTokenLimit, refundUsage, usageLimitExceeded } from "../../../lib/usage-limits.ts";
 import { parseCoachActions } from "../../../lib/ai/coach-actions.ts";
+import { LOCAL_PROVIDER_ID } from "../../../lib/ai/providers/deterministic-local.ts";
 
 type CoachMessage = { role: "user" | "assistant"; text: string };
 
@@ -48,6 +49,8 @@ function unavailableNotice(error: unknown, locale: "tr" | "en") {
 }
 
 export async function POST(request: Request) {
+  const requestId = crypto.randomUUID();
+  const startedAt = Date.now();
   const auth = await authenticateRequest(request);
   if ("error" in auth) return auth.error;
   // Kısa süreli spam ve kontrolsüz maliyet artışını önler. Günlük plan
@@ -67,6 +70,7 @@ export async function POST(request: Request) {
   const messages = safeMessages(payload.messages);
   if (!messages.length) return Response.json({ error: "Mesaj bulunamadı" }, { status: 400 });
   const question = messages.at(-1)?.text || "";
+  console.info("[api/chat] request started", { requestId, messageCount: messages.length, locale });
 
   // GÜVENLİK KATMANI, KULLANIM HAKKINDAN ÖNCE. Acil bir belirtide (göğüs
   // ağrısı, kendine zarar) yanıt deterministiktir: hiçbir modele gidilmez.
@@ -92,22 +96,21 @@ export async function POST(request: Request) {
   const memories = await loadMemories(request);
 
   try {
+    console.info("[api/chat] provider chain started", { requestId, memoryCount: memories.length });
     const result = await generateCoachResponse({
       messages,
       locale,
       signals,
       memories,
       category: "conversation",
-      policy: { mode: "remote" },
+      policy: { mode: "auto" },
       // GPT-5'in düşünme ve görünür yanıt bütçesi aynıdır. Minimal düşünme
       // etkin olsa da 380 token kısa yanıtı kesebiliyordu; bu sınır günlük
       // sohbet için akıcı bir açıklama üretmeye yeterlidir.
-      maxOutputTokens: 640,
-      // Fit Koç'un kişisel bağlamı kısa sağlık isteminden belirgin biçimde
-      // uzundur. 15 sn sınırı model erişimi sağlıklı olsa bile gerçek sohbeti
-      // yarıda kesiyordu. Android istemcisi 45 sn bekler; sunucu 35 sn'de
-      // kontrollü biçimde sonlandırarak ağ yanıtına da pay bırakır.
-      abortSignal: AbortSignal.timeout(35_000),
+      maxOutputTokens: outputTokenLimit("chat", usage.planTier),
+      // Bulut model 18 saniyede yanıtlayamazsa kullanıcıyı bekletmek yerine
+      // yönlendirici deterministik yerel Fit Koç yanıtına geçer.
+      abortSignal: AbortSignal.timeout(18_000),
     });
     if (result.text.trim()) {
       // Yanıtı YEREL (deterministik) sağlayıcı ürettiyse kullanıcı ücretli AI
@@ -121,6 +124,9 @@ export async function POST(request: Request) {
       const parsed = parseCoachActions(result.text);
       // Sınır uygulanmıyorsa (bkz. lib/usage-limits.ts) limit sonsuzdur; JSON'da
       // null'a dönüşüp arayüzde "0/null" görüneceği için alanı hiç göndermiyoruz.
+      const localFallback = result.provider === LOCAL_PROVIDER_ID;
+      if (localFallback && Number.isFinite(usage.limit)) await refundUsage(auth.user.id, "chat");
+      console.info("[api/chat] request completed", { requestId, provider: result.provider, fallback: localFallback, durationMs: Date.now() - startedAt });
       return Response.json({
         text: parsed.text,
         // Her eylem bir ÖNERİdir: uygulanması için kullanıcının düğmeye
@@ -128,7 +134,7 @@ export async function POST(request: Request) {
         ...(parsed.actions.length ? { actions: parsed.actions } : {}),
         // Göç öncesindeki source sözleşmesi korunur: "ai" = gerçek model,
         // "fallback" = güvenli yerel öneri.
-        source: "ai",
+        source: localFallback ? "fallback" : "ai",
         provider: result.provider,
         model: result.model,
         promptVersion: result.promptVersion,
@@ -139,13 +145,13 @@ export async function POST(request: Request) {
     providerFailure = error;
     // Ham sağlayıcı hatası kullanıcıya ASLA gösterilmez; yalnızca sınıflandırılmış
     // özet sunucu log'una yazılır (bkz. lib/ai/telemetry.ts classifyError).
-    if (error instanceof AiAllProvidersFailedError) console.error("AI coach error", JSON.stringify(error.failures));
-    else console.error("AI coach error", error instanceof Error ? error.name : "unknown");
+    if (error instanceof AiAllProvidersFailedError) console.error("[api/chat] provider chain failed", { requestId, failures: error.failures, durationMs: Date.now() - startedAt });
+    else console.error("[api/chat] provider chain failed", { requestId, error: error instanceof Error ? error.name : "unknown", durationMs: Date.now() - startedAt });
   }
 
   // AI ya hiç yanıt vermedi ya da boş döndü: kullanıcı gerçekte AI hizmeti
   // ALMADI, günlük hakkı geri iade edilir (bkz. lib/usage-limits.ts refundUsage).
-  if (Number.isFinite(usage.limit)) await refundUsage(request, "chat");
+  if (Number.isFinite(usage.limit)) await refundUsage(auth.user.id, "chat");
   // Koçun adı "Fit Koç" — arayüzün her yerinde böyle geçiyor
   // (lib/i18n/dictionaries). Burada "AI koç" yazmak kullanıcıya başka bir
   // üründen söz ediliyormuş hissi veriyordu.

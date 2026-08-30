@@ -112,6 +112,7 @@ fun HomeScreen(
     onOpenCalendar: () -> Unit,
     onOpenRoute: () -> Unit,
     onOpenGoal: () -> Unit,
+    onOpenActivity: () -> Unit,
     onOpenProgram: (String?) -> Unit,
     onProgramHomeVisibilityChange: (WorkoutProgramData, Boolean) -> Unit,
     unitSystem: String,
@@ -140,6 +141,7 @@ fun HomeScreen(
             item { DailyMotivationCard(en) }
             item { GoalProjectionCard(data, onOpenGoal, en, unitSystem) }
             item { RouteLaunchCard(onOpenRoute, en, unitSystem) }
+            item { ManualActivityLaunchCard(onOpenActivity, en) }
             item { CompactDailySummary(data, en, unitSystem, stepSource, { metricDialog = "steps" }, { metricDialog = "calories" }, { metricDialog = "water" }) }
             if (showAds) item { AdBanner(Modifier.fillMaxWidth()) }
             item { HomePrograms(data, en, onOpenProgram, onProgramHomeVisibilityChange) }
@@ -147,8 +149,22 @@ fun HomeScreen(
     }
     when (metricDialog) {
         "steps" -> StepDetailDialog(data?.steps ?: 0, stepGoal, data?.stepHistory.orEmpty(), en, { metricDialog = null }, { onStepGoalChange(it); metricDialog = null })
-        "calories" -> CalorieDetailDialog(data, en) { metricDialog = null }
+        "calories" -> CalorieDetailDialog(data, en, stepSource) { metricDialog = null }
         "water" -> WaterAddDialog(data?.waterMl ?: 0, waterGoalMl, en, unitSystem, { metricDialog = null }, onWaterGoalChange) { onAddWater(it); metricDialog = null }
+    }
+}
+
+@Composable
+private fun ManualActivityLaunchCard(onOpen: () -> Unit, en: Boolean) {
+    HedefitCard(Modifier.fillMaxWidth(), onClick = onOpen, contentPadding = PaddingValues(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(46.dp).background(HedefitColors.Lime.copy(alpha = .16f), RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.Add, null, tint = HedefitColors.Lime) }
+            Column(Modifier.weight(1f)) {
+                Text(if (en) "Log a sport" else "Spor aktivitesi ekle", style = MaterialTheme.typography.titleMedium)
+                Text(if (en) "Sport, duration, distance and pace" else "Spor, süre, mesafe ve tempo", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            }
+            Icon(Icons.Default.ChevronRight, null, tint = HedefitColors.Lime)
+        }
     }
 }
 
@@ -302,8 +318,28 @@ private fun CompactDailySummary(data: DashboardData, en: Boolean, unitSystem: St
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         CompactMetricCard(Icons.Default.DirectionsWalk, "%,d".format(data.steps).replace(',', '.'), sourceLabel, HedefitColors.Lime, onSteps, Modifier.weight(1f))
-        CompactMetricCard(Icons.Default.LocalFireDepartment, null, null, HedefitColors.Warning, onCalories, Modifier.weight(1f))
+        CalorieBalanceCompactCard(data, en, stepSource, onCalories, Modifier.weight(1f))
         CompactMetricCard(Icons.Default.LocalDrink, MeasurementUnits.formatWater(data.waterMl, unitSystem), null, HedefitColors.Water, onWater, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun CalorieBalanceCompactCard(data: DashboardData, en: Boolean, stepSource: StepSource, onClick: () -> Unit, modifier: Modifier) {
+    val consumed = data.nutritionLogs.sumOf { it.calories }
+    val today = LocalDate.now()
+    val manualBurned = data.sessions.filter { session ->
+        session.manualActivityKey != null && runCatching { java.time.Instant.parse(session.completedAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate() == today }.getOrDefault(false)
+    }.sumOf { it.calories }
+    // Health Connect aktifken onun birleştirilmiş kalorisi kanonik kaynaktır;
+    // aynı seansı manuel kayıtla ikinci kez eklemeyiz.
+    val burned = data.activeCalories + if (stepSource == StepSource.HEALTH_CONNECT) 0 else manualBurned
+    HedefitCard(modifier.height(96.dp), onClick = onClick, contentPadding = PaddingValues(horizontal = 7.dp, vertical = 9.dp)) {
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Icon(Icons.Default.LocalFireDepartment, null, tint = HedefitColors.Warning, modifier = Modifier.size(19.dp))
+            Spacer(Modifier.height(3.dp))
+            Text(if (en) "IN $consumed" else "ALINAN $consumed", maxLines = 1, style = MaterialTheme.typography.labelMedium)
+            Text(if (en) "OUT $burned" else "YAKILAN $burned", maxLines = 1, color = HedefitColors.Warning, style = MaterialTheme.typography.labelMedium)
+        }
     }
 }
 
@@ -365,12 +401,16 @@ private fun StepDetailDialog(steps: Int, goal: Int, history: List<com.hedefit.ap
 }
 
 @Composable
-private fun CalorieDetailDialog(data: DashboardData?, en: Boolean, onDismiss: () -> Unit) {
-    val consumed = data?.nutritionLogs.orEmpty().sumOf { it.calories }; val base = data?.nutritionGoal?.calories ?: 0; val burned = data?.activeCalories ?: 0; val target = base + burned.coerceIn(0, 600)
+private fun CalorieDetailDialog(data: DashboardData?, en: Boolean, stepSource: StepSource, onDismiss: () -> Unit) {
+    val consumed = data?.nutritionLogs.orEmpty().sumOf { it.calories }
+    val base = data?.nutritionGoal?.calories ?: 0
+    val manualBurned = data?.sessions.orEmpty().filter { session -> session.manualActivityKey != null && runCatching { java.time.Instant.parse(session.completedAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate() == LocalDate.now() }.getOrDefault(false) }.sumOf { it.calories }
+    val burned = (data?.activeCalories ?: 0) + if (stepSource == StepSource.HEALTH_CONNECT) 0 else manualBurned
+    val target = base + burned.coerceIn(0, 600)
     AlertDialog(onDismissRequest = onDismiss, title = { Text(if (en) "Calorie balance" else "Kalori dengesi") }, text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (en) "Your target is $target kcal" else "$target kcal almalısın", color = HedefitColors.Lime, style = MaterialTheme.typography.headlineSmall)
         HedefitCard { Column(verticalArrangement = Arrangement.spacedBy(7.dp)) { Text(if (en) "Consumed: $consumed kcal" else "Alınan: $consumed kcal"); Text(if (en) "Active burn: $burned kcal" else "Aktivitede harcanan: $burned kcal"); Text(if (en) "Remaining: ${(target - consumed).coerceAtLeast(0)} kcal" else "Kalan: ${(target - consumed).coerceAtLeast(0)} kcal", color = HedefitColors.Lime) } }
-        Text(if (en) "Health Connect activity calories update this target." else "Aktif kalorin Health Connect verisine göre günlük hedefe eklenir.", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+        Text(if (en) "Health Connect and manually logged sports update this value." else "Health Connect ve elle eklediğin sporlar bu değeri günceller.", color = HedefitColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
     } }, confirmButton = { TextButton(onClick = onDismiss) { Text(if (en) "Done" else "Tamam") } })
 }
 
